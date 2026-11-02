@@ -7,7 +7,7 @@
 | 1 | TLS verification on by default; insecure only by explicit config, warned | `transport/tls.go` | `TestInsecureIsOptIn`, `TestCustomCA` |
 | 2 | No plaintext credentials in config | strict YAML decoding (`KnownFields`) | `TestRejectsPlaintextSecretsAndUnsafeValues` |
 | 3 | No secrets in process arguments | `auth login` reads stdin/hidden prompt only | n/a (no flag exists) |
-| 4 | No credentials in logs/output | `credentials.Secret` redaction; logger receives no headers/bodies | `TestSecretNeverFormats`, `TestTokenNeverLogged`, every CLI integration test scans stdout/stderr for the token |
+| 4 | No credentials in logs/output | `credentials.Secret` redaction (incl. `slog.LogValuer`); redacting log handler on every record (keys, Bearer/Basic values, OAuth query params, URL userinfo); headers/bodies never logged; CI scans all artifacts for a dummy token | `TestSecretNeverFormats`, `TestTokenNeverLogged`, `logging.TestRedaction`, `scripts/ci-smoke.sh`, every CLI integration test scans stdout/stderr for the token |
 | 5 | No auth headers across untrusted redirects | `transport.CheckRedirect` (exact origin) | `TestRedirectStripsCredentialsAcrossOrigins` |
 | 6 | No HTTPS downgrade | config validation + redirect policy | `TestRedirectRefusesDowngrade` |
 | 7 | Secure OAuth token storage | keyring only; never files | `TestBareRefreshTokenFromFileIsNotPersisted` |

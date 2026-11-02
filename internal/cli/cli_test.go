@@ -33,6 +33,7 @@ func (f *fakeJira) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.auths = append(f.auths, r.Header.Get("Authorization"))
 	f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json;charset=UTF-8")
+	w.Header().Set("X-AREQUESTID", "870x1234x1")
 	if r.URL.Path == "/jira/rest/api/2/serverInfo" {
 		io.WriteString(w, `{"version":"10.3.26","deploymentType":"Server","baseUrl":"`+"https://"+r.Host+`/jira","buildNumber":1}`)
 		return
@@ -107,6 +108,13 @@ func (e *env) run(stdin string, args ...string) (int, string, string) {
 	if strings.Contains(out.String()+errb.String(), token) {
 		e.t.Fatalf("token leaked in output of %v", args)
 	}
+	// Surface the CLI's stderr (logs + errors) when a test fails, so CI
+	// output shows what happened.
+	e.t.Cleanup(func() {
+		if e.t.Failed() {
+			e.t.Logf("jira %v (exit %d) stderr:\n%s", args, code, errb.String())
+		}
+	})
 	return code, out.String(), errb.String()
 }
 
@@ -306,4 +314,76 @@ func TestDoctorReportsTLSLayer(t *testing.T) {
 	if code != 8 || !strings.Contains(out, `"layer": "tls_certificate"`) {
 		t.Fatalf("doctor exit %d: %s", code, out)
 	}
+}
+
+func TestStructuredTrace(t *testing.T) {
+	e := setup(t, "")
+	code, _, errs := e.run("", "issue", "get", "ABC-1", "--log-level", "debug", "--log-format", "json")
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	var runID string
+	msgs := map[string]map[string]any{}
+	for _, line := range strings.Split(strings.TrimSpace(errs), "\n") {
+		var rec map[string]any
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("log line is not JSON: %q", line)
+		}
+		id, _ := rec["run_id"].(string)
+		if id == "" || (runID != "" && id != runID) {
+			t.Fatalf("missing/inconsistent run_id: %v", rec)
+		}
+		runID = id
+		msgs[rec["msg"].(string)] = rec
+	}
+	for _, m := range []string{"command started", "config loaded", "instance selected", "operation", "credential resolved", "http request", "http response", "command finished"} {
+		if _, ok := msgs[m]; !ok {
+			t.Errorf("missing log event %q; got %v", m, keys(msgs))
+		}
+	}
+	resp := msgs["http response"]
+	if resp["jira_request_id"] != "870x1234x1" || resp["status"] != float64(200) || resp["request_id"] == nil || resp["tls_ms"] == nil {
+		t.Errorf("http response fields: %v", resp)
+	}
+	if msgs["operation"]["operation_id"] != "getIssue" || msgs["command finished"]["exit_code"] != float64(0) {
+		t.Errorf("operation/finish fields: %v %v", msgs["operation"], msgs["command finished"])
+	}
+	if msgs["credential resolved"]["source"] != "file:"+e.vars["JIRA_CREDENTIAL_FILE"] {
+		t.Errorf("credential source: %v", msgs["credential resolved"])
+	}
+}
+
+func TestFailureIsTraced(t *testing.T) {
+	e := setup(t, "")
+	e.vars["JIRA_LOG_LEVEL"] = "info"
+	e.vars["JIRA_LOG_FORMAT"] = "json"
+	code, _, errs := e.run("", "issue", "get", "NOPE-1")
+	if code != 6 || !strings.Contains(errs, `"msg":"command finished"`) || !strings.Contains(errs, `"exit_code":6`) || !strings.Contains(errs, `"error_layer":"jira_api"`) {
+		t.Fatalf("exit %d: %s", code, errs)
+	}
+}
+
+func TestLogFile(t *testing.T) {
+	e := setup(t, "")
+	logPath := filepath.Join(e.dir, "trace.log")
+	e.vars["JIRA_LOG_FILE"] = logPath
+	code, _, errs := e.run("", "issue", "get", "ABC-1", "-v")
+	if code != 0 || errs != "" {
+		t.Fatalf("exit %d, stderr should be empty when logging to a file: %q", code, errs)
+	}
+	b, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(b), "http response") || strings.Contains(string(b), token) {
+		t.Fatalf("log file: %v %s", err, b)
+	}
+	if code, _, _ := e.run("", "issue", "get", "ABC-1", "--log-level", "loud"); code != 2 {
+		t.Fatalf("invalid level must be a usage error, got %d", code)
+	}
+}
+
+func keys(m map[string]map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

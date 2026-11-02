@@ -3,10 +3,13 @@ package generator
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"path"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/personal-stack/jira-cli/internal/logging"
 	"github.com/personal-stack/jira-cli/internal/operation"
 )
 
@@ -22,6 +25,7 @@ type Options struct {
 	Root     string // repository root
 	Manifest string // manifest path relative to Root
 	OutDir   string // output directory relative to Root (default "generated")
+	Log      *slog.Logger
 }
 
 // Generate runs the full pipeline for every profile in the manifest.
@@ -31,16 +35,24 @@ func Generate(opts Options) (*Result, error) {
 	if opts.OutDir == "" {
 		opts.OutDir = "generated"
 	}
+	if opts.Log == nil {
+		opts.Log = logging.Discard()
+	}
 	m, err := LoadManifest(path.Join(opts.Root, opts.Manifest))
 	if err != nil {
 		return nil, err
 	}
 	res := &Result{Files: map[string][]byte{}}
 	for _, ps := range m.Profiles {
-		prof, err := buildProfile(opts.Root, ps)
+		log := opts.Log.With("profile", ps.Name)
+		start := time.Now()
+		prof, err := buildProfile(opts.Root, ps, log)
 		if err != nil {
+			log.Error("profile generation failed", "error", err)
 			return nil, fmt.Errorf("profile %s: %w", ps.Name, err)
 		}
+		log.Info("profile generated", "commands", len(prof.Operations), "skipped", len(prof.Skipped),
+			"warnings", len(prof.Warnings), "duration_ms", time.Since(start).Milliseconds())
 		res.Profiles = append(res.Profiles, prof)
 		pkg := PackageName(ps.Name)
 		files, err := emitProfile(pkg, prof)
@@ -59,7 +71,7 @@ func Generate(opts Options) (*Result, error) {
 	return res, nil
 }
 
-func buildProfile(root string, ps ProfileSpec) (*operation.Profile, error) {
+func buildProfile(root string, ps ProfileSpec, log *slog.Logger) (*operation.Profile, error) {
 	prof := &operation.Profile{Name: ps.Name, Deployment: ps.Deployment, BasePath: strings.TrimRight(ps.BasePath, "/")}
 	if prof.BasePath != "" && !strings.HasPrefix(prof.BasePath, "/") {
 		return nil, fmt.Errorf("base_path must start with /")
@@ -80,6 +92,7 @@ func buildProfile(root string, ps ProfileSpec) (*operation.Profile, error) {
 			return nil, fmt.Errorf("spec %s: manifest version %q != info.version %q; run `jiragen update`", ref.Name, ref.Version, doc.Info.Version)
 		}
 		specs = append(specs, &loadedSpec{ref: ref, sha256: sum, doc: doc})
+		log.Info("spec loaded", "spec", ref.Name, "source", ref.Source, "path", ref.Path, "version", doc.Info.Version, "sha256", sum, "paths", doc.Paths.Len())
 		src := operation.Source{Name: ref.Name, Kind: ref.Source, Version: doc.Info.Version, Path: ref.Path, SHA256: sum}
 		if len(specs) == 1 {
 			prof.Spec = src
@@ -102,6 +115,7 @@ func buildProfile(root string, ps ProfileSpec) (*operation.Profile, error) {
 		}
 		overlays = append(overlays, o)
 		names = append(names, f.Path)
+		log.Info("overlay loaded", "path", f.Path, "sha256", sum, "rename_paths", len(o.RenamePaths), "exclusions", len(o.Exclude), "operations", len(o.Operations), "schema_aliases", len(o.SchemaAliases))
 		prof.Overlays = append(prof.Overlays, operation.Source{Name: path.Base(f.Path), Kind: "overlay", Path: f.Path, SHA256: sum})
 	}
 	var rf *RiskFile
@@ -113,6 +127,7 @@ func buildProfile(root string, ps ProfileSpec) (*operation.Profile, error) {
 		if rf, err = parseRisk(b, ps.Risk.Path); err != nil {
 			return nil, err
 		}
+		log.Info("risk metadata loaded", "path", ps.Risk.Path, "sha256", sum, "rules", len(rf.Operations), "admin_tags", len(rf.AdminTags))
 		prof.Overlays = append(prof.Overlays, operation.Source{Name: path.Base(ps.Risk.Path), Kind: "risk", Path: ps.Risk.Path, SHA256: sum})
 	}
 
@@ -124,10 +139,12 @@ func buildProfile(root string, ps ProfileSpec) (*operation.Profile, error) {
 	for _, s := range specs {
 		ops = append(ops, collectOps(s)...)
 	}
+	collected := len(ops)
 	ops, skips, err := applyOverlays(ops, overlays, names)
 	if err != nil {
 		return nil, err
 	}
+	log.Debug("overlays applied", "collected", collected, "remaining", len(ops), "excluded", len(skips))
 	for _, s := range specs {
 		if err := validateDoc(s); err != nil {
 			return nil, fmt.Errorf("spec %s failed validation after overlays: %w", s.ref.Name, err)
@@ -158,6 +175,7 @@ func buildProfile(root string, ps ProfileSpec) (*operation.Profile, error) {
 		switch {
 		case errors.As(err, &u):
 			skips = append(skips, skipped{r, u.msg})
+			log.Debug("operation skipped", "operation_id", r.origID, "method", r.method, "path", r.path, "reason", u.msg)
 			continue
 		case err != nil:
 			errs = append(errs, fmt.Errorf("%s (%s): %w", r.key(), r.op.OperationID, err))
@@ -227,6 +245,7 @@ func buildProfile(root string, ps ProfileSpec) (*operation.Profile, error) {
 		}
 	}
 	if len(errs) > 0 {
+		log.Error("generation errors", "count", len(errs))
 		return nil, errors.Join(errs...)
 	}
 

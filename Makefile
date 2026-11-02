@@ -3,7 +3,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 BIN     := bin/jira
 
-.PHONY: all spec-validate spec-update security generate verify-generated test test-race vet lint build docker clean
+.PHONY: all spec-validate spec-update security smoke generate verify-generated test test-race vet lint build docker clean
 
 all: verify-generated vet test build
 
@@ -37,6 +37,10 @@ test-race:
 security:
 	GOTOOLCHAIN=$$(go env GOVERSION) go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
+## Run the binary with JSON debug logs; checks exit codes, log stream and secret leaks.
+smoke: build
+	scripts/ci-smoke.sh $(BIN) ci-artifacts
+
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/jira
 
@@ -44,4 +48,4 @@ docker:
 	docker build --build-arg VERSION=$(VERSION) -t jira-cli:$(VERSION) .
 
 clean:
-	rm -rf bin dist
+	rm -rf bin dist ci-artifacts

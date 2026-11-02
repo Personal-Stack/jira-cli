@@ -11,6 +11,7 @@ import (
 
 	"github.com/personal-stack/jira-cli/internal/clierr"
 	"github.com/personal-stack/jira-cli/internal/config"
+	"github.com/personal-stack/jira-cli/internal/logging"
 	"github.com/personal-stack/jira-cli/internal/output"
 )
 
@@ -51,6 +52,16 @@ Start with:
 	pf.BoolVar(&a.dryRun, "dry-run", false, "print the request that would be sent and exit without sending it")
 	pf.BoolVar(&a.readOnly, "read-only", false, "refuse every operation that is not classified as read (also: $"+EnvReadOnly+"=1)")
 	pf.BoolVarP(&a.yes, "yes", "y", false, "confirm destructive/administrative operations non-interactively")
+	pf.StringVar(&a.logLevel, "log-level", "", "log level: debug, info, warn, error (default: $"+logging.EnvLevel+", -v=debug, -q=error, else warn)")
+	pf.StringVar(&a.logFormat, "log-format", "", "log format: text, json (default: $"+logging.EnvFormat+", else text)")
+	pf.StringVar(&a.logFile, "log-file", "", "append logs to this file (mode 0600) instead of stderr (default: $"+logging.EnvFile+")")
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		if err := a.initLog(); err != nil {
+			return err
+		}
+		a.Log().Info("command started", "command", cmd.CommandPath(), "version", a.Version)
+		return nil
+	}
 
 	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd()} {
 		c.GroupID = "core"
@@ -96,16 +107,21 @@ func prescan(args []string) map[string]string {
 
 // Execute runs the CLI and returns the process exit code.
 func (a *App) Execute(ctx context.Context, args []string) int {
+	start := time.Now()
 	root := a.NewRoot(args)
 	root.SetArgs(args)
 	err := root.ExecuteContext(ctx)
+	defer a.closeLog()
 	if err == nil {
+		a.Log().Info("command finished", "exit_code", 0, "duration_ms", time.Since(start).Milliseconds())
 		return 0
 	}
 	e := clierr.As(err)
 	if e.Layer == clierr.LayerInternal && isCobraUsage(err) {
 		e = clierr.New(clierr.LayerUsage, "invalid_usage", err.Error())
 	}
+	a.Log().Info("command finished", "exit_code", e.ExitCode(), "duration_ms", time.Since(start).Milliseconds(),
+		"error_layer", string(e.Layer), "error_code", e.Code, "http_status", e.HTTPStatus)
 	a.printError(e)
 	return e.ExitCode()
 }

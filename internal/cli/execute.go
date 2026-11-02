@@ -225,14 +225,19 @@ func (a *App) execute(cmd *cobra.Command, p *operation.Profile, op *operation.Op
 	if ip.Name != p.Name {
 		return clierr.New(clierr.LayerConfig, "profile_mismatch", fmt.Sprintf("instance %s uses profile %s but the command was built for %s", in.Name, ip.Name, p.Name))
 	}
+	log := a.Log().With("instance", in.Name, "operation_id", op.OperationID)
+	log.Info("operation", "method", op.Method, "path", p.BasePath+op.Path, "risk", string(op.Risk),
+		"profile", p.Name, "spec_version", p.Spec.Version, "dry_run", a.dryRun)
 	req, err := buildRequest(cmd, op, args, a.In)
 	if err != nil {
+		log.Debug("request validation failed", "error", err)
 		return err
 	}
 	if err := safety.Check(op, safety.Options{
 		ReadOnly: a.ReadOnly(in), Yes: a.yes, DryRun: a.dryRun,
 		Interactive: a.IsTerminal(), In: a.In, Out: a.Err,
 	}); err != nil {
+		log.Info("refused by safety policy", "error_code", clierr.As(err).Code, "risk", string(op.Risk), "read_only", a.ReadOnly(in))
 		return err
 	}
 	all := false

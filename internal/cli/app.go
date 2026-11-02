@@ -22,6 +22,7 @@ import (
 	"github.com/personal-stack/jira-cli/internal/clierr"
 	"github.com/personal-stack/jira-cli/internal/config"
 	"github.com/personal-stack/jira-cli/internal/credentials"
+	"github.com/personal-stack/jira-cli/internal/logging"
 	"github.com/personal-stack/jira-cli/internal/operation"
 	"github.com/personal-stack/jira-cli/internal/output"
 	"github.com/personal-stack/jira-cli/internal/transport"
@@ -48,10 +49,14 @@ type App struct {
 	dryRun, readOnly, yes            bool
 	timeout                          time.Duration
 
+	logLevel, logFormat, logFile string
+
 	cfg       *config.Config
 	cfgErr    error
 	cfgLoaded bool
 	log       *slog.Logger
+	logCloser io.Closer
+	runID     string
 }
 
 // NewApp returns an App bound to the process environment.
@@ -74,19 +79,71 @@ func (a *App) Format() (output.Format, error) {
 	return f, nil
 }
 
-// Log returns the structured logger (stderr). Secrets are never passed to it.
+// RunID identifies this invocation in every log line.
+func (a *App) RunID() string {
+	if a.runID == "" {
+		a.runID = logging.NewID()
+	}
+	return a.runID
+}
+
+// logOptions resolves logging settings: flags > JIRA_LOG_* env >
+// --verbose/--quiet > defaults (warn, text, stderr).
+func (a *App) logOptions() logging.Options {
+	o := logging.Options{
+		Level:  firstNonEmpty(a.logLevel, a.Getenv(logging.EnvLevel)),
+		Format: firstNonEmpty(a.logFormat, a.Getenv(logging.EnvFormat)),
+		File:   firstNonEmpty(a.logFile, a.Getenv(logging.EnvFile)),
+		Attrs:  []slog.Attr{slog.String("run_id", a.RunID())},
+	}
+	if o.Level == "" {
+		switch {
+		case a.verbose:
+			o.Level = "debug"
+		case a.quiet:
+			o.Level = "error"
+		}
+	}
+	return o
+}
+
+// initLog builds the logger after flags are parsed.
+func (a *App) initLog() error {
+	l, c, err := logging.New(a.Err, a.logOptions())
+	if err != nil {
+		return clierr.Wrap(clierr.LayerUsage, "invalid_logging", err.Error(), nil)
+	}
+	a.closeLog()
+	a.log, a.logCloser = l, c
+	return nil
+}
+
+func (a *App) closeLog() {
+	if a.logCloser != nil {
+		_ = a.logCloser.Close()
+		a.logCloser = nil
+	}
+}
+
+// Log returns the structured logger. All records pass through the
+// redacting handler (internal/logging); call sites still must not log
+// secrets deliberately.
 func (a *App) Log() *slog.Logger {
 	if a.log == nil {
-		lvl := slog.LevelWarn
-		if a.verbose {
-			lvl = slog.LevelDebug
+		if err := a.initLog(); err != nil {
+			a.log, _, _ = logging.New(a.Err, logging.Options{Attrs: []slog.Attr{slog.String("run_id", a.RunID())}})
 		}
-		if a.quiet {
-			lvl = slog.LevelError
-		}
-		a.log = slog.New(slog.NewTextHandler(a.Err, &slog.HandlerOptions{Level: lvl}))
 	}
 	return a.log
+}
+
+func firstNonEmpty(vs ...string) string {
+	for _, v := range vs {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // ConfigPath returns the resolved config path.
@@ -106,6 +163,9 @@ func (a *App) Config() (*config.Config, error) {
 		a.cfgLoaded = true
 		p := a.ConfigPath()
 		a.cfg, a.cfgErr = config.Load(p)
+		if a.cfgErr == nil && a.log != nil {
+			a.log.Debug("config loaded", "path", p, "instances", len(a.cfg.Instances))
+		}
 		if a.cfgErr != nil {
 			e := clierr.Wrap(clierr.LayerConfig, "config_invalid", "cannot load configuration "+p, a.cfgErr)
 			if errors.Is(a.cfgErr, os.ErrNotExist) {
@@ -137,6 +197,9 @@ func (a *App) Instance() (*config.Instance, string, error) {
 	if a.instance == "" && name != "" {
 		src = "env"
 	}
+	if a.log != nil {
+		a.log.Debug("instance selected", "instance", in.Name, "selected_by", src, "deployment", in.Deployment, "auth_method", in.Auth.Type, "read_only", a.ReadOnly(in))
+	}
 	return in, src, nil
 }
 
@@ -165,7 +228,9 @@ func (a *App) ReadOnly(in *config.Instance) bool {
 
 // Store returns the credential chain for an instance.
 func (a *App) Store(in *config.Instance) *credentials.Chain {
-	return credentials.Default(credentials.Options{PrimaryRef: in.Auth.CredentialRef, Getenv: a.Getenv})
+	c := credentials.Default(credentials.Options{PrimaryRef: in.Auth.CredentialRef, Getenv: a.Getenv})
+	c.Log = a.Log().With("instance", in.Name)
+	return c
 }
 
 // Client builds the API client (auth provider + transport) for an instance.
@@ -189,7 +254,7 @@ func (a *App) Client(in *config.Instance, p *operation.Profile) (*api.Client, er
 		return nil, clierr.Wrap(clierr.LayerConfig, "invalid_base_url", "invalid base_url", err)
 	}
 	return &api.Client{
-		HTTP: hc, BaseURL: base, BasePath: p.BasePath, Auth: ap, Log: a.Log(),
+		HTTP: hc, BaseURL: base, BasePath: p.BasePath, Auth: ap, Log: a.Log().With("instance", in.Name),
 		MaxAttempts: in.Retry.MaxAttempts, UserAgent: "jira-cli/" + a.Version,
 	}, nil
 }

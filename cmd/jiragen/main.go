@@ -17,6 +17,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/personal-stack/jira-cli/generator"
+	"github.com/personal-stack/jira-cli/internal/logging"
 )
 
 func main() {
@@ -36,8 +38,27 @@ func main() {
 	root := fs.String("root", ".", "repository root")
 	manifest := fs.String("manifest", "specs/manifest.yaml", "manifest path relative to root")
 	out := fs.String("out", "generated", "output directory relative to root")
+	verbose := fs.Bool("v", false, "verbose (debug) logging")
+	logFormat := fs.String("log-format", "", "log format: text or json (default: $JIRA_LOG_FORMAT, else text)")
 	_ = fs.Parse(os.Args[2:])
-	opts := generator.Options{Root: *root, Manifest: *manifest, OutDir: *out}
+	level := os.Getenv(logging.EnvLevel)
+	if level == "" {
+		level = "info"
+	}
+	if *verbose {
+		level = "debug"
+	}
+	if *logFormat == "" {
+		*logFormat = os.Getenv(logging.EnvFormat)
+	}
+	log, closer, lerr := logging.New(os.Stderr, logging.Options{Level: level, Format: *logFormat, File: os.Getenv(logging.EnvFile),
+		Attrs: []slog.Attr{slog.String("component", "jiragen"), slog.String("run_id", logging.NewID()), slog.String("command", os.Args[1])}})
+	if lerr != nil {
+		fmt.Fprintln(os.Stderr, "jiragen:", lerr)
+		os.Exit(2)
+	}
+	defer closer.Close()
+	opts := generator.Options{Root: *root, Manifest: *manifest, OutDir: *out, Log: log}
 
 	var err error
 	switch os.Args[1] {
@@ -54,6 +75,8 @@ func main() {
 		os.Exit(2)
 	}
 	if err != nil {
+		log.Error("failed", "error", err)
+		closer.Close()
 		fmt.Fprintln(os.Stderr, "jiragen:", err)
 		os.Exit(1)
 	}

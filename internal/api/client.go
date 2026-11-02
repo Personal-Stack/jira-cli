@@ -6,17 +6,20 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/personal-stack/jira-cli/internal/auth"
 	"github.com/personal-stack/jira-cli/internal/clierr"
+	"github.com/personal-stack/jira-cli/internal/logging"
 	"github.com/personal-stack/jira-cli/internal/transport"
 )
 
@@ -80,32 +83,53 @@ func (c *Client) URL(path string, q url.Values) string {
 	return u.String()
 }
 
-// Do sends the request with retries and auth refresh.
+// Do sends the request with retries and auth refresh. Every attempt is
+// logged at debug level with a request_id shared by all attempts, the
+// Jira-side request ID (X-AREQUESTID, for correlation with Jira's access
+// log) and, at debug level, connection timings.
 func (c *Client) Do(ctx context.Context, r Request) (*Response, error) {
 	full := c.URL(r.Path, r.Query)
 	policy := transport.RetryPolicy{MaxAttempts: c.MaxAttempts, Idempotent: r.Idempotent}
+	log := c.log().With("request_id", logging.NewID()[:8], "method", r.Method)
+	debug := log.Enabled(ctx, slog.LevelDebug)
 	refreshed := false
 	for attempt := 1; ; attempt++ {
 		req, err := c.build(ctx, r, full)
 		if err != nil {
+			log.Debug("http request not built", "error", err)
 			return nil, err
+		}
+		var tm *timings
+		if debug {
+			tm = &timings{}
+			req = req.WithContext(httptrace.WithClientTrace(req.Context(), tm.trace()))
+			log.Debug("http request", "url", full, "attempt", attempt, "idempotent", r.Idempotent, "body_bytes", len(r.Body))
 		}
 		start := time.Now()
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
-			c.log().Debug("request failed", "method", r.Method, "path", r.Path, "attempt", attempt, "error", err.Error())
+			e := clierr.Classify(err)
+			log.Debug("http error", "attempt", attempt, "duration_ms", time.Since(start).Milliseconds(), "layer", string(e.Layer), "error", err)
 			if retry, wait := policy.Next(attempt, nil, err); retry {
+				log.Info("http retry", "attempt", attempt, "wait_ms", wait.Milliseconds(), "reason", string(e.Layer))
 				if serr := transport.Sleep(ctx, wait); serr != nil {
 					return nil, clierr.Classify(serr)
 				}
 				continue
 			}
-			return nil, clierr.Classify(err)
+			return nil, e
 		}
 		body, rerr := io.ReadAll(io.LimitReader(resp.Body, MaxResponseSize+1))
 		resp.Body.Close()
-		c.log().Debug("response", "method", r.Method, "path", r.Path, "status", resp.StatusCode,
-			"attempt", attempt, "duration_ms", time.Since(start).Milliseconds(), "bytes", len(body))
+		if debug {
+			attrs := []any{"status", resp.StatusCode, "attempt", attempt, "duration_ms", time.Since(start).Milliseconds(),
+				"bytes", len(body), "content_type", resp.Header.Get("Content-Type")}
+			if id := resp.Header.Get("X-AREQUESTID"); id != "" {
+				attrs = append(attrs, "jira_request_id", id)
+			}
+			attrs = append(attrs, tm.attrs()...)
+			log.Debug("http response", attrs...)
+		}
 		if rerr != nil {
 			return nil, clierr.Wrap(clierr.LayerTransport, "read_failed", "reading response body failed", rerr)
 		}
@@ -119,28 +143,62 @@ func (c *Client) Do(ctx context.Context, r Request) (*Response, error) {
 		if resp.StatusCode == http.StatusUnauthorized && !refreshed {
 			if rf, ok := c.Auth.(auth.Refresher); ok {
 				refreshed = true
-				if err := rf.Refresh(ctx); err == nil {
+				err := rf.Refresh(ctx)
+				log.Info("auth refresh after 401", "ok", err == nil)
+				if err == nil {
 					continue
 				}
 			}
 		}
 		if retry, wait := policy.Next(attempt, resp, nil); retry {
-			c.log().Debug("retrying", "status", resp.StatusCode, "wait", wait.String())
+			log.Info("http retry", "attempt", attempt, "status", resp.StatusCode, "wait_ms", wait.Milliseconds())
 			if serr := transport.Sleep(ctx, wait); serr != nil {
 				return nil, clierr.Classify(serr)
 			}
 			continue
 		}
 		if resp.StatusCode >= 400 {
-			return out, APIError(out)
+			e := APIError(out)
+			log.Debug("http request failed", "status", resp.StatusCode, "layer", string(e.Layer), "error_code", e.Code)
+			return out, e
 		}
 		if !r.AcceptHTML && isHTML(out.ContentType) {
+			log.Warn("unexpected HTML response", "status", resp.StatusCode, "url", full)
 			return out, clierr.New(clierr.LayerAuth, "unexpected_html",
 				"received an HTML page instead of an API response").
 				WithHint("a reverse proxy or SSO gateway probably intercepted the request (login page); check base_url and authentication")
 		}
 		return out, nil
 	}
+}
+
+// timings records connection phases via net/http/httptrace.
+type timings struct {
+	dnsStart, connStart, tlsStart, wrote time.Time
+	dns, conn, tls, ttfb                 time.Duration
+	reused                               bool
+}
+
+func (t *timings) trace() *httptrace.ClientTrace {
+	return &httptrace.ClientTrace{
+		DNSStart:             func(httptrace.DNSStartInfo) { t.dnsStart = time.Now() },
+		DNSDone:              func(httptrace.DNSDoneInfo) { t.dns = time.Since(t.dnsStart) },
+		ConnectStart:         func(string, string) { t.connStart = time.Now() },
+		ConnectDone:          func(string, string, error) { t.conn = time.Since(t.connStart) },
+		TLSHandshakeStart:    func() { t.tlsStart = time.Now() },
+		TLSHandshakeDone:     func(tls.ConnectionState, error) { t.tls = time.Since(t.tlsStart) },
+		GotConn:              func(i httptrace.GotConnInfo) { t.reused = i.Reused },
+		WroteRequest:         func(httptrace.WroteRequestInfo) { t.wrote = time.Now() },
+		GotFirstResponseByte: func() { t.ttfb = time.Since(t.wrote) },
+	}
+}
+
+func (t *timings) attrs() []any {
+	if t == nil {
+		return nil
+	}
+	ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
+	return []any{"conn_reused", t.reused, "dns_ms", ms(t.dns), "connect_ms", ms(t.conn), "tls_ms", ms(t.tls), "ttfb_ms", ms(t.ttfb)}
 }
 
 func (c *Client) build(ctx context.Context, r Request, full string) (*http.Request, error) {
@@ -176,7 +234,7 @@ func (c *Client) build(ctx context.Context, r Request, full string) (*http.Reque
 
 func (c *Client) log() *slog.Logger {
 	if c.Log == nil {
-		return slog.New(slog.DiscardHandler)
+		return logging.Discard()
 	}
 	return c.Log
 }

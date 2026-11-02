@@ -187,3 +187,24 @@ func TestRetryPolicy(t *testing.T) {
 		t.Fail()
 	}
 }
+
+func TestProxyConnectRefusedIsClassified(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodConnect {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer proxy.Close()
+	in := &config.Instance{BaseURL: "https://jira.example.internal", Proxy: config.Proxy{URL: proxy.URL}}
+	c, err := New(in, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = get(t, c, "https://jira.example.internal/rest/api/2/serverInfo")
+	e := clierr.Classify(err)
+	if e.Layer != clierr.LayerProxy || e.Code != "proxy_connect_refused" || e.HTTPStatus != 403 {
+		t.Fatalf("got %+v (%v)", e, err)
+	}
+}

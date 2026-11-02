@@ -9,6 +9,7 @@ authentication, TLS, retries and safety checks are implemented once, centrally.
 - Custom CA bundles, mTLS, corporate proxies, strict redirect policy
 - JSON (default), YAML and table output, with no fields dropped
 - Risk-aware execution: read-only mode, confirmation for destructive/administrative operations, `--dry-run`
+- Structured, redacted logging with per-run and per-request correlation IDs (`--log-level`, `--log-format json`, `--log-file`)
 - Machine-readable discovery (`commands list`, `capabilities`) and an [Agent Skill](skills/jira/SKILL.md)
 
 > **Status:** implementation phases 1-3 and 5 are complete and tested against
@@ -88,5 +89,6 @@ docker run --rm \
 | Agent integration | [docs/agent-integration.md](docs/agent-integration.md), [skills/jira/SKILL.md](skills/jira/SKILL.md) |
 | Security and threat model | [docs/security.md](docs/security.md) |
 | Development and contributing | [docs/development.md](docs/development.md) |
+| Logging, tracing, CI artifacts | [docs/logging.md](docs/logging.md) |
 | Troubleshooting | [skills/jira/references/troubleshooting.md](skills/jira/references/troubleshooting.md) |
 | Progress, open items | [PROGRESS.md](PROGRESS.md) |

@@ -32,4 +32,8 @@ expires within 14 days, or a secret file is group/world-readable.
 - `409`: concurrent modification or conflicting state; re-read and retry once if appropriate.
 - `404` (exit 6) also occurs when the user lacks *browse* permission: Jira hides existence.
 
-Use `-v` for debug logs (method, path, status, timing; never headers or bodies).
+Use `-v` for debug logs (never headers, bodies or secrets). For a
+machine-readable trace: `jira --log-level debug --log-format json <command> 2> trace.jsonl`.
+Every line carries `run_id`; HTTP lines carry `request_id`, timings
+(`dns_ms`, `connect_ms`, `tls_ms`, `ttfb_ms`) and `jira_request_id`, which a
+Jira administrator can look up in Jira's access log. See docs/logging.md.

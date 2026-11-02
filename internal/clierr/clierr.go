@@ -124,7 +124,15 @@ func Classify(err error) *Error {
 		recordErr   tls.RecordHeaderError
 		urlErr      *url.Error
 	)
+	var proxyRefused interface{ ProxyStatus() int }
 	switch {
+	case errors.As(err, &proxyRefused):
+		e := Wrap(LayerProxy, "proxy_connect_refused", "the proxy refused to open a tunnel to the Jira host", err)
+		e.HTTPStatus = proxyRefused.ProxyStatus()
+		if e.HTTPStatus == 407 {
+			return e.WithHint("the proxy requires authentication: set credentials in HTTPS_PROXY (from a secret)")
+		}
+		return e.WithHint("the Jira host is probably not on the proxy allow-list; check the proxy policy or NO_PROXY")
 	case errors.Is(err, os.ErrDeadlineExceeded) || isTimeout(err):
 		return Wrap(LayerTimeout, "timeout", "request timed out", err).WithHint("increase --timeout or check network reachability")
 	case errors.As(err, &dnsErr):

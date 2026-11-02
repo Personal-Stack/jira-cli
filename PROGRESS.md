@@ -4,7 +4,8 @@ Last updated: 2026-11-02. Branch: `claude/tender-bohr-rsigl2`.
 
 ## TL;DR
 
-- Phases 1, 2, 3 and 5 are implemented and pass 63 tests (unit, `httptest` integration over TLS, generator fixtures, race detector).
+- Phases 1, 2, 3 and 5 are implemented and pass 72 tests (unit, `httptest` integration over TLS, generator fixtures, race detector). Total statement coverage 68.3%.
+- Structured logging layer with redaction and correlation IDs is in place and exercised in CI (see "Logging" below).
 - **Nothing has been run against a real Jira Data Center instance yet.** That is Phase 4 and the next step (read-only plan below).
 - OAuth 2.0 is implemented to the RFC (auth code + PKCE + refresh) and tested against a fake authorization server only. Jira DC specifics (PKCE support, client secret requirement, refresh rotation) are unverified.
 
@@ -58,6 +59,15 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 - [x] `capabilities`, `commands list|describe`, `spec list|status`, `auth status` are machine-readable
 - [x] Risk-aware execution: read-only mode (config/flag/env), confirmation (typed, or `--yes`; unattended refusal), dry-run
 
+### Logging and CI traceability (added after the initial delivery)
+- [x] `internal/logging`: slog-based, text/JSON, level/file via flags (`--log-level --log-format --log-file`) or `JIRA_LOG_*`; files created `0600`
+- [x] Redacting handler on every record: sensitive keys, Bearer/Basic values, OAuth query parameters, URL userinfo (`TestRedaction`, 9 leak shapes plus over-redaction checks)
+- [x] Correlation: `run_id` per invocation, `request_id` per HTTP request (shared across retries), Jira's `X-AREQUESTID` as `jira_request_id`
+- [x] Trace events: command start/finish (exit code, error layer), config/instance selection, credential source (never value), operation + risk, safety refusals, HTTP request/response with DNS/connect/TLS/TTFB timings, retries, 401 refresh, pagination pages, generator stages (spec sha256, counts)
+- [x] CI: verbose race tests, coverage, `scripts/ci-smoke.sh` (13 commands with expected exit codes, JSON log validation, secret-leak scan over all artifacts), job summary, `ci-logs-*` artifacts (14 days); see docs/logging.md
+- [x] Bug found by the smoke test and fixed: a proxy refusing CONNECT (e.g. 403 from a corporate proxy) was classified as generic `http_transport`; now `proxy` / `proxy_connect_refused` with the proxy's status (`TestProxyConnectRefusedIsClassified`)
+- [x] `clierr` classification and exit-code unit tests (was an open item)
+
 ### Phase 6 (partial)
 - [x] Multi-stage Dockerfile (distroless, nonroot, ~20 MB). Built and run locally: headless mode with mounted secret works; no secrets in layers
 - [x] GitHub Actions CI: spec-validate, verify-generated, vet/gofmt, race tests, govulncheck, build, smoke test, docker build/run
@@ -77,7 +87,9 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 | Docker | built and run locally (with a sandbox-only CA workaround, not committed) | CI run |
 | govulncheck | **could not run** (vuln.go.dev blocked by sandbox network policy) | runs in CI |
 
-Coverage: generator 88%, api 82%, pat 85%, safety 100%, transport 72%, output 71%, credentials 64%, cli 64%, oauth 63%, config 61%. `clierr` has no direct tests (covered indirectly).
+Coverage (total 68.3%): generator 88%, api 82%, pat 85%, safety 100%, transport 72%, output 71%, credentials 64%, cli 64%, oauth 63%, config 61%; `clierr` and `logging` now have direct tests.
+
+The GitHub Actions workflow itself has not run yet (no CI run exists for this branch). Its test-job steps were executed locally with `bash -eo pipefail` and pass.
 
 ## Next: Phase 4, read-only verification against your Jira DC
 
@@ -95,7 +107,14 @@ instances:
     read_only: true
 ```
 
-Run with the extra guard `export JIRA_READ_ONLY=1`, then:
+Run with the extra guard `export JIRA_READ_ONLY=1` and capture a trace:
+
+```bash
+export JIRA_READ_ONLY=1
+export JIRA_LOG_LEVEL=debug JIRA_LOG_FORMAT=json JIRA_LOG_FILE=$PWD/phase4-trace.jsonl
+```
+
+then:
 
 ```bash
 make build && export PATH=$PWD/bin:$PATH
@@ -121,7 +140,8 @@ jira issue create --file examples/issue.json --dry-run
 ```
 
 Please send back: the `doctor` output, any non-zero exit with its stderr JSON,
-and anything where output looks wrong. Remove tokens/hostnames you consider
+`phase4-trace.jsonl` (redacted by design; still review it for hostnames/JQL you
+consider confidential), and anything where output looks wrong. Remove tokens/hostnames you consider
 sensitive (the CLI never prints tokens).
 
 ## Left / open items (prioritised)
@@ -132,7 +152,8 @@ sensitive (the CLI never prints tokens).
 4. Release process: version tagging, goreleaser (or equivalent) for multi-OS binaries, image publishing, SBOM. Not started.
 5. Risk review: a human pass over `generated/datacenter103/REPORT.md` risk column (73 `write` operations rely on heuristics).
 6. 40 remaining naming warnings: rename via overlay if any read badly in practice.
-7. Tests: `clierr` classification unit tests; proxy CONNECT integration test; keyring with a mock; OAuth `--manual` path.
-8. Optional: JSON-schema validation of nested request bodies (currently top-level type and required properties only; deeper validation is left to Jira, whose field configuration is instance-specific).
-9. Optional: response filtering (`--jq`-style). The spec lists it as optional; JSON passthrough plus `--fields` covers most needs.
-10. Jira Cloud: out of scope by design; the deployment abstraction is the extension point.
+7. Tests: keyring with a mock; OAuth `--manual` path.
+8. First real CI run: confirm the workflow (artifact upload, job summary, govulncheck) on GitHub.
+9. Optional: JSON-schema validation of nested request bodies (currently top-level type and required properties only; deeper validation is left to Jira, whose field configuration is instance-specific).
+10. Optional: response filtering (`--jq`-style). The spec lists it as optional; JSON passthrough plus `--fields` covers most needs.
+11. Jira Cloud: out of scope by design; the deployment abstraction is the extension point.

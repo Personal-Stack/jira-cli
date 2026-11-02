@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -49,6 +50,9 @@ func (s Secret) Reveal() string { return string(s.b) }
 // Empty reports whether the secret has no content.
 func (s Secret) Empty() bool { return len(s.b) == 0 }
 
+// LogValue keeps secrets out of structured logs (slog.LogValuer).
+func (s Secret) LogValue() slog.Value { return slog.StringValue("[REDACTED]") }
+
 func (s Secret) String() string                { return "[REDACTED]" }
 func (s Secret) GoString() string              { return "credentials.Secret{[REDACTED]}" }
 func (s Secret) MarshalJSON() ([]byte, error)  { return []byte(`"[REDACTED]"`), nil }
@@ -83,7 +87,12 @@ type Found struct {
 }
 
 // Chain queries providers in order.
-type Chain struct{ Providers []Provider }
+type Chain struct {
+	Providers []Provider
+	// Log receives secret-free resolution events (reference, source,
+	// warnings). Nil disables logging.
+	Log *slog.Logger
+}
 
 // Options configures the default chain.
 type Options struct {
@@ -131,13 +140,30 @@ func (c *Chain) Get(ref string) (*Found, error) {
 			if fp, ok := p.(sourced); ok {
 				f.Source, f.Warnings = fp.source(ref)
 			}
+			if c.Log != nil {
+				c.Log.Debug("credential resolved", "credential_ref", ref, "source", f.Source)
+				for _, w := range f.Warnings {
+					c.Log.Warn("credential file permissions", "credential_ref", ref, "detail", w)
+				}
+			}
 			return f, nil
 		}
+	}
+	if c.Log != nil {
+		c.Log.Debug("credential not found", "credential_ref", ref, "providers", c.names(), "errors", len(errs))
 	}
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("%w: %q (%v)", ErrNotFound, ref, errors.Join(errs...))
 	}
 	return nil, fmt.Errorf("%w: %q", ErrNotFound, ref)
+}
+
+func (c *Chain) names() []string {
+	out := make([]string, len(c.Providers))
+	for i, p := range c.Providers {
+		out[i] = p.Name()
+	}
+	return out
 }
 
 // Writer returns the first writable provider.

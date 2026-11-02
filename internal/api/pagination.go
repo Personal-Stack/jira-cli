@@ -125,6 +125,7 @@ func (c *Client) FetchAll(ctx context.Context, r Request, p Page) (*PageResult, 
 			}
 		}
 		all = append(all, items...)
+		c.log().Debug("page fetched", "page", res.Pages, "start_at", start, "items", len(items), "total_items", len(all), "done", done)
 		start += len(items)
 		if done {
 			res.Complete = true

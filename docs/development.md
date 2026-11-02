@@ -26,6 +26,7 @@ make verify-generated   # CI check
 make vet test           # gofmt check, go vet, tests
 make test-race
 make build              # bin/jira (static, trimmed)
+make smoke              # run the binary with JSON debug logs + secret-leak scan (see docs/logging.md)
 make docker
 ```
 

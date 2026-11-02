@@ -4,6 +4,7 @@
 package transport
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -48,6 +49,15 @@ func New(in *config.Instance, timeout time.Duration) (*http.Client, error) {
 		MaxIdleConnsPerHost:   8,
 		IdleConnTimeout:       90 * time.Second,
 		ForceAttemptHTTP2:     true,
+		// Turn a refused CONNECT into a typed error; otherwise Go reports
+		// only the proxy's status text (e.g. "Forbidden"), which cannot be
+		// attributed to the proxy layer.
+		OnProxyConnectResponse: func(_ context.Context, proxyURL *url.URL, _ *http.Request, res *http.Response) error {
+			if res.StatusCode/100 != 2 {
+				return &ProxyConnectError{Proxy: proxyURL.Host, StatusCode: res.StatusCode, Status: res.Status}
+			}
+			return nil
+		},
 	}
 	return &http.Client{Transport: tr, Timeout: request, CheckRedirect: CheckRedirect}, nil
 }
@@ -67,6 +77,20 @@ func ProxyFunc(p config.Proxy) (func(*http.Request) (*url.URL, error), error) {
 	}
 	return http.ProxyFromEnvironment, nil
 }
+
+// ProxyConnectError is returned when the proxy rejects the CONNECT tunnel.
+type ProxyConnectError struct {
+	Proxy      string
+	StatusCode int
+	Status     string
+}
+
+func (e *ProxyConnectError) Error() string {
+	return fmt.Sprintf("proxy %s refused CONNECT: %s", e.Proxy, e.Status)
+}
+
+// ProxyStatus lets other packages detect the error without importing this one.
+func (e *ProxyConnectError) ProxyStatus() int { return e.StatusCode }
 
 // ErrDowngrade is returned for https -> http redirects.
 var ErrDowngrade = errors.New("refusing redirect from https to http")
