@@ -1,0 +1,276 @@
+version: 1
+schema_aliases:
+  # Jira's Java StringList type: declared as an empty object, sent as a
+  # comma-separated string (e.g. expand=renderedFields,names).
+  StringList: string
+rename_paths:
+  - from: /api/2/filter/{id}/permission/{permission-id}
+    to: /api/2/filter/{id}/permission/{permissionId}
+    reason: spec defect, same resource declared with two template names (OpenAPI forbids this)
+  - from: /api/2/permissionscheme/{permissionSchemeId}/attribute/{key}
+    to: /api/2/permissionscheme/{permissionSchemeId}/attribute/{attributeKey}
+    reason: spec defect, same resource declared with two template names (OpenAPI forbids this)
+exclude:
+  - method: POST
+    path: /auth/1/session
+    reason: cookie-based session login; the CLI authenticates with PAT/OAuth only
+  - method: DELETE
+    path: /auth/1/session
+    reason: cookie-based session logout; not applicable to PAT/OAuth
+  - method: GET
+    path: /auth/1/session
+    reason: cookie-based session info; use `jira auth test` instead
+operations:
+  DELETE /api/2/filter/{id}/permission/{permissionId}:
+    params:
+      permission-id:
+        drop: true
+        reason: spec defect, duplicate of permissionId after path rename
+  PUT /api/2/permissionscheme/{permissionSchemeId}/attribute/{attributeKey}:
+    params:
+      key:
+        rename: attributeKey
+        reason: follows the path rename above
+  GET /api/2/group/member:
+    params:
+      groupname:
+        in: query
+        reason: spec defect, declared as path parameter but path has no template slot
+  DELETE /api/2/issuetype/{id}:
+    command: delete
+    params:
+      alternativeIssueTypeId:
+        in: query
+        reason: spec defect, declared as path parameter but path has no template slot
+
+  # --- Duplicate operationIds in the official spec (invalid OpenAPI). ---
+  GET /agile/1.0/issue/{issueIdOrKey}:
+    operation_id: getAgileIssue
+  GET /agile/1.0/board/{boardId}/properties:
+    operation_id: getBoardPropertyKeys
+  GET /agile/1.0/board/{boardId}/properties/{propertyKey}:
+    operation_id: getBoardProperty
+  PUT /agile/1.0/board/{boardId}/properties/{propertyKey}:
+    operation_id: setBoardProperty
+  GET /agile/1.0/sprint/{sprintId}/properties:
+    operation_id: getSprintPropertyKeys
+  GET /agile/1.0/sprint/{sprintId}/properties/{propertyKey}:
+    operation_id: getSprintProperty
+  PUT /agile/1.0/sprint/{sprintId}/properties/{propertyKey}:
+    operation_id: setSprintProperty
+  DELETE /agile/1.0/sprint/{sprintId}/properties/{propertyKey}:
+    operation_id: deleteSprintProperty
+  GET /api/2/application-properties:
+    operation_id: getApplicationProperty
+  GET /api/2/comment/{commentId}/properties:
+    operation_id: getCommentPropertyKeys
+  PUT /api/2/comment/{commentId}/properties/{propertyKey}:
+    operation_id: setCommentProperty
+  GET /api/2/dashboard/{dashboardId}/items/{itemId}/properties:
+    operation_id: getDashboardItemPropertyKeys
+  GET /api/2/dashboard/{dashboardId}/items/{itemId}/properties/{propertyKey}:
+    operation_id: getDashboardItemProperty
+  PUT /api/2/dashboard/{dashboardId}/items/{itemId}/properties/{propertyKey}:
+    operation_id: setDashboardItemProperty
+  DELETE /api/2/dashboard/{dashboardId}/items/{itemId}/properties/{propertyKey}:
+    operation_id: deleteDashboardItemProperty
+
+  # --- Command-name collisions within a group. ---
+  POST /api/2/monitoring/app:
+    command: set-app-enabled
+  POST /api/2/monitoring/ipd:
+    command: set-ipd-enabled
+  GET /api/2/priority/page:
+    command: list-paginated
+  POST /api/2/version/{versionId}/remotelink/{globalId}:
+    command: create-or-update-remote-link-by-global-id
+
+  # --- Curated command names (mechanical names were unclear or inconsistent). ---
+  GET /api/2/search:
+    group: issue
+    command: search
+  POST /api/2/search:
+    group: issue
+    command: search-post
+  PUT /api/2/applicationrole/{key}:
+    command: update
+  PUT /api/2/applicationrole:
+    command: update-bulk
+  PUT /api/2/issue/{issueIdOrKey}/archive:
+    command: archive
+  POST /api/2/issue/archive:
+    command: archive-bulk
+  POST /api/2/issue:
+    body_required: true
+    command: create
+  POST /api/2/issue/bulk:
+    body_required: true
+    command: create-bulk
+  GET /api/2/issue/{issueIdOrKey}/worklog:
+    command: get-worklogs
+  GET /api/2/issue/picker:
+    command: picker
+  GET /api/2/issue/{issueIdOrKey}/properties:
+    command: get-property-keys
+  GET /api/2/issueLinkType/{issueLinkTypeId}:
+    command: get
+  GET /api/2/issueLinkType:
+    command: list
+  GET /api/2/issuesecurityschemes/{id}:
+    command: get
+  GET /api/2/issuesecurityschemes:
+    command: list
+  POST /api/2/issuetype:
+    command: create
+  GET /api/2/issuetype/{id}:
+    command: get
+  GET /api/2/issuetype:
+    command: list
+  GET /api/2/issuetype/page:
+    command: list-paginated
+  PUT /api/2/issuetype/{id}:
+    command: update
+  GET /api/2/issuetype/{id}/alternatives:
+    command: get-alternatives
+  POST /api/2/issuetype/{id}/avatar/temporary:
+    command: store-temporary-avatar-multipart
+  POST /api/2/issuetypescheme:
+    command: create
+  DELETE /api/2/issuetypescheme/{schemeId}:
+    command: delete
+  GET /api/2/issuetypescheme:
+    command: list
+  GET /api/2/issuetypescheme/{schemeId}:
+    command: get
+  PUT /api/2/issuetypescheme/{schemeId}:
+    command: update
+  GET /api/2/notificationscheme/{id}:
+    command: get
+  GET /api/2/notificationscheme:
+    command: list
+  POST /api/2/permissionscheme:
+    command: create
+  DELETE /api/2/permissionscheme/{schemeId}:
+    command: delete
+  GET /api/2/permissionscheme/{schemeId}:
+    command: get
+  GET /api/2/permissionscheme:
+    command: list
+  PUT /api/2/permissionscheme/{schemeId}:
+    command: update
+  POST /api/2/permissionscheme/{schemeId}/permission:
+    command: create-grant
+  DELETE /api/2/permissionscheme/{schemeId}/permission/{permissionId}:
+    command: delete-grant
+  GET /api/2/permissionscheme/{schemeId}/permission/{permissionId}:
+    command: get-grant
+  GET /api/2/permissionscheme/{schemeId}/permission:
+    command: list-grants
+  GET /api/2/priority:
+    command: list
+  POST /api/2/priorityschemes:
+    command: create
+  DELETE /api/2/priorityschemes/{schemeId}:
+    command: delete
+  GET /api/2/priorityschemes/{schemeId}:
+    command: get
+  GET /api/2/priorityschemes:
+    command: list
+  PUT /api/2/priorityschemes/{schemeId}:
+    command: update
+  GET /api/2/projectCategory:
+    command: list
+  GET /api/2/projectCategory/{id}:
+    command: get
+  GET /api/2/project/{projectIdOrKey}/properties:
+    command: get-property-keys
+  POST /api/2/project/{projectIdOrKey}/avatar/temporary:
+    command: store-temporary-avatar-multipart
+  GET /api/2/resolution/{id}:
+    command: get
+  GET /api/2/resolution:
+    command: list
+  POST /api/2/role:
+    command: create
+  DELETE /api/2/role/{id}:
+    command: delete
+  GET /api/2/role:
+    command: list
+  GET /api/2/role/{id}:
+    command: get
+  PUT /api/2/role/{id}:
+    command: update
+  POST /api/2/role/{id}:
+    command: partial-update
+  POST /api/2/role/{id}/actors:
+    command: add-actors
+  DELETE /api/2/role/{id}/actors:
+    command: delete-actors
+  GET /api/2/role/{id}/actors:
+    command: get-actors
+  GET /api/2/status:
+    command: list
+  GET /api/2/status/page:
+    command: list-paginated
+  GET /api/2/statuscategory:
+    command: list
+  GET /api/2/statuscategory/{idOrKey}:
+    command: get
+  GET /api/2/securitylevel/{id}:
+    command: get
+  GET /api/2/user/properties:
+    command: get-property-keys
+  POST /api/2/user/avatar/temporary:
+    command: store-temporary-avatar-multipart
+  GET /api/2/myself:
+    command: get
+  PUT /api/2/myself:
+    command: update
+  PUT /api/2/myself/password:
+    command: change-password
+  POST /api/2/universal_avatar/type/{type}/owner/{owningObjectId}/avatar:
+    command: create-from-temporary
+  DELETE /api/2/universal_avatar/type/{type}/owner/{owningObjectId}/avatar/{id}:
+    command: delete
+  GET /api/2/universal_avatar/type/{type}/owner/{owningObjectId}:
+    command: list
+  POST /api/2/universal_avatar/type/{type}/owner/{owningObjectId}/temp:
+    command: store-temporary-multipart
+  POST /api/2/workflowscheme:
+    command: create
+  DELETE /api/2/workflowscheme/{id}:
+    command: delete
+  GET /api/2/workflowscheme/{id}:
+    command: get
+  GET /api/2/field:
+    command: list
+  POST /api/2/reindex:
+    command: run
+
+  # --- requestBody.required corrections: the spec marks these bodies optional,
+  # but the operations are meaningless without one. (Entries that also rename
+  # a command carry body_required inline above.) ---
+  POST /api/2/issue/{issueIdOrKey}/attachments:
+    body_required: true
+  POST /api/2/issue/{issueIdOrKey}/comment:
+    body_required: true
+  POST /api/2/issue/{issueIdOrKey}/watchers:
+    body_required: true
+  POST /api/2/issue/{issueIdOrKey}/worklog:
+    body_required: true
+  PUT /api/2/issue/{issueIdOrKey}/assignee:
+    body_required: true
+  POST /api/2/issue/{issueIdOrKey}/remotelink:
+    body_required: true
+  POST /api/2/issue/{issueIdOrKey}/transitions:
+    body_required: true
+  PUT /api/2/issue/{issueIdOrKey}:
+    body_required: true
+  POST /api/2/issue/{issueIdOrKey}/notify:
+    body_required: true
+  PUT /api/2/issue/{issueIdOrKey}/comment/{id}:
+    body_required: true
+  PUT /api/2/issue/{issueIdOrKey}/remotelink/{linkId}:
+    body_required: true
+  PUT /api/2/issue/{issueIdOrKey}/worklog/{id}:
+    body_required: true

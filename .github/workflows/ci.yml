@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Validate specifications
+        run: make spec-validate
+      - name: Verify generated code is up to date
+        run: make verify-generated
+      - name: Vet and format
+        run: make vet
+      - name: Unit, integration and generation tests (race detector)
+        run: make test-race
+      - name: Vulnerability scan
+        run: make security
+      - name: Build
+        run: make build
+      - name: Smoke test
+        run: ./bin/jira commands list --output json > /dev/null
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t jira-cli:ci .
+      - name: Run without config or credentials
+        run: docker run --rm jira-cli:ci spec status --output json

@@ -1,0 +1,19 @@
+# Specification manifest. Versions and checksums are verified by `make generate`;
+# refresh them with `go run ./cmd/jiragen update` after reviewing a spec change.
+version: 1
+profiles:
+  - name: datacenter-10.3
+    deployment: datacenter
+    base_path: /rest
+    specs:
+      - name: jira-software-datacenter
+        source: official
+        path: specs/official/jira-datacenter-10.3.26.json
+        version: 10.3.26
+        sha256: faf06f50fcfb36ecddbbf452bf989c4abb915520f9ca2ee25b24e61f623d89bd
+    overlays:
+      - path: specs/overlays/datacenter-10.3.yaml
+        sha256: 4f6df078cb5591f7376acb479b83871dc62ac5f34f776749873cd35ef6ea15c4
+    risk:
+      path: specs/risk/datacenter-10.3.yaml
+      sha256: 5e5e7fad466a4a13480c0c776bde9efb787ebfc144ec04e7af6837343b4b6b95

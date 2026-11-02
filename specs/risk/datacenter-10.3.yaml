@@ -1,0 +1,91 @@
+# Business-risk metadata for profile datacenter-10.3.
+#
+# Precedence: an explicit `operations` entry wins. Otherwise the HTTP method
+# sets the baseline (GET=read, POST/PUT=write, DELETE=destructive), then
+# heuristics can only raise it:
+#   - non-GET operations under `admin_tags` become administrative;
+#   - non-GET operations whose operationId contains a `destructive_words`
+#     word become destructive.
+# destructive and administrative operations require confirmation (--yes).
+version: 1
+
+admin_tags:
+  - application-properties
+  - applicationrole
+  - cluster
+  - customFields
+  - email-templates
+  - field
+  - group
+  - index
+  - index-snapshot
+  - issueLinkType
+  - issuesecurityschemes
+  - issuetype
+  - issuetypescheme
+  - licenseValidator
+  - monitoring
+  - notificationscheme
+  - permissionscheme
+  - priorityschemes
+  - projectCategory
+  - readonly-mode
+  - reindex
+  - role
+  - screens
+  - settings
+  - terminology
+  - upgrade
+  - user
+  - websudo
+  - workflowscheme
+
+destructive_words: [delete, remove, archive, reindex, swap, reset, purge, anonymization]
+
+operations:
+  # POST operations that only read data.
+  searchUsingSearchRequest:
+    risk: read
+    idempotent: true
+    reason: JQL search via POST body (for long queries); no side effects
+  getWorklogsForIds:
+    risk: read
+    idempotent: true
+    reason: returns worklogs for the posted IDs; no side effects
+  policyCheckCreateUser:
+    risk: read
+    idempotent: true
+    reason: evaluates the password policy only
+  policyCheckUpdateUser:
+    risk: read
+    idempotent: true
+    reason: evaluates the password policy only
+  validate:
+    risk: read
+    idempotent: true
+    reason: validates a license string; does not apply it
+
+  # Reversible personal actions; DELETE-by-method would over-classify them.
+  removeVote:
+    risk: write
+    reason: reversible with `issue add-vote`
+  removeWatcher_1:
+    risk: write
+    reason: reversible with `issue add-watcher`
+  removePreference:
+    risk: write
+    reason: removes a personal preference of the calling user; reversible
+
+  # Irreversible operations that must always be confirmed.
+  scheduleUserAnonymization:
+    risk: destructive
+    reason: irreversibly anonymizes a user
+  scheduleUserAnonymizationRerun:
+    risk: destructive
+    reason: irreversibly anonymizes a user
+  changeUserPassword:
+    risk: administrative
+    reason: changes another user's password
+  updateReadOnlyMode:
+    risk: administrative
+    reason: switches the whole instance to/from read-only mode
