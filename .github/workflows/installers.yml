@@ -1,0 +1,118 @@
+name: installers
+
+# Exercises scripts/install.sh (Linux, macOS) and scripts/install.ps1
+# (Windows, PowerShell 7 and Windows PowerShell 5.1) against real release
+# archives served from a local mirror.
+
+on:
+  pull_request:
+    paths:
+      - "scripts/install.*"
+      - "scripts/dist.sh"
+      - "scripts/test-install.sh"
+      - "cmd/**"
+      - ".github/workflows/installers.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TEST_VERSION: v0.0.0-installtest
+
+jobs:
+  dist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Lint shell scripts
+        run: shellcheck -s sh scripts/install.sh && shellcheck scripts/*.sh e2e/*.sh
+      - name: Build archives
+        run: scripts/dist.sh "$TEST_VERSION" dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+  unix:
+    needs: dist
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Installer tests (install.sh)
+        run: scripts/test-install.sh dist
+
+  windows:
+    needs: dist
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [pwsh, powershell]   # PowerShell 7 and Windows PowerShell 5.1
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Serve archives from a local mirror
+        run: |
+          New-Item -ItemType Directory -Force mirror/$env:TEST_VERSION | Out-Null
+          Copy-Item dist/* mirror/$env:TEST_VERSION/
+          Set-Content -NoNewline mirror/LATEST $env:TEST_VERSION
+          Start-Process python -ArgumentList '-m','http.server','8765','--bind','127.0.0.1','--directory','mirror' -WindowStyle Hidden
+          Start-Sleep 3
+      - name: Install (latest from mirror)
+        run: ./scripts/install.ps1 -BaseUrl http://127.0.0.1:8765
+      - name: Verify in a new process with the persisted user PATH
+        run: |
+          $userPath = [Environment]::GetEnvironmentVariable('Path','User')
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\jira-cli\bin'
+          if (-not ($userPath.Split(';') -contains $dir)) { throw "user PATH does not contain $dir" }
+          $out = & powershell -NoProfile -Command "`$env:Path = [Environment]::GetEnvironmentVariable('Path','User') + ';' + `$env:Path; jira --version"
+          if ($out -notmatch $env:TEST_VERSION) { throw "unexpected version output: $out" }
+          Write-Host "OK: $out"
+      - name: Re-install is idempotent (single PATH entry)
+        run: |
+          ./scripts/install.ps1 -BaseUrl http://127.0.0.1:8765 -Version $env:TEST_VERSION
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\jira-cli\bin'
+          $n = @([Environment]::GetEnvironmentVariable('Path','User').Split(';') | Where-Object { $_ -ieq $dir }).Count
+          if ($n -ne 1) { throw "PATH entry count: $n" }
+      - name: Tampered archive is rejected
+        run: |
+          New-Item -ItemType Directory -Force mirror/v9.9.9 | Out-Null
+          $src = Get-ChildItem mirror/$env:TEST_VERSION/*windows_amd64.zip
+          $dst = "mirror/v9.9.9/jira-cli_9.9.9_windows_amd64.zip"
+          Copy-Item $src $dst
+          Add-Content $dst 'tampered'
+          (Get-Content mirror/$env:TEST_VERSION/SHA256SUMS) -replace $env:TEST_VERSION.TrimStart('v'), '9.9.9' | Set-Content mirror/v9.9.9/SHA256SUMS
+          $p = Start-Process ${{ matrix.shell }} -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/install.ps1','-BaseUrl','http://127.0.0.1:8765','-Version','v9.9.9','-InstallDir',"$env:RUNNER_TEMP\tamper" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -eq 0) { throw 'tampered archive was accepted' }
+          if (Test-Path "$env:RUNNER_TEMP\tamper\jira.exe") { throw 'binary installed despite checksum mismatch' }
+      - name: Uninstall
+        run: |
+          ./scripts/install.ps1 -Uninstall
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\jira-cli\bin'
+          if (Test-Path (Join-Path $dir 'jira.exe')) { throw 'binary left behind' }
+          if ([Environment]::GetEnvironmentVariable('Path','User').Split(';') -contains $dir) { throw 'PATH entry left behind' }

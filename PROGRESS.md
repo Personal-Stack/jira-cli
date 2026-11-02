@@ -75,6 +75,13 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 - [x] `run.sh --boot-only` executed here (as root and as an unprivileged docker-group user): stack boots in ~75 s, the CLI image passes config/DNS/TCP/TLS through the proxy with the custom CA, Jira's setup-mode 503 is attributed to the HTTP/API layer, retries and `X-AREQUESTID` correlation observed in the CLI log
 - [x] CI: `.github/workflows/e2e.yml`, boot-only on relevant PRs; full run nightly/on demand when the `JIRA_E2E_LICENSE` secret exists
 
+### Installation
+- [x] `scripts/install.sh` (Linux/macOS, POSIX sh): release download (mirror, `gh`, `GITHUB_TOKEN`, public URL), SHA256 verification, `~/.local/bin`, idempotent PATH block for bash/zsh/fish/sh, completions, custom binary name, offline archive, from source, uninstall that restores rc files byte-for-byte, shadowing warning
+- [x] `scripts/install.ps1` (Windows PowerShell 5.1/7): same model with the user PATH. **Not executed in this sandbox** (running PowerShell was blocked by its policy); covered by the `installers` CI workflow on `windows-latest`, which has not run yet
+- [x] `scripts/dist.sh` / `make dist` (6 platforms, reproducible tarballs, SHA256SUMS), `release.yml` on `v*` tags, `make install|uninstall|test-install`
+- [x] `scripts/test-install.sh`: 26 scenarios under `dash`, all passing here; found and fixed 2 installer bugs (uninstall exit code; blank-line drift in rc files)
+- [ ] No release has been published yet, so the download path only works after the first tag (`git tag v0.1.0 && git push origin v0.1.0`)
+
 ### Phase 6 (partial)
 - [x] Multi-stage Dockerfile (distroless, nonroot, ~20 MB). Built and run locally: headless mode with mounted secret works; no secrets in layers
 - [x] GitHub Actions CI: spec-validate, verify-generated, vet/gofmt, race tests, govulncheck, build, smoke test, docker build/run
@@ -168,7 +175,7 @@ sensitive (the CLI never prints tokens).
 2. **Phase 4 results**: fix whatever the real instance shows (pagination caps, version differences, auth).
 3. OAuth against real Jira DC: confirm endpoints (`/rest/oauth2/latest/...`), PKCE, client secret, scopes, refresh rotation; adjust docs.
 4. Keyring backends: manual test on macOS/Windows/Linux desktop.
-5. Release process: version tagging, goreleaser (or equivalent) for multi-OS binaries, image publishing, SBOM. Not started.
+5. Release process: `release.yml` + installers exist (see Installation below); still missing: first tag, container image publishing, SBOM/signing.
 6. Risk review: a human pass over `generated/datacenter103/REPORT.md` risk column (73 `write` operations rely on heuristics).
 7. 40 remaining naming warnings: rename via overlay if any read badly in practice.
 8. Tests: keyring with a mock; OAuth `--manual` path.

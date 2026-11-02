@@ -3,7 +3,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 BIN     := bin/jira
 
-.PHONY: all spec-validate spec-update security smoke e2e e2e-boot generate verify-generated test test-race vet lint build docker clean
+.PHONY: all spec-validate spec-update security smoke e2e e2e-boot dist install uninstall test-install generate verify-generated test test-race vet lint build docker clean
 
 all: verify-generated vet test build
 
@@ -48,6 +48,21 @@ e2e:
 ## Boot Jira and run CLI diagnostics through the TLS proxy (no license needed).
 e2e-boot:
 	e2e/run.sh --boot-only
+
+## Release archives for all platforms + SHA256SUMS in dist/.
+dist:
+	scripts/dist.sh $(VERSION) dist
+
+## Build from this checkout and install to ~/.local/bin (or PREFIX/bin), adding it to PATH.
+install:
+	scripts/install.sh --from-source . $(if $(PREFIX),--dir $(PREFIX)/bin,)
+
+uninstall:
+	scripts/install.sh --uninstall $(if $(PREFIX),--dir $(PREFIX)/bin,)
+
+## Installer tests in isolated HOMEs against a local mirror.
+test-install:
+	scripts/test-install.sh
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/jira

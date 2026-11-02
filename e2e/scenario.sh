@@ -3,7 +3,7 @@
 # the CLI image inside the compose network and checks the exit code; JSON
 # assertions run on the host with python3. IDs come from earlier outputs.
 set -uo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 OUT=.work/logs/steps
 mkdir -p "$OUT"
 RESULTS=.work/logs/e2e-results.jsonl
@@ -15,7 +15,8 @@ cli() { docker compose --profile cli run --rm -T cli "$@"; }
 # step <name> <expected-exit> <args...>   (stdin is passed through)
 step() {
   local name=$1 want=$2; shift 2
-  local t0=$(date +%s%N)
+  local t0
+  t0=$(date +%s%N)
   cli "$@" > "$OUT/$name.out" 2> "$OUT/$name.err"
   local got=$? ms=$(( ($(date +%s%N) - t0) / 1000000 ))
   local ok=true
@@ -60,7 +61,8 @@ check server-info           'd["version"] == "10.3.26"'
 
 echo "== negative paths (layer attribution)"
 step no-ca-bundle           8 --instance e2e-no-ca myself get
-grep -q '"tls_certificate"' "$OUT/no-ca-bundle.err" && echo "PASS    check                      no-ca-bundle -> tls_certificate" || { echo "FAIL  no-ca-bundle layer"; FAILED=1; }
+if grep -q '"tls_certificate"' "$OUT/no-ca-bundle.err"; then echo "PASS    check                      no-ca-bundle -> tls_certificate"
+else echo "FAIL  no-ca-bundle layer"; FAILED=1; fi
 printf 'not-a-valid-token' > .work/secrets/jira-e2e-bad-pat; chmod 644 .work/secrets/jira-e2e-bad-pat
 step bad-token              4 --instance e2e-badtoken auth test
 step bad-jql                7 issue search --jql 'project = = broken'

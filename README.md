@@ -20,10 +20,23 @@ authentication, TLS, retries and safety checks are implemented once, centrally.
 
 ## Install
 
+Linux / macOS (installs to `~/.local/bin` and adds it to `PATH`):
+
 ```bash
-make build                 # requires Go 1.27; produces bin/jira
-make docker                # distroless, non-root image
+gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber && sh /tmp/install.sh
 ```
+
+Windows (installs to `%LOCALAPPDATA%\Programs\jira-cli\bin` and adds it to the user `PATH`):
+
+```powershell
+gh release download -R Personal-Stack/jira-cli -p install.ps1 -D $env:TEMP --clobber
+powershell -ExecutionPolicy Bypass -File $env:TEMP\install.ps1
+```
+
+From a clone: `make install` (needs Go 1.27). Docker: `make docker`.
+The repository is private, so downloads use the GitHub CLI or `GITHUB_TOKEN`;
+mirrors, offline archives and uninstall are covered in
+[docs/installation.md](docs/installation.md).
 
 ## Configure
 
@@ -82,6 +95,7 @@ docker run --rm \
 
 | Topic | Document |
 |---|---|
+| Installation | [docs/installation.md](docs/installation.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
 | OpenAPI generation, overlays, spec updates | [docs/openapi-generation.md](docs/openapi-generation.md) |
 | Authentication (PAT, OAuth) | [docs/authentication.md](docs/authentication.md) |

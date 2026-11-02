@@ -1,0 +1,40 @@
+name: release
+
+# Push a tag like v0.1.0 to publish binaries for Linux, macOS and Windows
+# (amd64, arm64), SHA256SUMS and the installers as a GitHub release.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Verify
+        run: |
+          go run ./cmd/jiragen check
+          go test ./...
+      - name: Build archives
+        run: scripts/dist.sh "$GITHUB_REF_NAME" dist
+      - name: Attach installers
+        run: cp scripts/install.sh scripts/install.ps1 dist/
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes \
+            --title "jira-cli $GITHUB_REF_NAME"

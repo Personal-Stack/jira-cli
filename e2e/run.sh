@@ -31,7 +31,9 @@ if ! $BOOT_ONLY && [ -z "$E2E_LICENSE" ]; then
   exit 2
 fi
 
-export E2E_UID=$(id -u) E2E_GID=$(id -g)
+E2E_UID=$(id -u)
+E2E_GID=$(id -g)
+export E2E_UID E2E_GID
 log() { printf '%s  %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 DC="docker compose"
 mkdir -p .work/secrets .work/logs
