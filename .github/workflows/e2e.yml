@@ -1,0 +1,77 @@
+name: e2e
+
+# Jira Software Data Center 10.3 in Docker Compose, driven by the CLI image.
+# - boot-only: no license needed; runs on relevant pull requests.
+# - full: needs the repository secret JIRA_E2E_LICENSE (evaluation or
+#   timebomb license); runs nightly and on demand, skipped if the secret is
+#   absent.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+  pull_request:
+    paths:
+      - "e2e/**"
+      - "internal/**"
+      - "generated/**"
+      - "Dockerfile"
+      - ".github/workflows/e2e.yml"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  boot-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Boot Jira 10.3 and run CLI diagnostics through the TLS proxy
+        run: e2e/run.sh --boot-only
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-boot-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: e2e/.work/logs
+          retention-days: 14
+          if-no-files-found: warn
+
+  full:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      E2E_LICENSE: ${{ secrets.JIRA_E2E_LICENSE }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check license secret
+        id: lic
+        run: |
+          if [ -z "$E2E_LICENSE" ]; then
+            echo "::notice::JIRA_E2E_LICENSE secret not set; skipping full e2e"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::add-mask::$E2E_LICENSE"
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Full e2e (setup wizard, PAT, CLI scenario)
+        if: steps.lic.outputs.present == 'true'
+        run: e2e/run.sh
+      - name: Job summary
+        if: always() && steps.lic.outputs.present == 'true'
+        run: |
+          { echo "### e2e scenario"; echo '```'; grep -E '^(PASS|FAIL|SKIP|steps:)' e2e/.work/logs/scenario.log || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload logs
+        if: always() && steps.lic.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-full-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: e2e/.work/logs
+          retention-days: 14
+          if-no-files-found: warn

@@ -1,0 +1,84 @@
+# End-to-end environment: Jira Software Data Center 10.3 + PostgreSQL +
+# TLS reverse proxy + jira-cli. See e2e/README.md.
+name: jira-cli-e2e
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:15}
+    environment:
+      POSTGRES_DB: jira
+      POSTGRES_USER: jira
+      POSTGRES_PASSWORD: jira-e2e-db   # throwaway, network-internal only
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jira -d jira"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [jira]
+
+  jira:
+    image: ${JIRA_IMAGE:-atlassian/jira-software:10.3}
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      ATL_JDBC_URL: jdbc:postgresql://postgres:5432/jira
+      ATL_JDBC_USER: jira
+      ATL_JDBC_PASSWORD: jira-e2e-db
+      ATL_DB_DRIVER: org.postgresql.Driver
+      ATL_DB_TYPE: postgres72
+      JVM_MINIMUM_MEMORY: 1024m
+      JVM_MAXIMUM_MEMORY: 3072m
+      # Jira sits behind the TLS proxy, like most enterprise deployments.
+      ATL_PROXY_NAME: jira-proxy
+      ATL_PROXY_PORT: "8443"
+      ATL_TOMCAT_SCHEME: https
+      ATL_TOMCAT_SECURE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/status | grep -qE 'RUNNING|FIRST_RUN'"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    volumes:
+      - ./setup:/e2e-setup:ro
+      - ./.work/secrets:/e2e-secrets
+    networks: [jira]
+
+  jira-proxy:
+    image: ${NGINX_IMAGE:-nginx:1.27-alpine}
+    depends_on: [jira]
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./.work/certs:/certs:ro
+    ports:
+      - "127.0.0.1:${E2E_HTTPS_PORT:-8443}:8443"   # optional host access
+    networks: [jira]
+
+  # The CLI under test, built from the repository Dockerfile. Each scenario
+  # step is a `docker compose run --rm cli <args>`.
+  cli:
+    image: ${CLI_IMAGE:-jira-cli:e2e}
+    build:
+      context: ..
+    profiles: [cli]
+    # Run as the invoking host user so the 0600 log file written to ./.work
+    # is readable by the scenario's assertions (run.sh exports these).
+    user: "${E2E_UID:-65532}:${E2E_GID:-65532}"
+    environment:
+      JIRA_CONFIG: /config/config.yaml
+      JIRA_CREDENTIALS_DIR: /run/secrets
+      JIRA_NO_KEYRING: "1"
+      JIRA_LOG_LEVEL: debug
+      JIRA_LOG_FORMAT: json
+      JIRA_LOG_FILE: /logs/jira-cli.log
+    volumes:
+      - ./cli-config.yaml:/config/config.yaml:ro
+      - ./.work/certs/ca.pem:/certs/ca.pem:ro
+      - ./.work/secrets:/run/secrets:ro
+      - ./.work/logs:/logs
+      - ./fixtures:/fixtures:ro
+    networks: [jira]
+
+networks:
+  jira: {}

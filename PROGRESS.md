@@ -68,6 +68,13 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 - [x] Bug found by the smoke test and fixed: a proxy refusing CONNECT (e.g. 403 from a corporate proxy) was classified as generic `http_transport`; now `proxy` / `proxy_connect_refused` with the proxy's status (`TestProxyConnectRefusedIsClassified`)
 - [x] `clierr` classification and exit-code unit tests (was an open item)
 
+### Real Jira 10.3 in Docker Compose (e2e/)
+- [x] `e2e/docker-compose.yml`: PostgreSQL 15 + `atlassian/jira-software:10.3` (image is 10.3.26, the spec version) + nginx TLS proxy (throwaway CA) + the CLI image
+- [x] `setup/setup_jira.py`: completes the setup wizard by parsing the real forms; creates a 1-day PAT. Verified on 10.3.26 through application properties and license submission (rejection detected). **Admin-account step not yet exercised** (no license available in this environment)
+- [x] `scenario.sh`: ~45 CLI steps (bulk create 55 issues, `--all` over 3 pages, edit/comment/transition/attachment, safety refusals, agile, users, layer attribution for TLS/auth/API errors, log checks, PAT leak scan). All commands/flags/arg counts validated against the binary; **not yet executed against a licensed Jira**
+- [x] `run.sh --boot-only` executed here (as root and as an unprivileged docker-group user): stack boots in ~75 s, the CLI image passes config/DNS/TCP/TLS through the proxy with the custom CA, Jira's setup-mode 503 is attributed to the HTTP/API layer, retries and `X-AREQUESTID` correlation observed in the CLI log
+- [x] CI: `.github/workflows/e2e.yml`, boot-only on relevant PRs; full run nightly/on demand when the `JIRA_E2E_LICENSE` secret exists
+
 ### Phase 6 (partial)
 - [x] Multi-stage Dockerfile (distroless, nonroot, ~20 MB). Built and run locally: headless mode with mounted secret works; no secrets in layers
 - [x] GitHub Actions CI: spec-validate, verify-generated, vet/gofmt, race tests, govulncheck, build, smoke test, docker build/run
@@ -91,7 +98,18 @@ Coverage (total 68.3%): generator 88%, api 82%, pat 85%, safety 100%, transport 
 
 The GitHub Actions workflow itself has not run yet (no CI run exists for this branch). Its test-job steps were executed locally with `bash -eo pipefail` and pass.
 
-## Next: Phase 4, read-only verification against your Jira DC
+## Next: full e2e with a license (no access to your instance needed)
+
+```bash
+make e2e E2E_LICENSE_FILE=~/jira-dc-eval.lic    # evaluation license from my.atlassian.com
+```
+
+Or add the license as repository secret `JIRA_E2E_LICENSE` and run the `e2e`
+workflow. Send back `e2e/.work/logs/` if anything fails. This validates PAT,
+pagination limits and ~25 generated commands against real Jira 10.3.26
+before touching your instance.
+
+## Then: Phase 4, read-only verification against your Jira DC
 
 Config (`~/.config/jira-cli/config.yaml`):
 
@@ -146,14 +164,15 @@ sensitive (the CLI never prints tokens).
 
 ## Left / open items (prioritised)
 
-1. **Phase 4 results**: fix whatever the real instance shows (pagination caps, version differences, auth).
-2. OAuth against real Jira DC: confirm endpoints (`/rest/oauth2/latest/...`), PKCE, client secret, scopes, refresh rotation; adjust docs.
-3. Keyring backends: manual test on macOS/Windows/Linux desktop.
-4. Release process: version tagging, goreleaser (or equivalent) for multi-OS binaries, image publishing, SBOM. Not started.
-5. Risk review: a human pass over `generated/datacenter103/REPORT.md` risk column (73 `write` operations rely on heuristics).
-6. 40 remaining naming warnings: rename via overlay if any read badly in practice.
-7. Tests: keyring with a mock; OAuth `--manual` path.
-8. First real CI run: confirm the workflow (artifact upload, job summary, govulncheck) on GitHub.
-9. Optional: JSON-schema validation of nested request bodies (currently top-level type and required properties only; deeper validation is left to Jira, whose field configuration is instance-specific).
-10. Optional: response filtering (`--jq`-style). The spec lists it as optional; JSON passthrough plus `--fields` covers most needs.
-11. Jira Cloud: out of scope by design; the deployment abstraction is the extension point.
+1. **Full e2e run with a license** (see above): finish the wizard admin step and the scenario on real Jira 10.3.26.
+2. **Phase 4 results**: fix whatever the real instance shows (pagination caps, version differences, auth).
+3. OAuth against real Jira DC: confirm endpoints (`/rest/oauth2/latest/...`), PKCE, client secret, scopes, refresh rotation; adjust docs.
+4. Keyring backends: manual test on macOS/Windows/Linux desktop.
+5. Release process: version tagging, goreleaser (or equivalent) for multi-OS binaries, image publishing, SBOM. Not started.
+6. Risk review: a human pass over `generated/datacenter103/REPORT.md` risk column (73 `write` operations rely on heuristics).
+7. 40 remaining naming warnings: rename via overlay if any read badly in practice.
+8. Tests: keyring with a mock; OAuth `--manual` path.
+9. First real CI run: confirm the workflow (artifact upload, job summary, govulncheck) on GitHub.
+10. Optional: JSON-schema validation of nested request bodies (currently top-level type and required properties only; deeper validation is left to Jira, whose field configuration is instance-specific).
+11. Optional: response filtering (`--jq`-style). The spec lists it as optional; JSON passthrough plus `--fields` covers most needs.
+12. Jira Cloud: out of scope by design; the deployment abstraction is the extension point.

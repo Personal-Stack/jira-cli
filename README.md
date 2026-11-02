@@ -12,8 +12,10 @@ authentication, TLS, retries and safety checks are implemented once, centrally.
 - Structured, redacted logging with per-run and per-request correlation IDs (`--log-level`, `--log-format json`, `--log-file`)
 - Machine-readable discovery (`commands list`, `capabilities`) and an [Agent Skill](skills/jira/SKILL.md)
 
-> **Status:** implementation phases 1-3 and 5 are complete and tested against
-> fakes. Verification against a real Jira DC instance (Phase 4) is pending. See
+> **Status:** phases 1-3 and 5 are complete and tested against fakes. A Docker
+> Compose environment with real Jira Software DC 10.3 (`e2e/`) boots and passes
+> CLI diagnostics; the full scenario needs a Jira license. See
+> [PROGRESS.md](PROGRESS.md) and [e2e/README.md](e2e/README.md). See
 > [PROGRESS.md](PROGRESS.md).
 
 ## Install

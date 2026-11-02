@@ -27,6 +27,8 @@ make vet test           # gofmt check, go vet, tests
 make test-race
 make build              # bin/jira (static, trimmed)
 make smoke              # run the binary with JSON debug logs + secret-leak scan (see docs/logging.md)
+make e2e-boot           # real Jira 10.3 in Docker Compose, CLI diagnostics (no license)
+make e2e E2E_LICENSE_FILE=lic.txt   # full e2e scenario (see e2e/README.md)
 make docker
 ```
 
@@ -49,6 +51,7 @@ files that carry the generated header.
 | Integration (httptest, TLS with throwaway CA) | `internal/cli/cli_test.go`, `internal/transport`, `internal/api`, `internal/auth/oauth` |
 | Generation (fixture specs, determinism, conflicts, stale overlays, checksum pinning) | `generator/generator_test.go` |
 | Committed output in sync | `generator/repo_test.go` |
+| End-to-end, real Jira 10.3 (Docker Compose) | `e2e/` (`run.sh`, `scenario.sh`) |
 | Security (token leakage, redirects, TLS defaults, confirmation) | spread across the above; see docs/security.md table |
 
 ## Contribution guidelines
