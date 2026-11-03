@@ -108,6 +108,11 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 - [x] Fixed earlier docs: `gh auth token` cannot pull from GHCR without `gh auth refresh -s read:packages`
 - [ ] Not run on GitHub yet: recommended first step is a manual dry run (Actions > release > Run workflow)
 
+### Docker Sandboxes (sbx)
+- [x] `scripts/sbx-setup.sh`: generates a local sbx kit (linux amd64/arm64 binary, agent skill, egress rule, proxy-managed `credential@1`, bash hook), `sbxenv.yaml` (read-only settings mount at `/etc/jira-cli`, env, binding) and settings (`config.yaml`, `bashrc`, created once). The PAT is an sbx secret; the sandbox only sees a sentinel. Options for a custom image (`--template`), agent kit, CA, `--kit-only`. Docs: `docs/sandbox.md`
+- [x] Verified here: the kit validates against the sandbox-kit-spec v3 JSON schemas (with negative tests); the overlay builds for amd64/arm64 with the right files and modes; the binary picks up the sentinel as `env:JIRA_CREDENTIAL_JIRA_PROD`, the generated config validates, the read-only guard exits 9; re-run keeps settings; refusals (foreign sbxenv.yaml, http, credentials in URL, settings inside the project)
+- [ ] Not run with a real `sbx` (none here): proxy header injection, `bash.bashrc` hook, built-in `opencode` agent name, `sandboxOptions.template`
+
 ### Phase 6 (partial)
 - [x] Multi-stage Dockerfile (distroless, nonroot, ~20 MB). Built and run locally: headless mode with mounted secret works; no secrets in layers
 - [x] GitHub Actions CI: spec-validate, verify-generated, vet/gofmt, race tests, govulncheck, build, smoke test, docker build/run
