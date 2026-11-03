@@ -1,11 +1,28 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 (2026-11-03)
 
-- `jira setup-sbx` validates before writing: checks first (sbx, binary, secrets), each answer checked when given (Jira reachable), `sbx env plan` on a scratch copy with the agent kit's name taken from sbx, the PAT secret settled; then files. A known setup is one confirmation. Through the Docker wrapper the sbx steps run on the host.
-- Ctrl+C: the first press stops the command cleanly (exit 130), the second exits immediately.
-- `jira setup-sbx` (guided, or with flags) and `docs/sandbox.md`: run an agent (OpenCode by default) in a Docker Sandbox with jira-cli, the agent skill and a read-only config. The Jira PAT is an sbx secret that the sandbox proxy injects, so it never enters the sandbox.
-- Release workflow: the image smoke test runs each platform by its own manifest digest (the v0.1.0 run failed on arm64).
+### Docker Sandboxes: `jira setup-sbx`
+- New command `jira setup-sbx` (guided in a terminal, or with flags; `make sbx` from a clone). It sets up a Docker Sandboxes (sbx) environment in which an AI agent (OpenCode by default) uses jira-cli. The Jira PAT never enters the sandbox: it is an sbx secret, the sandbox only sees a sentinel, and the sbx proxy sets the `Authorization` header for the Jira host only. See `docs/sandbox.md`.
+- Writes, in the project:
+  - `tmp/.sbx/jira-cli` (`--kit-dir`): a local sbx kit with the Linux `jira`, an egress rule and the credential;
+  - `sbxenv.yaml`, with jira-cli's kit as the only kit;
+  - `.opencode/skills/jira`: the agent skill, with a section naming the binary's path.
+
+  Also writes `config.yaml` and `bashrc` in `~/.config/jira-cli-sbx` (created once, then yours to edit).
+- Stops at the first problem, and nothing is written before everything has passed:
+  - checks first: sbx installed, a Linux binary, existing secrets;
+  - each answer checked when given, including Jira reachability;
+  - `sbx env plan` on a scratch copy;
+  - the PAT secret settled (stored via sbx if needed).
+- Answers are saved; a known setup takes one confirmation. The Linux binary is this `jira`, a build from a clone, or the matching GitHub release (SHA-256 verified).
+- Docker wrapper:
+  - asks for the project on the host;
+  - mounts the project and the settings read-write for `setup-sbx`;
+  - runs the sbx steps on the host afterwards.
+
+### CLI
+- Ctrl+C: the first press stops the command cleanly, cancelling requests, child processes and prompts; the second exits immediately. Exit code 130, error layer `interrupted`. Previously Ctrl+C was ignored while a prompt waited for input.
 
 ## v0.1.0 (2026-11-03)
 
