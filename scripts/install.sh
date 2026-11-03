@@ -299,7 +299,7 @@ if [ "$DOCKER" = 1 ]; then
   fi
   if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     say "Pulling $IMAGE"
-    docker pull "$IMAGE" || die "cannot pull $IMAGE (private registry: gh auth token | docker login ghcr.io -u <github-user> --password-stdin)"
+    docker pull "$IMAGE" || die "cannot pull $IMAGE (private registry: gh auth refresh -h github.com -s read:packages && gh auth token | docker login ghcr.io -u <github-user> --password-stdin)"
   fi
   sed "s|__JIRA_CLI_IMAGE__|$IMAGE|" "$TMP/jira-docker.sh" > "$TMP/jira-wrapper"
   BIN_SRC="$TMP/jira-wrapper"

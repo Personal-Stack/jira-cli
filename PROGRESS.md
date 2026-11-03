@@ -100,6 +100,13 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 - [x] Downloads a server's CA chain (no credentials; honours the instance's proxy and client certificate), completes missing issuers via AIA only when they cryptographically sign the certificate below, shows SHA-256 fingerprints, requires confirmation (`--yes`/`--dry-run`), saves CA certificates only (never the leaf) to `<config dir>/<host>-ca.pem`, and proves the file with a verified handshake
 - [x] Tests: AIA completion (leaf+intermediate and leaf-only servers), same-name impostor root rejected, confirmation/dry-run/decline, self-signed server; verified through the Docker wrapper against a production-like server (tls fail, then fetch, then tls ok)
 
+### Release pipeline (archives + GHCR image)
+- [x] `release.yml` rewritten: verify, then archives and image in parallel. The image is pushed, then pulled back by digest and smoke-tested on amd64 and arm64. The GitHub release is published last, only if everything passed, with the pull command and digest in the notes
+- [x] Image tags `vX.Y.Z`, `X.Y`, `latest` (pre-releases move neither); SBOM and provenance attestations; least-privilege permissions per job; manual dry-run mode (builds and tests, publishes nothing)
+- [x] Verified locally: actionlint clean on all workflows; version check, archive smoke test and notes rendering run from the workflow's own `run:` blocks; both documented `docker run` forms tested against a production-like server
+- [x] Fixed earlier docs: `gh auth token` cannot pull from GHCR without `gh auth refresh -s read:packages`
+- [ ] Not run on GitHub yet: recommended first step is a manual dry run (Actions > release > Run workflow)
+
 ### Phase 6 (partial)
 - [x] Multi-stage Dockerfile (distroless, nonroot, ~20 MB). Built and run locally: headless mode with mounted secret works; no secrets in layers
 - [x] GitHub Actions CI: spec-validate, verify-generated, vet/gofmt, race tests, govulncheck, build, smoke test, docker build/run
@@ -193,7 +200,7 @@ sensitive (the CLI never prints tokens).
 2. **Phase 4 results**: fix whatever the real instance shows (pagination caps, version differences, auth).
 3. OAuth against real Jira DC: confirm endpoints (`/rest/oauth2/latest/...`), PKCE, client secret, scopes, refresh rotation; adjust docs.
 4. Keyring backends: manual test on macOS/Windows/Linux desktop.
-5. Release process: `release.yml` + installers exist (see Installation below); still missing: first tag, container image publishing, SBOM/signing.
+5. Release process: pipeline complete (archives, GHCR image with SBOM/provenance, smoke tests, release last). Missing: a first dry run and first tag; image signing (cosign keyless would publish entries to the public Rekor log, which leaks private repo/image names; decide first).
 6. Risk review: a human pass over `generated/datacenter103/REPORT.md` risk column (73 `write` operations rely on heuristics).
 7. 40 remaining naming warnings: rename via overlay if any read badly in practice.
 8. Tests: keyring with a mock; OAuth `--manual` path.

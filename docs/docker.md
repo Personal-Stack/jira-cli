@@ -22,11 +22,7 @@ sh jira-cli/scripts/install.sh --docker
 ```
 
 From a release (pulls `ghcr.io/personal-stack/jira-cli:<version>`; the
-registry is private, so log in first):
-
-```bash
-gh auth token | docker login ghcr.io -u <github-user> --password-stdin
-```
+registry is private, so log in first, see "Registry access" below):
 
 ```bash
 gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber && sh /tmp/install.sh --docker
@@ -48,6 +44,71 @@ jira doctor
 
 Uninstall with `sh install.sh --uninstall`. The image stays; remove it with
 `docker rmi`.
+
+## Registry access (private repository)
+
+The image is published to `ghcr.io/personal-stack/jira-cli` by the release
+workflow for every version tag. It's private like the repository, so log in
+once. `gh`'s default token cannot read packages; add the scope first:
+
+```bash
+gh auth refresh -h github.com -s read:packages
+```
+
+```bash
+gh auth token | docker login ghcr.io -u <github-user> --password-stdin
+```
+
+(Alternatively, a classic personal access token with `read:packages`.)
+
+| Tag | Meaning |
+|---|---|
+| `v0.1.0` | exact release (what `install.sh --docker --version v0.1.0` uses) |
+| `0.1` | latest patch of 0.1 (not moved by pre-releases) |
+| `latest` | latest non-pre-release |
+| `@sha256:...` | immutable digest, printed in every release's notes; pin this in CI |
+
+Each image is `linux/amd64` + `linux/arm64`, with SBOM and build-provenance
+attestations attached, and is smoke-tested by digest on both architectures
+before the release is published.
+
+## Use the published image directly (no wrapper)
+
+The wrapper is a convenience; plain `docker run` works. Both forms below were
+tested against a Jira-like TLS server.
+
+**Workstation**, sharing your normal config and storing the token in a file:
+
+```bash
+jira() {
+  docker run --rm -i --user "$(id -u):$(id -g)" \
+    -e HOME="$HOME" -e JIRA_CONFIG="$HOME/.config/jira-cli/config.yaml" \
+    -e JIRA_NO_KEYRING=1 -e JIRA_CREDENTIAL_STORE=file \
+    -e JIRA_CREDENTIALS_DIR="$HOME/.config/jira-cli/credentials" \
+    -v "$HOME/.config/jira-cli:$HOME/.config/jira-cli" \
+    ghcr.io/personal-stack/jira-cli:v0.1.0 "$@"
+}
+```
+
+Then `jira auth login`, `jira doctor` and so on, as usual. Paths in
+`config.yaml` (e.g. `ca_bundle`) must be under `~/.config/jira-cli`. For
+`--file` inputs, add `-v "$PWD:$PWD:ro" -w "$PWD"`.
+
+**CI / servers (headless)**: the image defaults to `JIRA_CONFIG=/config/config.yaml`
+and reads secrets from `/run/secrets/<credential_ref>`:
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/config:/config:ro" \
+  -v "$PWD/secrets/jira-prod:/run/secrets/jira-prod:ro" \
+  ghcr.io/personal-stack/jira-cli:v0.1.0 issue search --jql 'project = ABC' --max-results 5
+```
+
+Here `ca_bundle` paths in `config.yaml` refer to the container
+(e.g. `/config/company-ca.pem`). Use `--user` (or make the secret readable by
+uid 65532, the image's default user). Without it, a `0600` secret file owned
+by you is unreadable in the container, and `doctor` reports
+`credential not found ... permission denied`.
 
 ## Updating
 

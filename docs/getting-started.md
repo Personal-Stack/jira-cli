@@ -44,7 +44,28 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -Archive .\jira-cli_<vers
 gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber && sh /tmp/install.sh
 ```
 
-### Docker wrapper
+### Docker image from the release (no clone, no Go)
+
+Every release publishes `ghcr.io/personal-stack/jira-cli:<version>`
+(linux/amd64 + arm64). The registry is private:
+
+```bash
+gh auth refresh -h github.com -s read:packages
+```
+
+```bash
+gh auth token | docker login ghcr.io -u <github-user> --password-stdin
+```
+
+```bash
+gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber && sh /tmp/install.sh --docker
+```
+
+This installs the `jira` wrapper using the released image. To use plain
+`docker run` instead, see [docker.md](docker.md#use-the-published-image-directly-no-wrapper).
+Update by re-running the installer with the new `--version`.
+
+### Docker wrapper from a clone
 
 Needs Docker and a clone of the repository; Go runs inside the image build.
 
