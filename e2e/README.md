@@ -20,9 +20,10 @@ in enterprise deployments.
 ## Requirements
 
 - Docker with Compose v2, about 4 GB free RAM, and about 3 GB of images.
-- For the full run, a **Jira Software Data Center license**. Either:
-  - a free 30-day evaluation license from <https://my.atlassian.com> (*New Trial > Jira Software > Data Center*; the server ID can be anything for evaluation licenses); or
-  - an Atlassian *timebomb* license (valid 3 hours) from the developer documentation page "Timebomb licenses for testing server apps".
+- For the full run, a **Jira Software Data Center license**.
+  - **Free Data Center evaluation licenses are no longer issued** (reported 2026-11-03 as Atlassian moves customers to Cloud; not independently verified here).
+  - Remaining options: a **developer (non-production) license** from your organisation's existing Data Center subscription (ask your license admin), or an Atlassian *timebomb* test license, if still offered.
+  - Without a license, only `--boot-only` runs. Write commands are then tested against fakes only, which shows what the CLI sends but not whether Jira accepts it.
 
 Never commit the license. Pass it as a file or environment variable.
 

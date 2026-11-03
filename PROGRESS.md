@@ -6,6 +6,7 @@ Last updated: 2026-11-02. Branch: `claude/tender-bohr-rsigl2`.
 
 - Phases 1, 2, 3 and 5 are implemented and pass 72 tests (unit, `httptest` integration over TLS, generator fixtures, race detector). Total statement coverage 68.3%.
 - Structured logging layer with redaction and correlation IDs is in place and exercised in CI (see "Logging" below).
+- **Strategic note:** Atlassian is ending Data Center sales and moving customers to Cloud (user report, 2026-11-03). The CLI keeps working against existing DC instances. Jira Cloud support (different auth, REST v3 with ADF, token-based search pagination, separate spec) is out of scope until a migration date is known; the deployment/profile/auth abstractions are the extension points.
 - **Phase 4 (real Jira DC) is in progress.** Confirmed on the user's production instance (via Docker wrapper and native macOS): PAT authentication, TLS with the company CA, `issue search`. Fixed from those runs: `doctor` failing on disabled anonymous access (401), bash 3.2 script failure, DER `.cert` CA files, file names with spaces. Still open: Jira version check, the three pagination shapes, more read commands, the read-only guard on prod, the licensed e2e write scenario, OAuth.
 - OAuth 2.0 is implemented to the RFC (auth code + PKCE + refresh) and tested against a fake authorization server only. Jira DC specifics (PKCE support, client secret requirement, refresh rotation) are unverified.
 
@@ -184,7 +185,7 @@ review it first.
 
 ## Left / open items (prioritised)
 
-1. **Full e2e run with a license** (see above): finish the wizard admin step and the scenario on real Jira 10.3.26.
+1. **Write-path verification on real Jira**: free DC evaluation licenses are no longer issued (user report, 2026-11-03). Options: a developer license from the organisation's DC subscription (then `make e2e` works unchanged), or a staging instance with a dedicated project (needs the scenario adapted to an existing instance). Until then, writes are tested against fakes only.
 2. **Phase 4, remaining read-only checks on production**: run `scripts/phase4-readonly.sh --project <KEY>` and review `summary.txt` / `trace.jsonl`. PAT auth, TLS and `issue search` are already confirmed.
 3. OAuth against real Jira DC: confirm endpoints (`/rest/oauth2/latest/...`), PKCE, client secret, scopes, refresh rotation; adjust docs.
 4. Keyring backends: manual test on macOS/Windows/Linux desktop.
