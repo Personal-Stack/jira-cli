@@ -430,3 +430,30 @@ func TestDoctorFlagsNonJira401(t *testing.T) {
 		t.Fatalf("expected a gateway warning:\n%s", out)
 	}
 }
+
+func TestConfigValidateNamesTheBrokenInstance(t *testing.T) {
+	// The selected instance works; a leftover instance copied from the
+	// example points at a CA file that does not exist (reported by a user).
+	e := setup(t, `  company-staging:
+    deployment: datacenter
+    base_url: https://jira-staging.company.internal
+    auth: {type: pat, credential_ref: jira-staging}
+    tls: {ca_bundle: /etc/ssl/company-ca.pem}
+`)
+	code, out, errs := e.run("", "config", "validate")
+	if code != 3 {
+		t.Fatalf("exit %d", code)
+	}
+	for _, want := range []string{`instance(s): company-staging`, `the selected instance \"test\" is valid`, `"invalid_instances"`} {
+		if !strings.Contains(errs, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, errs)
+		}
+	}
+	if !strings.Contains(out, `"company-staging"`) || !strings.Contains(out, `/etc/ssl/company-ca.pem`) {
+		t.Errorf("stdout should list the failing instance and file:\n%s", out)
+	}
+	// Commands for the selected instance are unaffected.
+	if code, _, _ := e.run("", "issue", "get", "ABC-1"); code != 0 {
+		t.Fatalf("selected instance should still work, exit %d", code)
+	}
+}

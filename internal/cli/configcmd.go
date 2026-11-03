@@ -2,6 +2,8 @@ package cli
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -81,10 +83,10 @@ func (a *App) configCmd() *cobra.Command {
 				r := map[string]any{"valid": true}
 				if _, perr := a.ProfileFor(in); perr != nil {
 					r["valid"], r["error"] = false, clierr.As(perr).Message
-					errs = append(errs, perr)
+					errs = append(errs, fmt.Errorf("instance %q: %w", n, perr))
 				} else if ferr := in.CheckFiles(); ferr != nil {
 					r["valid"], r["error"] = false, ferr.Error()
-					errs = append(errs, ferr)
+					errs = append(errs, fmt.Errorf("instance %q: %w", n, ferr))
 				}
 				if !in.TLS.VerifyEnabled() {
 					r["warning"] = "tls.verify is false: certificate verification disabled"
@@ -93,7 +95,18 @@ func (a *App) configCmd() *cobra.Command {
 			}
 			_ = output.Write(a.Out, map[string]any{"valid": len(errs) == 0, "config_file": cfg.Path(), "instances": results}, f)
 			if len(errs) > 0 {
-				return clierr.Wrap(clierr.LayerConfig, "config_invalid", "configuration has errors", errors.Join(errs...))
+				var bad []string
+				for _, n := range cfg.Names() {
+					if r, _ := results[n].(map[string]any); r != nil && r["valid"] == false {
+						bad = append(bad, n)
+					}
+				}
+				e := clierr.Wrap(clierr.LayerConfig, "config_invalid", "configuration has errors in instance(s): "+strings.Join(bad, ", "), errors.Join(errs...))
+				e.Details = map[string]any{"invalid_instances": bad}
+				if sel, _, serr := a.Instance(); serr == nil && !contains(bad, sel.Name) {
+					e.Hint = fmt.Sprintf("the selected instance %q is valid; fix or remove the other instance(s) in %s", sel.Name, cfg.Path())
+				}
+				return e
 			}
 			return nil
 		},
@@ -117,4 +130,13 @@ func (a *App) configCmd() *cobra.Command {
 	}
 	c.AddCommand(list, show, validate, set)
 	return c
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }

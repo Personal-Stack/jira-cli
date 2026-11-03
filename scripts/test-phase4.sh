@@ -67,6 +67,20 @@ non_get=$(grep -v '^GET ' requests.log | grep -vc '^POST /rest/api/2/search$')
 grep -q "^DELETE" requests.log && ko "DELETE reached the server" || ok "server never saw the guarded DELETE"
 grep -rqF "$TOKEN" "$WORK/r1" "$WORK/r1.txt" && ko "token found in outputs" || ok "token absent from summary, trace and step outputs"
 
+echo "== unused broken instance in the config (user report)"
+cp cfg/config.yaml cfg/config.ok
+cat >> cfg/config.yaml <<'YAML'
+  company-staging:
+    deployment: datacenter
+    base_url: https://jira-staging.company.internal
+    auth: {type: pat, credential_ref: jira-staging}
+    tls: {ca_bundle: /etc/ssl/company-ca.pem}
+YAML
+"$ROOT/scripts/phase4-readonly.sh" --project DEMO --out "$WORK/r5" > "$WORK/r5.txt" 2>&1; rc=$?
+[ $rc -eq 0 ] && grep -q "WARN  other instance(s) in your config file are invalid (not used by this run): company-staging" "$WORK/r5.txt" && grep -q "RESULT: [0-9]* passed, 0 failed, 1 warning" "$WORK/r5.txt" \
+  && ok "unused broken instance: warning naming it, run passes" || { ko "unused broken instance (exit $rc)"; grep -E "config-validate|WARN|RESULT" "$WORK/r5.txt"; }
+cp cfg/config.ok cfg/config.yaml
+
 echo "== empty project (no issues)"
 start_fake 0
 "$ROOT/scripts/phase4-readonly.sh" --project DEMO --out "$WORK/r2" > "$WORK/r2.txt" 2>&1; rc=$?

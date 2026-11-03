@@ -108,7 +108,18 @@ if [ "$LAST_EXIT" -ne 9 ] || [ "$after" -ne "$before" ]; then
 fi
 
 say ""; say "== 2. Connectivity, authentication, version"
-step config-validate "0" config validate
+# `config validate` checks every instance in the file. A broken instance that
+# this run does not use is a warning, not a failure of the run.
+step config-validate "0 3" config validate
+if [ "$LAST_EXIT" -eq 3 ]; then
+  bad=$(grep -o 'instance(s): [^"]*' "$OUT/steps/config-validate.err" | sed 's/^instance(s): //')
+  if grep -q 'the selected instance' "$OUT/steps/config-validate.err"; then
+    warn "other instance(s) in your config file are invalid (not used by this run): ${bad:-?}; fix or remove them (jira config validate)"
+  else
+    PASS=$((PASS - 1)); FAIL=$((FAIL + 1))
+    printf 'FAIL    the selected instance is invalid: %s\n' "${bad:-see steps/config-validate.err}" | tee -a "$SUMMARY"
+  fi
+fi
 step doctor "0" doctor
 JIRA_VERSION=$(first '      ' jira_version "$OUT/steps/doctor.out")
 [ -n "$JIRA_VERSION" ] || JIRA_VERSION=$(grep -m1 -o '"jira_version": "[^"]*"' "$OUT/steps/doctor.out" | sed 's/.*: "//; s/"$//')
