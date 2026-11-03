@@ -14,7 +14,7 @@ if [ -n "${HTTPS_PROXY:-${https_proxy:-}}" ]; then
 fi
 openssl s_client -connect "$host:$port" -servername "$host" -showcerts "${proxy_args[@]}" </dev/null >"$work/raw" 2>"$work/err"
 awk -v d="$work" '/-----BEGIN CERTIFICATE-----/{n++; f=sprintf("%s/c%d.pem",d,n)} f{print > f} /-----END CERTIFICATE-----/{f=""}' "$work/raw"
-n=$(ls "$work"/c*.pem 2>/dev/null | wc -l)
+n=$(find "$work" -maxdepth 1 -name "c*.pem" | wc -l)
 [ "$n" -gt 0 ] || { echo "no certificates received:"; cat "$work/err"; exit 1; }
 echo "== Chain presented by $host:$port ($n certificate(s))"
 for i in $(seq 1 "$n"); do
@@ -39,7 +39,7 @@ for cand in "$@"; do
   # split multi-cert files so each certificate is reported separately
   rm -f "$work"/k*.pem
   awk -v d="$work" '/-----BEGIN CERTIFICATE-----/{n++; f=sprintf("%s/k%d.pem",d,n)} f{print > f} /-----END CERTIFICATE-----/{f=""}' "$cand"
-  k=$(ls "$work"/k*.pem 2>/dev/null | wc -l)
+  k=$(find "$work" -maxdepth 1 -name "k*.pem" | wc -l)
   if [ "$k" -eq 0 ]; then echo "$cand: no PEM certificate found (DER? convert: openssl x509 -inform der -in $cand -out ca.pem)"; continue; fi
   for j in $(seq 1 "$k"); do
     kf="$work/k$j.pem"
