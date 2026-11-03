@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Validators for single answers, so a wrong value is reported when it is
@@ -25,7 +23,6 @@ var (
 	plainName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 	kebab     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	hostRe    = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
-	refRe     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/:@-]*$`)
 	baseURLRe = regexp.MustCompile(`^https://[A-Za-z0-9._~:/%+=,;-]+$`)
 )
 
@@ -45,18 +42,16 @@ func ValidSecretName(v string) error {
 	return nil
 }
 
-// ValidRef checks an image or kit reference.
-func ValidRef(v string) error {
-	if !refRe.MatchString(v) {
-		return fmt.Errorf("%q is not an image or kit reference", v)
+// ValidAgent checks the agent: an sbx agent's name, not an image or kit
+// reference (those would end up as kits in sbxenv.yaml).
+func ValidAgent(v string) error {
+	if strings.ContainsAny(v, "/:@") {
+		return fmt.Errorf("%q looks like an image or kit reference: give the agent's name (e.g. opencode, or the name sbx shows for your agent)", v)
 	}
-	return nil
+	return ValidName(v)
 }
 
-var (
-	localKitRe = regexp.MustCompile(`^\.\.?/[A-Za-z0-9._/-]+$`)
-	kitPathRe  = regexp.MustCompile(`^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
-)
+var kitPathRe = regexp.MustCompile(`^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
 
 // ValidKitPath checks the kit's folder: relative and inside the project
 // (the sandbox only sees the project).
@@ -70,25 +65,6 @@ func ValidKitPath(v string) error {
 		return fmt.Errorf("%q: use a path relative to the project, with letters, digits, '.', '_', '-' and '/'", v)
 	}
 	return nil
-}
-
-// ValidKit checks an additional kit: a registry reference, a ./local path,
-// or a {source: ...} mapping kept from sbxenv.yaml.
-func ValidKit(v string) error {
-	switch {
-	case strings.HasPrefix(v, "{"):
-		var m map[string]any
-		if yaml.Unmarshal([]byte(v), &m) != nil || m["source"] == nil {
-			return fmt.Errorf("%q: a kit mapping needs a source", v)
-		}
-		return nil
-	case strings.HasPrefix(v, "."):
-		if !localKitRe.MatchString(v) {
-			return fmt.Errorf("%q: use a ./path with letters, digits, '.', '_', '-' and '/'", v)
-		}
-		return nil
-	}
-	return ValidRef(v)
 }
 
 // ValidSettingsPath checks the settings folder path.
@@ -155,16 +131,4 @@ func CheckReachable(ctx context.Context, baseURL string) error {
 		return fmt.Errorf("cannot reach %s: %v (VPN or proxy needed? --skip-checks skips this)", addr, err)
 	}
 	return nil
-}
-
-var agentKitNameRe = regexp.MustCompile(`agent kit name "([^"]+)"`)
-
-// AgentNameFromSbx extracts the agent kit's real name from sbx's error
-// `agent "x" does not match agent kit name "y"`.
-func AgentNameFromSbx(out []byte) (string, bool) {
-	m := agentKitNameRe.FindSubmatch(out)
-	if m == nil || ValidName(string(m[1])) != nil {
-		return "", false
-	}
-	return string(m[1]), true
 }

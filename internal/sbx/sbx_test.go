@@ -51,22 +51,12 @@ func write(t *testing.T, path, content string) {
 
 func TestNewPlan(t *testing.T) {
 	p := mustPlan(t, testOptions(t))
-	if p.Host != "jira.example.com" || p.Port != 8443 || p.AgentName != "opencode" || p.AgentKit != "" || p.CredEnv != "JIRA_CREDENTIAL_JIRA_PROD" {
+	if p.Host != "jira.example.com" || p.Port != 8443 || p.Agent != "opencode" || p.CredEnv != "JIRA_CREDENTIAL_JIRA_PROD" ||
+		p.KitDir != filepath.Join(p.Project, "tmp", ".sbx", "jira-cli") {
 		t.Fatalf("%+v", p)
 	}
-	// An agent kit reference: the kit is composed, the name derived from it.
-	o := testOptions(t)
-	o.Agent = "reg.example.com/team/opencode-kit:2.1"
-	if p := mustPlan(t, o); p.AgentKit != o.Agent || p.AgentName != "opencode-kit" {
-		t.Fatalf("kit: %+v", p)
-	}
-	// ...unless sbx told us its real name.
-	o.AgentName = "devex-opencode"
-	if p := mustPlan(t, o); p.AgentName != "devex-opencode" {
-		t.Fatalf("named kit: %+v", p)
-	}
 	// An existing config decides base_url and credential_ref.
-	o = testOptions(t)
+	o := testOptions(t)
 	o.BaseURL = ""
 	write(t, filepath.Join(o.Settings, "config.yaml"), "default_instance: b\ninstances:\n  a: {base_url: https://a.example.com}\n  b:\n    base_url: https://b.example.com/jira\n    auth: {credential_ref: team-pat}\n")
 	if p := mustPlan(t, o); p.BaseURL != "https://b.example.com/jira" || p.CredRef != "team-pat" || p.CredEnv != "JIRA_CREDENTIAL_TEAM_PAT" {
@@ -84,7 +74,8 @@ func TestNewPlanRejects(t *testing.T) {
 		"relative project":    func(o *Options) { o.Project = "proj" },
 		"missing project":     func(o *Options) { o.Project += "-missing" },
 		"agent with space":    func(o *Options) { o.Agent = "my agent" },
-		"bad kit ref":         func(o *Options) { o.Agent = "reg.example.com/a b:1" },
+		"image as agent":      func(o *Options) { o.Agent = "company.jfrog.io/team/opencode-sbx:1.2" },
+		"kit dir outside":     func(o *Options) { o.KitPath = "../x" },
 		"bad name":            func(o *Options) { o.Name = "a/b" },
 		"bad secret":          func(o *Options) { o.Secret = "Jira" },
 	} {
@@ -100,7 +91,7 @@ func TestNewPlanRejects(t *testing.T) {
 
 func TestWriteKitAndEnvFile(t *testing.T) {
 	o := testOptions(t)
-	o.Agent, o.AgentName, o.Name = "reg.example.com/team/opencode:1.0", "devex-opencode", "jira-sbx"
+	o.Agent, o.Name = "devex-opencode", "jira-sbx"
 	p := mustPlan(t, o)
 	bin := filepath.Join(t.TempDir(), "jira")
 	write(t, bin, "binary")
@@ -145,7 +136,7 @@ func TestWriteKitAndEnvFile(t *testing.T) {
 	if hook := startup[0].(map[string]any)["command"].([]any)[2].(string); len(startup) != 1 || !strings.HasSuffix(strings.TrimSpace(hook), "|| true") {
 		t.Fatalf("startup hooks can fail the start: %v", startup)
 	}
-	if st, err := os.Stat(p.BinPath()); err != nil || st.Mode().Perm() != 0o755 || p.BinPath() != filepath.Join(p.Project, "temp", ".sbx", "jira-cli", "bin", "jira") {
+	if st, err := os.Stat(p.BinPath()); err != nil || st.Mode().Perm() != 0o755 || p.BinPath() != filepath.Join(p.Project, "tmp", ".sbx", "jira-cli", "bin", "jira") {
 		t.Fatalf("binary: %v %v", st, err)
 	}
 	if df, _ := os.ReadFile(filepath.Join(p.KitDir, "jira-cli.dockerfile")); !strings.Contains(string(df), "COPY --chmod=0755 bin/jira /usr/bin/jira") {
@@ -164,7 +155,7 @@ func TestWriteKitAndEnvFile(t *testing.T) {
 	if !IsGenerated(eb) || yaml.Unmarshal(eb, &env) != nil {
 		t.Fatalf("env file:\n%s", eb)
 	}
-	if env.Name != "jira-sbx" || env.Agent != "devex-opencode" || strings.Join(env.Kits, ",") != o.Agent+",./temp/.sbx/jira-cli" ||
+	if env.Name != "jira-sbx" || env.Agent != "devex-opencode" || strings.Join(env.Kits, ",") != "./tmp/.sbx/jira-cli" ||
 		env.Additional[0]["path"] != p.Settings || env.Additional[0]["readOnly"] != true || len(env.Additional[0]) != 2 ||
 		env.Env["JIRA_CONFIG"] != p.ConfigFile || env.Env["JIRA_READ_ONLY"] != "1" || env.Options != nil ||
 		env.Bindings["jira"]["apiKey"]["domains"][0] != "jira.example.com" {
@@ -173,7 +164,7 @@ func TestWriteKitAndEnvFile(t *testing.T) {
 
 	// The project's setup is the next run's defaults, the sbx name included.
 	d := LoadDefaults(p.Project, p.Settings)
-	if !d.Project || d.Agent != o.Agent || d.AgentName != "devex-opencode" || d.Name != "jira-sbx" || !*d.ReadOnly {
+	if !d.Project || d.Agent != "devex-opencode" || d.Name != "jira-sbx" || d.KitPath != "tmp/.sbx/jira-cli" || !*d.ReadOnly {
 		t.Fatalf("defaults: %+v", d)
 	}
 }
@@ -263,7 +254,7 @@ func TestSkillKeepsLocalEditsUnlessForced(t *testing.T) {
 
 func TestDefaults(t *testing.T) {
 	o := testOptions(t)
-	o.Agent, o.AgentName, o.Secret, o.ReadOnly = "reg.example.com/k:1", "devex-opencode", "team-jira", false
+	o.Agent, o.Secret, o.ReadOnly, o.KitPath = "devex-opencode", "team-jira", false, "build/jira-kit"
 	p := mustPlan(t, o)
 	if err := os.MkdirAll(p.Settings, 0o755); err != nil {
 		t.Fatal(err)
@@ -273,13 +264,19 @@ func TestDefaults(t *testing.T) {
 	}
 	other := t.TempDir() // a project without a setup gets the saved defaults
 	d := LoadDefaults(other, p.Settings)
-	if d.Project || d.Agent != o.Agent || d.AgentName != "devex-opencode" || d.Secret != "team-jira" || *d.ReadOnly || !*d.Skill {
+	if d.Project || d.Agent != "devex-opencode" || d.Secret != "team-jira" || d.KitPath != "build/jira-kit" || *d.ReadOnly || !*d.Skill {
 		t.Fatalf("saved: %+v", d)
 	}
-	// The format of earlier versions: agent = the kit's name, agent_kit = the kit.
-	write(t, filepath.Join(p.Settings, DefaultsFile), "agent: devex-opencode\nagent_kit: reg.example.com/k:1\n")
-	if d := LoadDefaults(other, p.Settings); d.Agent != "reg.example.com/k:1" || d.AgentName != "devex-opencode" {
-		t.Fatalf("legacy: %+v", d)
+	// Earlier versions saved an agent kit (an image given as the agent ended
+	// up there): only the name is kept, so no kit comes back.
+	for _, legacy := range []string{
+		"agent: devex-opencode\nagent_kit: company.jfrog.io/team/opencode-sbx:1.2\n",
+		"agent: company.jfrog.io/team/opencode-sbx:1.2\nagent_name: devex-opencode\nkits: [reg.example.com/x:1]\n",
+	} {
+		write(t, filepath.Join(p.Settings, DefaultsFile), legacy)
+		if d := LoadDefaults(other, p.Settings); d.Agent != "devex-opencode" {
+			t.Fatalf("legacy %q: %+v", legacy, d)
+		}
 	}
 	for _, c := range [][3]string{
 		{"devex-opencode", "/Users/x/Projects/My Work", "devex-opencode-my-work-jira"},
@@ -288,14 +285,6 @@ func TestDefaults(t *testing.T) {
 		if got := DefaultName(c[0], c[1]); got != c[2] || ValidName(got) != nil {
 			t.Errorf("DefaultName(%q, %q) = %q, want %q", c[0], c[1], got, c[2])
 		}
-	}
-	for ref, want := range map[string]string{"sbx/opencode:1.2@sha256:ab": "opencode", "reg.example.com:5000/team/devex-opencode": "devex-opencode"} {
-		if got := AgentFromKit(ref); got != want {
-			t.Errorf("%s: %s", ref, got)
-		}
-	}
-	if name, ok := AgentNameFromSbx([]byte(`error: agent "opencode" does not match agent kit name "devex-opencode" (set agent: ...)`)); !ok || name != "devex-opencode" {
-		t.Fatalf("sbx name: %q %v", name, ok)
 	}
 	for v, want := range map[string]string{"v0.1.0": "0.1.0", "v1.2.3-4-gabc-dirty": "1.2.3", "dev": "0.0.0"} {
 		if got := KitVersion(v); got != want {

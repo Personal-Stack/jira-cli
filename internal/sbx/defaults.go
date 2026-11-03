@@ -16,27 +16,26 @@ const DefaultsFile = "setup.yaml"
 // Defaults are the choices a run starts from: this project's previous setup
 // if it has one, else the last setup of any project (DefaultsFile).
 type Defaults struct {
-	Agent, AgentName, Secret string
-	Kits                     []string
-	KitPath                  string // where the jira-cli kit is (or goes)
-	ReadOnly, Skill          *bool
+	Agent, Secret   string
+	KitPath         string // where the jira-cli kit is (or goes)
+	ReadOnly, Skill *bool
 
 	Name    string // the project's own sandbox name (only when Project)
 	From    string // where they came from, "" if nowhere
 	Project bool   // from this project's sbxenv.yaml
 }
 
-// saved is DefaultsFile's format. AgentKit is how earlier versions stored a
-// kit (with Agent holding its name).
+// saved is DefaultsFile's format. Earlier versions also stored an agent kit
+// (agent_kit, or a reference in agent with the name in agent_name); only
+// the name is used now.
 type saved struct {
-	Agent     string   `yaml:"agent,omitempty"`
-	AgentName string   `yaml:"agent_name,omitempty"`
-	AgentKit  string   `yaml:"agent_kit,omitempty"`
-	Kits      []string `yaml:"kits,omitempty"`
-	KitPath   string   `yaml:"kit_path,omitempty"`
-	Secret    string   `yaml:"secret,omitempty"` // also read by scripts/jira-docker.sh
-	ReadOnly  *bool    `yaml:"read_only,omitempty"`
-	Skill     *bool    `yaml:"skill,omitempty"`
+	Agent     string `yaml:"agent,omitempty"`
+	AgentName string `yaml:"agent_name,omitempty"`
+	AgentKit  string `yaml:"agent_kit,omitempty"`
+	KitPath   string `yaml:"kit_path,omitempty"`
+	Secret    string `yaml:"secret,omitempty"` // also read by scripts/jira-docker.sh
+	ReadOnly  *bool  `yaml:"read_only,omitempty"`
+	Skill     *bool  `yaml:"skill,omitempty"`
 }
 
 // LoadDefaults reads the defaults for project.
@@ -45,10 +44,14 @@ func LoadDefaults(project, settings string) Defaults {
 	path := filepath.Join(settings, DefaultsFile)
 	var s saved
 	if b, err := os.ReadFile(path); err == nil && yaml.Unmarshal(b, &s) == nil {
-		if s.AgentKit != "" {
-			s.Agent, s.AgentName = s.AgentKit, s.Agent
+		agent := s.Agent
+		if s.AgentKit == "" && ValidAgent(agent) != nil {
+			agent = s.AgentName // a kit reference: keep only its name
 		}
-		d = Defaults{Agent: s.Agent, AgentName: s.AgentName, Kits: s.Kits, KitPath: s.KitPath, Secret: s.Secret, ReadOnly: s.ReadOnly, Skill: s.Skill, From: "your last setup (" + path + ")"}
+		if ValidAgent(agent) != nil {
+			agent = ""
+		}
+		d = Defaults{Agent: agent, KitPath: s.KitPath, Secret: s.Secret, ReadOnly: s.ReadOnly, Skill: s.Skill, From: "your last setup (" + path + ")"}
 	}
 	b, err := os.ReadFile(filepath.Join(project, "sbxenv.yaml"))
 	if err != nil || !IsGenerated(b) {
@@ -64,43 +67,10 @@ func LoadDefaults(project, settings string) Defaults {
 		return d
 	}
 	ro := env.Env["JIRA_READ_ONLY"] == "1"
-	savedAgent := d.Agent
-	d.Agent, d.AgentName, d.Name, d.ReadOnly, d.Kits = env.Agent, "", env.Name, &ro, nil
-	// The agent kit: the one the last setup named, or (files of earlier
-	// versions) the first registry kit unless the agent is that name.
-	var refs []string
+	d.Agent, d.Name, d.ReadOnly = env.Agent, env.Name, &ro
 	for _, n := range env.Kits {
-		k := n.Value
-		if n.Kind == yaml.MappingNode { // {source: ..., args: ...}: keep as written
-			n.Style = yaml.FlowStyle
-			out, _ := yaml.Marshal(&n)
-			k = strings.TrimSpace(string(out))
-		}
-		if isJiraKit(project, k) {
-			d.KitPath = strings.TrimPrefix(k, "./")
-		} else {
-			refs = append(refs, k)
-		}
-	}
-	agentKit := ""
-	for _, k := range refs {
-		if k == savedAgent && IsKitRef(k) {
-			agentKit = k
-		}
-	}
-	if agentKit == "" && savedAgent != env.Agent {
-		for _, k := range refs {
-			if !strings.HasPrefix(k, ".") && !strings.HasPrefix(k, "{") {
-				agentKit = k
-				break
-			}
-		}
-	}
-	for _, k := range refs {
-		if k == agentKit {
-			d.Agent, d.AgentName = k, env.Agent
-		} else {
-			d.Kits = append(d.Kits, k)
+		if isJiraKit(project, n.Value) {
+			d.KitPath = strings.TrimPrefix(n.Value, "./")
 		}
 	}
 	d.From, d.Project = "this project's previous setup", true
@@ -110,12 +80,9 @@ func LoadDefaults(project, settings string) Defaults {
 // SaveDefaults stores this plan's choices for the next project.
 func (p *Plan) SaveDefaults() error {
 	ro, skill := p.ReadOnly, p.Skill
-	s := saved{Agent: p.Agent, Kits: p.Kits, KitPath: p.KitPath, Secret: p.Secret, ReadOnly: &ro, Skill: &skill}
+	s := saved{Agent: p.Agent, KitPath: p.KitPath, Secret: p.Secret, ReadOnly: &ro, Skill: &skill}
 	if s.KitPath == DefaultKitPath {
 		s.KitPath = ""
-	}
-	if p.AgentKit != "" && p.AgentName != AgentFromKit(p.AgentKit) {
-		s.AgentName = p.AgentName
 	}
 	b, err := yaml.Marshal(s)
 	if err != nil {

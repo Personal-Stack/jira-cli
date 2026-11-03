@@ -62,17 +62,16 @@ It stops at the first problem, and writes nothing before everything passed:
   1. checks: sbx installed, a linux jira binary, the existing sbx secrets;
   2. answers (asked without flags in a terminal), each checked when given,
      the Jira host included; a known setup is one confirmation;
-  3. sbx checks the complete environment ('sbx env plan' on a scratch copy)
-     and, when it knows the agent kit under another name, that name is used;
+  3. sbx checks the complete environment ('sbx env plan' on a scratch copy);
   4. the PAT: the sbx secret exists, or sbx stores it now (it prompts);
   5. files are written, and the next steps printed.
 
-Files: <project>/temp/.sbx/jira-cli (kit; --kit-dir), <project>/sbxenv.yaml,
+Files: <project>/tmp/.sbx/jira-cli (kit; --kit-dir), <project>/sbxenv.yaml,
 <project>/.opencode/skills/jira, and <settings>/config.yaml and bashrc
 (created once, yours to edit). See docs/sandbox.md.`,
 		Example: `  jira setup-sbx
   jira setup-sbx --project ~/Projects/my-work --base-url https://jira.company.internal \
-    --agent registry.example.com/team/opencode:2.1`,
+    --agent devex-opencode`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s := &sbxSetup{a: a, f: f, set: cmd.Flags().Changed, ui: a.newSbxUI(),
@@ -88,9 +87,8 @@ Files: <project>/temp/.sbx/jira-cli (kit; --kit-dir), <project>/sbxenv.yaml,
 	fl := c.Flags()
 	fl.StringVar(&f.o.Project, "project", "", "folder the agent works in; sbxenv.yaml goes here (default: current directory)")
 	fl.StringVar(&f.o.BaseURL, "base-url", "", "Jira base URL (default: from <settings>/config.yaml)")
-	fl.StringVar(&f.o.Agent, "agent", "opencode", "a built-in sbx agent, or an agent kit reference (registry/repo:tag)")
+	fl.StringVar(&f.o.Agent, "agent", "opencode", "the sbx agent's name (e.g. opencode)")
 	fl.StringVar(&f.o.KitPath, "kit-dir", sbx.DefaultKitPath, "folder for jira-cli's kit, relative to the project")
-	fl.StringArrayVar(&f.o.Kits, "kit", nil, "additional kit to compose (registry reference or ./path in the project; repeatable)")
 	fl.StringVar(&f.o.Name, "name", "", "sandbox name (default for a new project: <agent>-<folder>-jira)")
 	fl.StringVar(&f.o.Secret, "secret", "jira", "sbx secret that holds the PAT")
 	fl.BoolVar(&f.allowWrites, "allow-writes", false, "let the agent write to Jira (default: read-only)")
@@ -178,7 +176,7 @@ func (s *sbxSetup) run(ctx context.Context) error {
 	}
 	if s.a.dryRun {
 		env, _ := plan.EnvFileContent()
-		return output.Write(s.a.Out, map[string]any{"dry_run": true, "project": plan.Project, "agent": plan.AgentName,
+		return output.Write(s.a.Out, map[string]any{"dry_run": true, "project": plan.Project, "agent": plan.Agent,
 			"name": plan.Name, "jira_host": plan.Host, "secret": plan.Secret, "sbxenv_yaml": env}, format)
 	}
 	if s.haveSbx {
@@ -249,7 +247,7 @@ func (s *sbxSetup) applyDefaults() bool {
 	o := s.o()
 	d := sbx.LoadDefaults(o.Project, o.Settings)
 	if !s.set("agent") && d.Agent != "" {
-		o.Agent, o.AgentName = d.Agent, d.AgentName
+		o.Agent = d.Agent
 	}
 	for _, v := range []struct {
 		flag string
@@ -259,9 +257,6 @@ func (s *sbxSetup) applyDefaults() bool {
 		if !s.set(v.flag) && v.val != "" {
 			*v.dst = v.val
 		}
-	}
-	if !s.set("kit") && d.Kits != nil {
-		o.Kits = d.Kits
 	}
 	if d.Project {
 		o.PrevKitPath = d.KitPath // removed if the kit moves
@@ -289,21 +284,9 @@ func (s *sbxSetup) applyDefaults() bool {
 	return d.From != ""
 }
 
-// agentName is the sbx agent name the answers lead to.
-func (s *sbxSetup) agentName() string {
-	o := s.o()
-	switch {
-	case o.AgentName != "":
-		return o.AgentName
-	case sbx.IsKitRef(o.Agent):
-		return sbx.AgentFromKit(o.Agent)
-	}
-	return o.Agent
-}
-
 func (s *sbxSetup) refreshName() {
 	if s.nameDefaulted {
-		s.o().Name = sbx.DefaultName(s.agentName(), s.o().Project)
+		s.o().Name = sbx.DefaultName(s.o().Agent, s.o().Project)
 	}
 }
 
@@ -362,19 +345,7 @@ func (s *sbxSetup) ask(ctx context.Context) error {
 	q.text(&o.BaseURL, "Jira base URL (https://, with the context path if any)", s.checkURL(ctx))
 
 	ui.section("Agent and sandbox")
-	ui.note("A built-in sbx agent (e.g. opencode) or an agent kit reference (registry/repo:tag).")
-	ui.note("If sbx knows the kit under another name, it is used automatically.")
-	before := o.Agent
-	q.text(&o.Agent, "Agent", func(v string) error {
-		if sbx.IsKitRef(v) {
-			return sbx.ValidRef(v)
-		}
-		return sbx.ValidName(v)
-	})
-	if o.Agent != before {
-		o.AgentName = ""
-	}
-	s.askKits(q)
+	q.text(&o.Agent, "Agent (its sbx name, e.g. opencode)", sbx.ValidAgent)
 	s.refreshName()
 	if q.err == nil {
 		ui.note("'-' uses sbx's own default, <agent>-<folder>, which 'sbx run' also gives a sandbox there.")
@@ -396,54 +367,12 @@ func (s *sbxSetup) ask(ctx context.Context) error {
 	return q.err
 }
 
-// askKits edits the additional kits given as references or ./paths; kits
-// written as {source: ...} mappings in sbxenv.yaml are kept as they are.
-func (s *sbxSetup) askKits(q *form) {
-	o := s.o()
-	var plain, mapped []string
-	for _, k := range o.Kits {
-		if strings.HasPrefix(k, "{") {
-			mapped = append(mapped, k)
-		} else {
-			plain = append(plain, k)
-		}
-	}
-	if q.err == nil && len(mapped) > 0 {
-		s.ui.note("kept as written in sbxenv.yaml: " + strings.Join(mapped, ", "))
-	}
-	list := strings.Join(plain, " ")
-	q.text(&list, "Additional kits (registry references or ./paths, space-separated; empty = none)", func(v string) error {
-		var errs []error
-		for _, k := range strings.Fields(v) {
-			errs = append(errs, sbx.ValidKit(k))
-		}
-		return errors.Join(errs...)
-	})
-	o.Kits = append(mapped, strings.Fields(list)...)
-}
-
-// relocateKits rewrites ./paths (relative to project) to be relative to dir,
-// so the scratch copy sbx checks finds the same local kits.
-func relocateKits(kits []string, project, dir string) []string {
-	out := make([]string, len(kits))
-	for i, k := range kits {
-		out[i] = k
-		if strings.HasPrefix(k, ".") {
-			if rel, err := filepath.Rel(dir, filepath.Join(project, k)); err == nil {
-				out[i] = "./" + filepath.ToSlash(rel)
-			}
-		}
-	}
-	return out
-}
-
 func (s *sbxSetup) summary() {
 	o, ui := s.o(), s.ui
 	ui.section("Summary")
 	ui.kv("project", o.Project)
 	ui.kv("jira", o.BaseURL)
-	ui.kv("agent", o.Agent+map[bool]string{true: ui.dim(" (sbx name: " + s.agentName() + ")")}[sbx.IsKitRef(o.Agent)])
-	ui.kv("kits", or(strings.Join(o.Kits, ", "), "none"))
+	ui.kv("agent", o.Agent)
 	ui.kv("kit folder", o.KitPath)
 	ui.kv("name", or(o.Name, "sbx default"))
 	ui.kv("read-only", map[bool]string{true: "yes", false: "no"}[o.ReadOnly])
@@ -452,48 +381,35 @@ func (s *sbxSetup) summary() {
 }
 
 // validate lets sbx check the complete environment in a scratch folder
-// before the project is touched; an agent kit name sbx reports is taken
-// over and the check repeated once.
+// before the project is touched.
 func (s *sbxSetup) validate(ctx context.Context, plan *sbx.Plan) error {
 	s.ui.section("Checking with sbx")
 	if err := os.MkdirAll(plan.Settings, 0o755); err != nil { // the environment mounts it
 		return err
 	}
-	for attempt := 0; ; attempt++ {
-		scratch := *plan
-		dir := filepath.Join(s.tmp, fmt.Sprint("plan-", attempt))
-		// Everything in the scratch folder: nothing of the project is touched.
-		scratch.Project, scratch.PrevKitPath = dir, ""
-		scratch.KitDir, scratch.EnvFile = filepath.Join(dir, filepath.FromSlash(plan.KitPath)), filepath.Join(dir, "sbxenv.yaml")
-		scratch.Kits = relocateKits(plan.Kits, plan.Project, dir)
-		if err := scratch.WriteKit(s.bin, s.a.Version); err != nil {
-			return err
-		}
-		if err := scratch.WriteEnvFile(); err != nil {
-			return err
-		}
-		out, err := sbxRun(ctx, dir, false, "env", "plan")
-		if err == nil {
-			s.ui.ok("sbx accepts the environment (agent " + plan.AgentName + ")")
-			return nil
-		}
-		if name, ok := sbx.AgentNameFromSbx(out); ok && attempt == 0 && name != plan.AgentName {
-			s.ui.warn(fmt.Sprintf("sbx names the agent kit %q: using it", name))
-			plan.AgentName, s.o().AgentName = name, name
-			if s.nameDefaulted {
-				s.refreshName()
-				plan.Name = s.o().Name
-			}
-			continue
-		}
-		s.ui.warn("sbx rejected the environment; nothing was written. sbx said:")
-		for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			s.ui.println("    " + l)
-		}
-		first, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
-		return s.fail(clierr.LayerConfig, "sbx_rejected", errors.New("sbx rejected the environment: "+first),
-			"fix what it refers to and run jira setup-sbx again; your answers are offered as defaults")
+	dir := filepath.Join(s.tmp, "plan")
+	// Everything in the scratch folder: nothing of the project is touched.
+	scratch := *plan
+	scratch.Project, scratch.PrevKitPath = dir, ""
+	scratch.KitDir, scratch.EnvFile = filepath.Join(dir, filepath.FromSlash(plan.KitPath)), filepath.Join(dir, "sbxenv.yaml")
+	if err := scratch.WriteKit(s.bin, s.a.Version); err != nil {
+		return err
 	}
+	if err := scratch.WriteEnvFile(); err != nil {
+		return err
+	}
+	out, err := sbxRun(ctx, dir, false, "env", "plan")
+	if err == nil {
+		s.ui.ok("sbx accepts the environment (agent " + plan.Agent + ")")
+		return nil
+	}
+	s.ui.warn("sbx rejected the environment; nothing was written. sbx said:")
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		s.ui.println("    " + l)
+	}
+	first, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	return s.fail(clierr.LayerConfig, "sbx_rejected", errors.New("sbx rejected the environment: "+first),
+		"fix what it refers to (e.g. the agent's name) and run jira setup-sbx again; your answers are offered as defaults")
 }
 
 // ensureSecret makes sure the PAT is an sbx secret; sbx prompts for it, so
@@ -580,7 +496,7 @@ func (s *sbxSetup) finish(plan *sbx.Plan, notes []sbx.Note, format output.Format
 		for i, n := range notes {
 			texts[i] = n.Text
 		}
-		if err := output.Write(s.a.Out, map[string]any{"project": plan.Project, "env_file": plan.EnvFile, "agent": plan.AgentName,
+		if err := output.Write(s.a.Out, map[string]any{"project": plan.Project, "env_file": plan.EnvFile, "agent": plan.Agent,
 			"name": plan.Name, "binary_source": s.binSrc, "jira_host": plan.Host, "secret": plan.Secret,
 			"credential_env": plan.CredEnv, "checked_with_sbx": s.haveSbx, "notes": texts, "next": cmds}, format); err != nil {
 			return err

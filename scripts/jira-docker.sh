@@ -149,8 +149,7 @@ set -- -e HOME="$HOME" -e XDG_CONFIG_HOME="$CFG_HOME" \
 if [ -t 0 ] && [ -t 1 ]; then set -- -t "$@"; fi
 
 # setup-sbx: sbx is not in the container, so its checks run here afterwards:
-# the PAT secret, then `sbx env plan`; an agent kit name sbx reports is
-# written into sbxenv.yaml and the saved defaults.
+# the PAT secret, then `sbx env plan`.
 sbx_host_checks() {
   command -v sbx > /dev/null 2>&1 || { echo "  ! sbx is not installed on this machine (https://docs.docker.com/ai/sandboxes/)" >&2; return 1; }
   echo "" >&2
@@ -165,15 +164,6 @@ sbx_host_checks() {
   fi
   [ -f "$sbx_project/sbxenv.yaml" ] || return 0
   if out=$(cd "$sbx_project" && sbx env plan 2>&1); then echo "  ✓ sbx accepts the environment" >&2; return 0; fi
-  name=$(printf '%s\n' "$out" | sed -n 's/.*agent kit name "\([A-Za-z0-9._-]*\)".*/\1/p' | head -n 1)
-  if [ -n "$name" ]; then
-    echo "  ! sbx names the agent kit \"$name\": using it" >&2
-    f="$sbx_project/sbxenv.yaml"
-    sed "s/^agent: .*/agent: $name/" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-    f="$sbx_settings/setup.yaml"   # remembered for the next project
-    if [ -f "$f" ]; then { grep -v '^agent_name:' "$f"; echo "agent_name: $name"; } > "$f.tmp" && mv "$f.tmp" "$f"; fi
-    if out=$(cd "$sbx_project" && sbx env plan 2>&1); then echo "  ✓ sbx accepts the environment" >&2; return 0; fi
-  fi
   echo "  ! sbx rejected the environment:" >&2
   printf '%s\n' "$out" | sed 's/^/    /' >&2
   return 1

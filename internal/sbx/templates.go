@@ -109,14 +109,8 @@ schemaVersion: "1"
 {{- if .Name}}
 name: {{.Name}}
 {{- end}}
-agent: {{.AgentName}}
+agent: {{.Agent}}
 kits:
-{{- if .AgentKit}}
-  - {{.AgentKit}}
-{{- end}}
-{{- range .Kits}}
-  - {{.}}
-{{- end}}
   - {{.KitRef}}
 workspace: .
 additionalWorkspaces:

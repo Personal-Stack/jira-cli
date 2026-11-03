@@ -13,8 +13,7 @@ jira setup-sbx
 Run it without flags in a terminal and it asks:
 - **Project:** the folder the agent works in.
 - **Jira base URL:** checked for reachability as you enter it.
-- **Agent:** a built-in agent such as `opencode`, or your agent kit's reference (`registry/repo:tag`).
-- **Additional kits:** your own kits (registry references or `./paths` in the project).
+- **Agent:** its sbx name, e.g. `opencode`. A name only: an image or kit reference is refused, so it can never end up as a kit.
 - **Sandbox name:** a new project gets `<agent>-<folder>-jira`.
 - **Read-only:** default yes.
 
@@ -28,14 +27,13 @@ one question: **Use these settings?**
 For scripts, use flags instead:
 
 ```bash
-jira setup-sbx --project ~/Projects/my-work --base-url https://jira.company.internal --agent registry.example.com/team/opencode:2.1
+jira setup-sbx --project ~/Projects/my-work --base-url https://jira.company.internal --agent devex-opencode
 ```
 
 | Flag | Use |
 |---|---|
-| `--agent` | A built-in agent or an agent kit reference |
-| `--kit` | An additional kit (registry reference or `./path`); repeatable |
-| `--kit-dir` | Where jira-cli's kit goes in the project (default `temp/.sbx/jira-cli`) |
+| `--agent` | The agent's sbx name (default `opencode`) |
+| `--kit-dir` | Where jira-cli's kit goes in the project (default `tmp/.sbx/jira-cli`) |
 | `--name` | Sandbox name |
 | `--secret` | sbx secret holding the PAT (default `jira`) |
 | `--allow-writes` | Let the agent write to Jira (default: read-only) |
@@ -50,7 +48,7 @@ jira setup-sbx --project ~/Projects/my-work --base-url https://jira.company.inte
 
 ## How it makes sure it works
 
-sbx decides what works: the agent kit names, the secrets and the environment
+sbx decides what works: the agent names, the secrets and the environment
 format. So setup-sbx asks sbx rather than you. It stops at the first problem,
 and nothing is written before everything has passed:
 
@@ -62,33 +60,30 @@ and nothing is written before everything has passed:
    Jira host accepts a connection, and names and references are valid. A wrong
    answer is asked again.
 3. **sbx checks the complete environment** with `sbx env plan` on a scratch
-   copy, before your project is touched. If sbx knows your agent kit under
-   another name (`agent kit name "..."`), that name is used and remembered.
-   Any other sbx error is shown as is.
+   copy, before your project is touched. An sbx error is shown as is.
 4. **The PAT:** the sbx secret exists, or sbx stores it now. sbx prompts for
    it, so it never passes through jira-cli.
 5. **Only then** the files are written:
 
 | What | Where |
 |---|---|
-| Kit: the Linux `jira` (`bin/jira`), egress to your Jira host, the credential, a `bashrc` hook | `<project>/temp/.sbx/jira-cli/` (`--kit-dir`; binary gitignored) |
-| Environment: agent, kit, name, settings mount, `JIRA_*` variables, credential binding | `<project>/sbxenv.yaml` |
+| Kit: the Linux `jira` (`bin/jira`), egress to your Jira host, the credential, a `bashrc` hook | `<project>/tmp/.sbx/jira-cli/` (`--kit-dir`; binary gitignored) |
+| Environment: agent, jira-cli's kit (the only kit), name, settings mount, `JIRA_*` variables, credential binding | `<project>/sbxenv.yaml` |
 | The agent skill, with a "This sandbox" section naming the binary's path | `<project>/.opencode/skills/jira/` |
 | `config.yaml` and `bashrc`: created once, then yours to edit | `~/.config/jira-cli-sbx/` (mounted read-only at the same path) |
 | Your answers, for the next run | `~/.config/jira-cli-sbx/setup.yaml` |
 
-**Your kits.** Kits you add, with `--kit`, the question, or by hand in
-`sbxenv.yaml` (including `{source: ..., args: ...}` entries), are kept when
-setup-sbx runs again, and are remembered for new projects. sbx checks them
-together with everything else.
+**One kit.** `sbxenv.yaml` lists only jira-cli's kit. A re-run rewrites it,
+which also removes entries that earlier versions added (e.g. an image given
+as the agent). Saved defaults of those versions keep only the agent's name.
 
-**The kit folder.** jira-cli's kit lives in `temp/.sbx/jira-cli`, or wherever
+**The kit folder.** jira-cli's kit lives in `tmp/.sbx/jira-cli`, or wherever
 `--kit-dir` points, inside the project. If it moves, the copy setup-sbx
-generated at the old location is removed. The `.sbx/jira-cli` of earlier
-versions is removed too.
+generated at the old location is removed, including `.sbx/jira-cli` and
+`temp/.sbx/jira-cli` from earlier versions.
 
 **The binary.** The project is mounted in the sandbox at the same path, so
-the agent runs `<project>/temp/.sbx/jira-cli/bin/jira`. The skill and the agent
+the agent runs `<project>/tmp/.sbx/jira-cli/bin/jira`. The skill and the agent
 instructions say so, and the agent doesn't search `PATH`. (The kit also
 installs it as `/usr/bin/jira`, but not every setup applies that layer.)
 
@@ -106,7 +101,7 @@ your Jira host, so the agent can't read the token, not even with `env` or `cat`.
 - The wrapper asks for the project on your machine first, then mounts it and
   the settings folder.
 - sbx isn't in the container, so the wrapper runs the sbx steps on your
-  machine right after: the secret, `sbx env plan`, and the agent-name fix.
+  machine right after: the secret, then `sbx env plan`.
 - In the container, the binary is the container's own `jira`, which is
   already Linux.
 
@@ -172,7 +167,7 @@ environment's sandbox does not exist (yet): nothing to remove.
 ## Verification status
 
 **Tested here:**
-- Go tests with a fake sbx covering every early stop (nothing is written when one triggers), the agent-name takeover, defaults across projects, and the release download with its checksum.
+- Go tests with a fake sbx covering every early stop (nothing is written when one triggers), defaults across projects, the cleanup of an image-as-kit left by an earlier version, and the release download with its checksum.
 - The Docker wrapper test, with a fake sbx on the host.
 - The generated kit validates against the sandbox-kit-spec v3 schemas, and its image layer builds.
 - On a real sbx (your runs), an earlier version of the files worked: CLI, token injection and skill.
