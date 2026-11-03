@@ -22,9 +22,11 @@ import (
 const token = "PAT-SECRET-0123456789"
 
 type fakeJira struct {
-	mu       sync.Mutex
-	requests []string
-	auths    []string
+	anonDenied bool // like production instances with anonymous access disabled
+	gateway    bool // anonymous 401 comes from a gateway (no X-AREQUESTID)
+	mu         sync.Mutex
+	requests   []string
+	auths      []string
 }
 
 func (f *fakeJira) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -33,8 +35,10 @@ func (f *fakeJira) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.auths = append(f.auths, r.Header.Get("Authorization"))
 	f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json;charset=UTF-8")
-	w.Header().Set("X-AREQUESTID", "870x1234x1")
-	if r.URL.Path == "/jira/rest/api/2/serverInfo" {
+	if !(f.gateway && r.Header.Get("Authorization") == "") {
+		w.Header().Set("X-AREQUESTID", "870x1234x1")
+	}
+	if r.URL.Path == "/jira/rest/api/2/serverInfo" && !(f.anonDenied && r.Header.Get("Authorization") == "") {
 		io.WriteString(w, `{"version":"10.3.26","deploymentType":"Server","baseUrl":"`+"https://"+r.Host+`/jira","buildNumber":1}`)
 		return
 	}
@@ -386,4 +390,43 @@ func keys(m map[string]map[string]any) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+func TestDoctorWithAnonymousAccessDisabled(t *testing.T) {
+	e := setup(t, "")
+	e.jira.anonDenied = true
+	code, out, errs := e.run("", "doctor")
+	if code != 0 {
+		t.Fatalf("doctor must pass when only anonymous access is denied; exit %d\n%s\n%s", code, out, errs)
+	}
+	var d struct {
+		OK     bool `json:"ok"`
+		Checks []struct {
+			Name, Status, Detail string
+			Data                 map[string]any
+		} `json:"checks"`
+	}
+	json.Unmarshal([]byte(out), &d)
+	got := map[string]string{}
+	for _, c := range d.Checks {
+		got[c.Name] = c.Status
+		if c.Name == "http" && !strings.Contains(c.Detail, "anonymous access is disabled") {
+			t.Errorf("http detail: %q", c.Detail)
+		}
+		if c.Name == "version" && c.Data["jira_version"] != "10.3.26" {
+			t.Errorf("version data: %v", c.Data)
+		}
+	}
+	if !d.OK || got["http"] != "ok" || got["authentication"] != "ok" || got["version"] != "ok" {
+		t.Fatalf("checks: %v", got)
+	}
+}
+
+func TestDoctorFlagsNonJira401(t *testing.T) {
+	e := setup(t, "")
+	e.jira.anonDenied, e.jira.gateway = true, true
+	_, out, _ := e.run("", "doctor")
+	if !strings.Contains(out, "may come from a gateway") || !strings.Contains(out, `"status": "warn"`) {
+		t.Fatalf("expected a gateway warning:\n%s", out)
+	}
 }

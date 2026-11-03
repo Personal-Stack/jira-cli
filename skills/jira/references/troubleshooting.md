@@ -10,7 +10,8 @@ failing layer:
 | `tcp` | port unreachable | firewall, wrong port, proxy needed |
 | `proxy_tcp` | proxy unreachable | `proxy.url` / `HTTPS_PROXY` |
 | `tls` | certificate unknown/expired/mismatched | set `tls.ca_bundle` to the corporate CA |
-| `http` | `/rest/api/2/serverInfo` fails or returns HTML | wrong base URL/context path, SSO gateway in front of the API |
+| `http` | `/rest/api/2/serverInfo` (sent without credentials) fails or returns HTML | wrong base URL/context path, SSO gateway in front of the API. A 401/403 **from Jira** (has `X-AREQUESTID`) is `ok`: anonymous access is disabled, which is normal in production; the version is then checked in the `version` step with credentials |
+| `version` | authenticated `serverInfo` fails | only runs when anonymous access is disabled |
 | `credentials` | no credential found | `jira auth login` or `JIRA_CREDENTIAL_FILE` |
 | `authentication` | `/myself` returns 401 | token expired/revoked; CAPTCHA (`login_reason`) |
 

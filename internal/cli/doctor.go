@@ -157,15 +157,29 @@ func (a *App) runDoctor(ctx context.Context) ([]check, *check) {
 		return checks, failed
 	}
 
-	// 5. Unauthenticated reachability + version compatibility.
+	// 5. Unauthenticated reachability + version compatibility. Production
+	// instances often disable anonymous access: a 401/403 from Jira itself
+	// still proves DNS, TCP, TLS, proxy and HTTP routing work, so it is not
+	// a failure; the version is then checked with credentials (step 8).
 	anon := *client
 	anon.Auth = nil
+	versionPending := false
 	resp, err := anon.Do(ctx, api.Request{Method: "GET", Path: "/api/2/serverInfo", Idempotent: true})
-	if err != nil {
+	if e := clierr.As(err); err != nil && resp != nil && (e.HTTPStatus == 401 || e.HTTPStatus == 403) {
+		c := check{Name: "http", Status: "ok", Data: map[string]any{"status": resp.Status}}
+		if id := resp.Header.Get("X-AREQUESTID"); id != "" {
+			c.Detail = fmt.Sprintf("Jira is reachable; anonymous access is disabled (HTTP %d), which is normal; version is checked after authentication", resp.Status)
+			c.Data["jira_request_id"] = id
+		} else {
+			c.Status = "warn"
+			c.Detail = fmt.Sprintf("HTTP %d without Jira's X-AREQUESTID header: the answer may come from a gateway/SSO proxy in front of Jira rather than Jira itself", resp.Status)
+		}
+		add(c)
+		versionPending = true
+	} else if err != nil {
 		fail("http", err)
 		return checks, failed
-	}
-	if !add(serverInfoCheck(resp, in, p)) {
+	} else if !add(serverInfoCheck(resp, in, p)) {
 		return checks, failed
 	}
 
@@ -189,6 +203,19 @@ func (a *App) runDoctor(ctx context.Context) ([]check, *check) {
 		return checks, failed
 	}
 	add(check{Name: "authentication", Status: "ok", Data: map[string]any{"user": me["name"], "displayName": me["displayName"]}})
+
+	// 8. Version compatibility with credentials, when the anonymous probe
+	// was refused.
+	if versionPending {
+		resp, err := client.Do(ctx, api.Request{Method: "GET", Path: "/api/2/serverInfo", Idempotent: true})
+		if err != nil {
+			fail("version", err)
+			return checks, failed
+		}
+		c := serverInfoCheck(resp, in, p)
+		c.Name = "version"
+		add(c)
+	}
 	return checks, failed
 }
 
