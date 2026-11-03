@@ -273,6 +273,20 @@ jira commands describe issue create                 # parameters, body, risk
 4. Small queries: `--max-results` of 50 or less, `--max-pages 3` with `--all`.
 5. Tell the Jira admins: requests carry `User-Agent: jira-cli/<version>`, and `--log-file` traces include Jira's request IDs.
 
+## 9. Verify everything at once (read-only)
+
+From a clone, with `jira` on your PATH (native or Docker wrapper):
+
+```bash
+scripts/phase4-readonly.sh --project <KEY>
+```
+
+It first proves that writes are refused, then runs about 25 read commands
+(search, pagination, issue details, boards, users, version) and checks from
+the trace that nothing but reads was sent. Send back `summary.txt` and
+`trace.jsonl` from the `phase4-<timestamp>/` directory it creates; review the
+trace first, as it contains hostnames, JQL and issue keys (never tokens).
+
 ## More
 
 [installation.md](installation.md) (all installer options) ·

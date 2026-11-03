@@ -157,47 +157,35 @@ instances:
     read_only: true
 ```
 
-Run with the extra guard `export JIRA_READ_ONLY=1` and capture a trace:
+Run the read-only verification script (from a clone; works with the native
+binary or the Docker wrapper on PATH, bash 3.2+, no python/jq):
 
 ```bash
-export JIRA_READ_ONLY=1
-export JIRA_LOG_LEVEL=debug JIRA_LOG_FORMAT=json JIRA_LOG_FILE=$PWD/phase4-trace.jsonl
+scripts/phase4-readonly.sh --project <KEY>
 ```
 
-then:
+It forces `JIRA_READ_ONLY=1`, first proves that a write is refused locally
+(stops otherwise), then runs ~25 read commands: doctor/version, auth, issue
+search (single page, `--all` capped at 3x20, POST search, YAML/table), issue
+get/transitions/comments/editmeta (key taken from the search), dry-run
+create, project/field lists, boards (`--all` capped at 2x2) and sprints (board
+taken from the results), user search (user from `myself`). It then checks the
+trace: no write request sent, Jira request IDs present, retries, slowest
+response. Output: `phase4-<timestamp>/summary.txt` and `trace.jsonl`.
 
-```bash
-# native binary or Docker wrapper on PATH (see docs/getting-started.md)
-jira config validate
-jira auth login                         # or: export JIRA_CREDENTIAL_FILE=~/secrets/jira-dc (chmod 600)
-jira doctor                             # record: jira_version, warnings
-jira auth test
-jira server-info get
-jira myself get
-jira project get-all -o table
-jira issue search --jql 'project = <KEY> ORDER BY updated DESC' --max-results 5 --fields summary,status
-jira issue search --jql 'project = <KEY>' --all --max-pages 3 --max-results 50   # pagination (REST v2)
-jira issue get <KEY-1> --expand names,transitions
-jira issue get-transitions <KEY-1>
-jira issue get-comments <KEY-1>
-jira field list -o table
-jira board get-all --all                 # pagination (Agile isLast)
-jira board get-all-sprints <BOARD_ID>
-jira user find --username <you>          # pagination (bare array)
-jira issue search-post --stdin <<< '{"jql":"project = <KEY>","maxResults":3}'
-jira issue delete <KEY-1>                # must fail with exit 9, no request sent
-jira issue create --file examples/issue.json --dry-run
-```
+Tested with `scripts/test-phase4.sh` against `scripts/testdata/fake_jira.py`
+(15 checks incl. server-side proof that only GET + POST /search arrived, a
+broken-guard stop, a bad token, an empty project), natively, through the
+Docker wrapper, and under bash 3.2.57. Runs in CI.
 
-Please send back: the `doctor` output, any non-zero exit with its stderr JSON,
-`phase4-trace.jsonl` (redacted by design; still review it for hostnames/JQL you
-consider confidential), and anything where output looks wrong. Remove tokens/hostnames you consider
-sensitive (the CLI never prints tokens).
+Please send back `summary.txt` and `trace.jsonl` from the output directory. The
+trace never contains tokens, but it does contain hostnames, JQL and issue keys:
+review it first.
 
 ## Left / open items (prioritised)
 
 1. **Full e2e run with a license** (see above): finish the wizard admin step and the scenario on real Jira 10.3.26.
-2. **Phase 4, remaining read-only checks on production**: `doctor` version, pagination (`issue search --all`, `board get-all --all`, `user find`), `issue get`/`get-transitions`/`field list`/`project get-all`, `issue search-post`, guard test (`issue delete --yes` must exit 9). PAT auth, TLS and `issue search` are confirmed.
+2. **Phase 4, remaining read-only checks on production**: run `scripts/phase4-readonly.sh --project <KEY>` and review `summary.txt` / `trace.jsonl`. PAT auth, TLS and `issue search` are already confirmed.
 3. OAuth against real Jira DC: confirm endpoints (`/rest/oauth2/latest/...`), PKCE, client secret, scopes, refresh rotation; adjust docs.
 4. Keyring backends: manual test on macOS/Windows/Linux desktop.
 5. Release process: pipeline complete (archives, GHCR image with SBOM/provenance, smoke tests, release last). Missing: a first dry run and first tag; image signing (cosign keyless would publish entries to the public Rekor log, which leaks private repo/image names; decide first).

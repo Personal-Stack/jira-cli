@@ -66,6 +66,9 @@ jobs:
           scripts/ci-smoke.sh bin/jira "$ARTIFACTS" 2>&1 | tee "$ARTIFACTS/smoke-summary.txt"
           { echo "### Smoke test"; echo '```'; cat "$ARTIFACTS/smoke-summary.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Phase 4 read-only script against a fake Jira
+        run: scripts/test-phase4.sh bin/jira 2>&1 | tee "$ARTIFACTS/phase4-test.log"
+
       - name: Upload logs and reports
         if: always()
         uses: actions/upload-artifact@v4
