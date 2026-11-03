@@ -71,7 +71,7 @@ and nothing is written before everything has passed:
 
 | What | Where |
 |---|---|
-| Kit: the Linux `jira` (`bin/jira`), egress to your Jira host, the credential, a `bashrc` hook | `<project>/temp/.sbx/jira-cli/` (binary gitignored) |
+| Kit: the Linux `jira` (`bin/jira`), egress to your Jira host, the credential, a `bashrc` hook | `<project>/temp/.sbx/jira-cli/` (`--kit-dir`; binary gitignored) |
 | Environment: agent, kit, name, settings mount, `JIRA_*` variables, credential binding | `<project>/sbxenv.yaml` |
 | The agent skill, with a "This sandbox" section naming the binary's path | `<project>/.opencode/skills/jira/` |
 | `config.yaml` and `bashrc`: created once, then yours to edit | `~/.config/jira-cli-sbx/` (mounted read-only at the same path) |
