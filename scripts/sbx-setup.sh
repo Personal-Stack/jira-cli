@@ -12,7 +12,7 @@
 #                               (amd64 + arm64), the agent skill, the network
 #                               allow rule, the credential and the shell hook
 #   <project>/sbxenv.yaml       the environment `sbx env run` reads
-#   <settings>/config.yaml      jira-cli config, mounted read-only at /etc/jira-cli
+#   <settings>/config.yaml      jira-cli config, mounted read-only (same path inside the sandbox)
 #   <settings>/bashrc           your shell additions, sourced in the sandbox
 #
 # Usage:
@@ -109,6 +109,9 @@ case "$SETTINGS" in /*) ;; *) SETTINGS="$PWD/$SETTINGS" ;; esac
 case "$SETTINGS/" in "$PROJECT"/*) die "--settings must be outside the project ($SETTINGS is inside $PROJECT)" ;; esac
 mkdir -p "$SETTINGS"
 SETTINGS=$(cd "$SETTINGS" && pwd)
+# sbx mounts extra workspaces at the same absolute path as on the host, and
+# this path is written into shell snippets and YAML: keep it plain.
+case "$SETTINGS" in *[!A-Za-z0-9._/-]*) die "--settings path may only contain letters, digits, '.', '_', '-' and '/': $SETTINGS" ;; esac
 
 case "$INSTANCE" in *[!A-Za-z0-9_-]*|"") die "invalid --instance '$INSTANCE'" ;; esac
 case "$CRED_REF" in *[!A-Za-z0-9._-]*|"") die "invalid --credential-ref '$CRED_REF'" ;; esac
@@ -206,12 +209,12 @@ mkdir -p "$KIT/skill"
 cp -R "$REPO_ROOT/skills/jira" "$KIT/skill/jira"
 printf 'bin/\n' > "$KIT/.gitignore"
 
-cat > "$KIT/profile.sh" <<'EOF'
+cat > "$KIT/profile.sh" <<EOF
 # Installed by the jira-cli sbx kit as /etc/profile.d/jira-cli.sh.
-# Login shells source the editable host file mounted at /etc/jira-cli/bashrc.
-if [ -r /etc/jira-cli/bashrc ] && [ -z "${JIRA_CLI_BASHRC_LOADED:-}" ]; then
+# Login shells source the editable host file, mounted at the same path.
+if [ -r $SETTINGS/bashrc ] && [ -z "\${JIRA_CLI_BASHRC_LOADED:-}" ]; then
   JIRA_CLI_BASHRC_LOADED=1
-  . /etc/jira-cli/bashrc
+  . $SETTINGS/bashrc
 fi
 EOF
 
@@ -282,10 +285,10 @@ capabilities:
             - sh
             - -c
             - >-
-              grep -qs 'jira-cli sbx kit' /etc/bash.bashrc ||
-              printf '\n# jira-cli sbx kit\n[ -r /etc/jira-cli/bashrc ] && . /etc/jira-cli/bashrc\n' >> /etc/bash.bashrc
+              grep -qsF '$SETTINGS/bashrc' /etc/bash.bashrc ||
+              printf '\n# jira-cli sbx kit\n[ -r $SETTINGS/bashrc ] && . $SETTINGS/bashrc\n' >> /etc/bash.bashrc
           user: "0"
-          description: Source /etc/jira-cli/bashrc from interactive bash shells
+          description: Source $SETTINGS/bashrc from interactive bash shells
 
   - type: com.docker.sandbox/agent-context@1
     optional: true
@@ -302,7 +305,7 @@ capabilities:
           it, and do not run \`jira auth login\`.
         - $mode_text
         - Keep queries small: --max-results 50 or less; with --all add --max-pages 3.
-        - The configuration is read-only at /etc/jira-cli; changes are made by
+        - The configuration is read-only at $SETTINGS; changes are made by
           the user on the host.
 
   - type: com.docker.sandbox/agent-context@2
@@ -319,21 +322,25 @@ if [ -n "$CA_BUNDLE" ]; then
   ca_name=$(basename "$CA_BUNDLE" | tr ' ' '_')
   cp "$CA_BUNDLE" "$SETTINGS/$ca_name"
   CA_LINE="    tls:
-      ca_bundle: /etc/jira-cli/$ca_name"
-  info "CA:       $SETTINGS/$ca_name -> /etc/jira-cli/$ca_name"
+      ca_bundle: $SETTINGS/$ca_name"
+  info "CA:       $SETTINGS/$ca_name"
 fi
 
 if [ -f "$CONFIG" ]; then
   info "config:   $CONFIG (kept; edit it on the host)"
   grep -Eq "credential_ref:[[:space:]]*$CRED_REF([[:space:]]|$)" "$CONFIG" \
     || warn "$CONFIG does not use credential_ref: $CRED_REF; the sandbox only provides $CRED_ENV"
-  if [ -n "$CA_BUNDLE" ] && ! grep -q "ca_bundle:[[:space:]]*/etc/jira-cli/" "$CONFIG"; then
-    warn "add to $CONFIG under the instance:  tls: { ca_bundle: /etc/jira-cli/$ca_name }"
+  if [ -n "$CA_BUNDLE" ] && ! grep -qF "ca_bundle: $SETTINGS/" "$CONFIG"; then
+    warn "add to $CONFIG under the instance:  tls: { ca_bundle: $SETTINGS/$ca_name }"
+  fi
+  # Earlier versions of this script mounted the settings at /etc/jira-cli.
+  if grep -q "/etc/jira-cli/" "$CONFIG"; then
+    warn "$CONFIG refers to /etc/jira-cli/, which no longer exists in the sandbox; use $SETTINGS/ instead"
   fi
 else
   ro_line="    read_only: true"; [ "$READ_ONLY" = 1 ] || ro_line="    read_only: false"
   {
-    printf '%s\n' "# jira-cli config for the sbx sandbox; mounted read-only at /etc/jira-cli."
+    printf '%s\n' "# jira-cli config for the sbx sandbox; mounted read-only at this same path."
     printf '%s\n' "# No secrets here: the token is the sbx secret \"$SERVICE\"."
     printf '%s\n' "version: 1"
     printf '%s\n' "default_instance: $INSTANCE"
@@ -354,7 +361,7 @@ if [ -f "$SETTINGS/bashrc" ]; then
   info "bashrc:   $SETTINGS/bashrc (kept)"
 else
   cat > "$SETTINGS/bashrc" <<'EOF'
-# Sourced by bash in the jira-cli sandbox (mounted read-only at /etc/jira-cli).
+# Sourced by bash in the jira-cli sandbox (mounted read-only at this same path).
 # Edit on the host; new shells pick it up. Keep it idempotent and secret-free.
 # The variables jira-cli needs are set by sbxenv.yaml, not here.
 
@@ -380,10 +387,9 @@ else
   printf '%s\n' "workspace: ."
   printf '%s\n' "additionalWorkspaces:"
   printf '%s\n' "  - path: $SETTINGS"
-  printf '%s\n' "    target: /etc/jira-cli"
   printf '%s\n' "    readOnly: true"
   printf '%s\n' "env:"
-  printf '%s\n' "  JIRA_CONFIG: /etc/jira-cli/config.yaml"
+  printf '%s\n' "  JIRA_CONFIG: $SETTINGS/config.yaml"
   printf '%s\n' '  JIRA_NO_KEYRING: "1"'
   [ "$READ_ONLY" = 0 ] || printf '%s\n' '  JIRA_READ_ONLY: "1"'
   if [ -n "$TEMPLATE" ]; then

@@ -11,7 +11,7 @@ machine**.
 | Piece | Where | What |
 |---|---|---|
 | Kit `jira-cli` (mixin) | `<project>/.sbx/jira-cli/` | `/usr/local/bin/jira` (linux amd64 + arm64), the agent skill, an egress rule for your Jira host, the credential, and a shell hook |
-| Environment | `<project>/sbxenv.yaml` | the agent, the kit, your settings mounted read-only at `/etc/jira-cli`, `JIRA_CONFIG` / `JIRA_NO_KEYRING` / `JIRA_READ_ONLY`, and the credential binding |
+| Environment | `<project>/sbxenv.yaml` | the agent, the kit, your settings mounted read-only (at the same path as on the host), `JIRA_CONFIG` / `JIRA_NO_KEYRING` / `JIRA_READ_ONLY`, and the credential binding |
 | Settings | `~/.config/jira-cli-sbx/` (host) | `config.yaml` and `bashrc`. Created once and never overwritten, so edit them freely |
 | Token | sbx credential store (host) | `sbx secret set jira` |
 
@@ -57,7 +57,7 @@ Expect `credentials` to show `env:JIRA_CREDENTIAL_JIRA_PROD` and `authentication
 |---|---|
 | `--template IMAGE` | Your already configured image (e.g. from JFrog) instead of the agent's default (`sandboxOptions.template`) |
 | `--agent-kit REF` | Compose a published agent kit (e.g. `sbx/opencode:<tag>`) instead of the built-in `opencode` |
-| `--ca-bundle FILE` | Company CA. Copied into the settings and referenced as `/etc/jira-cli/<file>` |
+| `--ca-bundle FILE` | Company CA. Copied into the settings folder and referenced by its path there |
 | `--allow-writes` | Drop the read-only guard (default: `read_only: true` and `JIRA_READ_ONLY=1`) |
 | `--binary image` | Take the binary from `ghcr.io/personal-stack/jira-cli` (no Go needed) |
 | `--kit-only` | Your project already has an `sbxenv.yaml`: generate the kit and settings, then merge (below) |
@@ -94,9 +94,9 @@ entries into your file:
 kits:
   - ./.sbx/jira-cli
 additionalWorkspaces:
-  - {path: /Users/x/.config/jira-cli-sbx, target: /etc/jira-cli, readOnly: true}
+  - {path: /Users/x/.config/jira-cli-sbx, readOnly: true}   # appears at the same path inside
 env:
-  JIRA_CONFIG: /etc/jira-cli/config.yaml
+  JIRA_CONFIG: /Users/x/.config/jira-cli-sbx/config.yaml
   JIRA_NO_KEYRING: "1"
   JIRA_READ_ONLY: "1"
 bindings:
