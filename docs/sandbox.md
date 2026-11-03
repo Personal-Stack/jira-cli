@@ -10,8 +10,9 @@ machine**.
 
 | Piece | Where | What |
 |---|---|---|
-| Kit `jira-cli` (mixin) | `<project>/.sbx/jira-cli/` | `/usr/local/bin/jira` (linux amd64 + arm64), the agent skill, an egress rule for your Jira host, the credential, and a shell hook |
+| Kit `jira-cli` (mixin) | `<project>/.sbx/jira-cli/` | `/usr/local/bin/jira` (linux amd64 + arm64), an egress rule for your Jira host, the credential, and a shell hook |
 | Environment | `<project>/sbxenv.yaml` | the agent, the kit, your settings mounted read-only (at the same path as on the host), `JIRA_CONFIG` / `JIRA_NO_KEYRING` / `JIRA_READ_ONLY`, and the credential binding |
+| Skill | `<project>/.opencode/skills/jira/` | the agent skill, as an OpenCode project skill (`--no-skill` to skip). Re-runs refresh it unless you edited it |
 | Settings | `~/.config/jira-cli-sbx/` (host) | `config.yaml` and `bashrc`. Created once and never overwritten, so edit them freely |
 | Token | sbx credential store (host) | `sbx secret set jira` |
 
@@ -58,7 +59,6 @@ Expect `credentials` to show `env:JIRA_CREDENTIAL_JIRA_PROD` and `authentication
 | `--template IMAGE` | Your already configured image (e.g. from JFrog) instead of the agent's default (`sandboxOptions.template`) |
 | `--agent-kit REF` | Compose a published agent kit (e.g. `sbx/opencode:<tag>`) instead of the built-in `opencode` |
 | `--agent NAME` | The agent kit's name. If sbx says `agent "opencode" does not match agent kit name "X"`, re-run with `--agent X` |
-| `--skills-path DIR` | Where the agent reads skills (default `/home/agent/.config/opencode/skills`). The kit declares it because some agent kits don't, and sbx then refuses the bundled skill. `--no-skill` leaves the skill out |
 | `--ca-bundle FILE` | Company CA. Copied into the settings folder and referenced by its path there |
 | `--allow-writes` | Drop the read-only guard (default: `read_only: true` and `JIRA_READ_ONLY=1`) |
 | `--binary image` | Take the binary from `ghcr.io/personal-stack/jira-cli` (no Go needed) |
@@ -81,6 +81,7 @@ registries:
 |---|---|
 | `~/.config/jira-cli-sbx/config.yaml` or `bashrc` | Nothing. It is a live read-only mount; new shells and commands see it |
 | jira-cli code (this clone) | Re-run the script (rebuilds the binary and the kit), then recreate the sandbox: `sbx env rm && sbx env run` |
+| The skill | It is a normal project file in `.opencode/skills/jira`. Edit it there, or update it from the clone by re-running the script (`--force` if you edited it) |
 | The token | `sbx secret set jira` |
 
 The settings are read-only inside the sandbox, so the agent can't change its
