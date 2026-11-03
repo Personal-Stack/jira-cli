@@ -82,6 +82,20 @@ if [ -n "${JIRA_CREDENTIAL_FILE:-}" ]; then ro "$JIRA_CREDENTIAL_FILE"; fi
 # `jira setup-sbx` writes into the project and the settings folder; sbx itself
 # runs on the host afterwards (the command prints those steps).
 if [ "${2:-}" = setup-sbx ]; then   # $1 is the image (set above)
+  # Guided run (`jira setup-sbx` alone, in a terminal): ask for the project
+  # here, on the host, because the container only sees mounted folders.
+  if [ $# -eq 2 ] && [ -t 0 ] && [ -t 2 ]; then
+    while :; do
+      printf 'Project the agent works in (mounted read/write) [%s]: ' "$PWD" >&2
+      IFS= read -r ans || exit 1
+      [ -n "$ans" ] || ans=$PWD
+      # shellcheck disable=SC2088 # a literal ~ typed by the user
+      case "$ans" in "~") ans=$HOME ;; "~/"*) ans="$HOME/${ans#"~/"}" ;; esac
+      [ -d "$ans" ] && break
+      echo "  not a directory: $ans" >&2
+    done
+    set -- "$@" -i --project "$(cd "$ans" && pwd)"
+  fi
   sbx_project="$PWD" sbx_settings="$CFG_HOME/jira-cli-sbx" prev=""
   for a in "$@"; do
     case "$prev" in

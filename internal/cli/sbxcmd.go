@@ -43,6 +43,7 @@ type sbxFlags struct {
 	run, allowWrites, noSkill bool
 	binary, sourceDir, image  string
 	binaryFile, arch          string
+	projectSet                bool
 }
 
 func (a *App) setupSbxCmd() *cobra.Command {
@@ -77,6 +78,7 @@ the plan and the sbxenv.yaml without writing anything. See docs/sandbox.md.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			interactive := f.interactive || (cmd.Flags().NFlag() == 0 && a.IsTerminal())
+			f.projectSet = cmd.Flags().Changed("project")
 			return a.runSetupSbx(cmd.Context(), f, interactive, cmd.Flags().Changed("agent"))
 		},
 	}
@@ -367,7 +369,13 @@ func (a *App) askSetupSbx(f *sbxFlags, agentSet bool) error {
 	}
 	fmt.Fprintln(a.Err, "jira-cli sandbox setup. Enter keeps the value in [brackets]; '-' clears an optional one.")
 	fmt.Fprintln(a.Err)
-	for {
+	// In the wrapper's container only mounted folders exist: the wrapper asks
+	// for the project on the host and passes --project.
+	askProject := !(a.inContainer() && f.projectSet)
+	if !askProject {
+		fmt.Fprintln(a.Err, "Project: "+absPath(o.Project))
+	}
+	for askProject {
 		ask(&o.Project, "Project the agent works in (mounted read/write)")
 		if err != nil {
 			return err
@@ -425,7 +433,13 @@ func (a *App) askSetupSbx(f *sbxFlags, agentSet bool) error {
 	if err == nil {
 		fmt.Fprintln(a.Err)
 	}
-	ask(&o.CABundle, "Company CA certificate file (empty = none; usually not needed)")
+	if a.inContainer() {
+		if o.CABundle == "" && err == nil {
+			fmt.Fprintln(a.Err, "Company CA: none (in the container, pass --ca-bundle FILE so the wrapper can mount it)")
+		}
+	} else {
+		ask(&o.CABundle, "Company CA certificate file (empty = none; usually not needed)")
+	}
 	yn(&o.ReadOnly, "Read-only (the agent cannot change anything in Jira)")
 	yn(&o.Skill, "Copy the jira skill into <project>/.opencode/skills/jira")
 	adv := false
@@ -433,7 +447,11 @@ func (a *App) askSetupSbx(f *sbxFlags, agentSet bool) error {
 	if adv {
 		ask(&o.Service, "sbx secret name for the PAT")
 		ask(&o.CredRef, "credential_ref in config.yaml")
-		ask(&o.Settings, "Settings folder on this machine (config.yaml, bashrc)")
+		if a.inContainer() {
+			fmt.Fprintln(a.Err, "Settings folder: "+o.Settings+" (in the container, change it with --settings DIR)")
+		} else {
+			ask(&o.Settings, "Settings folder on this machine (config.yaml, bashrc)")
+		}
 		ask(&f.binary, "Linux binary source: auto, self, go, release, image")
 	}
 	if err != nil {

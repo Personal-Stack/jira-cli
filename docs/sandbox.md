@@ -76,9 +76,13 @@ Expect `credentials` to show `env:JIRA_CREDENTIAL_JIRA_PROD` and `authentication
 `jira setup-sbx` works through the wrapper too. The container only sees what
 the wrapper mounts, so:
 
-1. **Run it from the project folder.** The wrapper mounts the current folder
-   (or `--project`) and the settings folder read-write for `setup-sbx`. In the
-   prompts, keep the suggested project: other folders don't exist in the container.
+1. **The project is asked for on your machine,** before the container starts.
+   The wrapper checks that the folder exists, mounts it and the settings
+   folder read-write, and passes it on. The container doesn't ask again.
+   (With flags: `--project DIR` is mounted the same way.)
+   The other path options can't be asked inside the container, so pass them
+   as flags, and the wrapper mounts them: `--ca-bundle FILE`, `--settings DIR`
+   and `--binary-file FILE`.
 2. **The binary comes from the container itself.** It is already Linux, on your
    machine's architecture, so no Go or download is needed.
 3. **sbx is not in the container.** When it finishes, it prints the host

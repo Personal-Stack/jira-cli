@@ -2,7 +2,7 @@
 # Tests scripts/jira-docker.sh against a real image in an isolated HOME.
 # Usage: scripts/test-docker-wrapper.sh [image]   (default jira-cli:local)
 # Assertions use `cond && ok || ko`; ok() always succeeds.
-# shellcheck disable=SC2015
+# shellcheck disable=SC2015,SC2030,SC2031  # subshells scope the fake docker on purpose
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 IMAGE=${1:-jira-cli:local}
@@ -91,6 +91,19 @@ grep -q "path: $SBXSET" "$HOME/sbxproj/sbxenv.yaml" && grep -q "JIRA_CONFIG: $SB
   && ok "setup-sbx files are owned by the user" || ko "setup-sbx ownership"
 grep -q "run these on the host" "$WORK/e" && grep -q "cd $HOME/sbxproj && sbx env run" "$WORK/e" \
   && ok "setup-sbx prints the host steps (no sbx in the container)" || { ko "setup-sbx host steps"; cat "$WORK/e"; }
+
+# Guided setup-sbx: the wrapper asks for the project on the host (the
+# container cannot see other folders), mounts it and passes it on.
+if command -v script > /dev/null 2>&1; then
+  mkdir -p "$HOME/other project"
+  ( export PATH="$WORK/fakebin:$PATH" ARGS_OUT="$WORK/args2"
+    cd "$HOME/project" && printf '%s\n' "$HOME/missing" "$HOME/other project" | script -qec "$BIN/jira setup-sbx" /dev/null ) > "$WORK/o" 2>&1
+  grep -q "not a directory: $HOME/missing" "$WORK/o" && grep -qx -- "--project" "$WORK/args2" && grep -qx -- "$HOME/other project" "$WORK/args2" \
+    && grep -qx -- "-i" "$WORK/args2" && grep -qx -- "$HOME/other project:$HOME/other project" "$WORK/args2" \
+    && ok "guided setup-sbx: project asked on the host, re-asked if missing, mounted read-write" || { ko "guided setup-sbx"; cat "$WORK/o" "$WORK/args2"; }
+else
+  echo "SKIP  guided setup-sbx (no 'script' command for a pseudo-terminal)"
+fi
 
 j auth logout > "$WORK/o" 2>&1 && [ ! -e "$f" ] && ok "auth logout removes the token file" || { ko "logout"; cat "$WORK/o"; }
 

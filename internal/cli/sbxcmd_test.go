@@ -207,6 +207,27 @@ func TestSetupSbxInContainerPrintsHostSteps(t *testing.T) {
 	}
 }
 
+func TestSetupSbxInContainerDoesNotAskForPaths(t *testing.T) {
+	isolateHome(t)
+	project := t.TempDir()
+	t.Setenv("JIRA_CLI_CONTAINER", "1")
+	// The wrapper asked for the project on the host and passed --project:
+	// the first question is the URL, and there is no CA question.
+	answers := strings.Join([]string{"https://jira.example.com", "", "", "", "", "", "", "y", "", "", "", "", ""}, "\n") + "\n"
+	code, _, errOut, _ := runSbx(t, false, "", answers, "-i", "--project", project)
+	if code != 0 {
+		t.Fatalf("exit %d:\n%s", code, errOut)
+	}
+	if strings.Contains(errOut, "Project the agent works in") || strings.Contains(errOut, "Company CA certificate file") ||
+		!strings.Contains(errOut, "Project: "+project) || !strings.Contains(errOut, "pass --ca-bundle FILE") ||
+		!strings.Contains(errOut, "change it with --settings DIR") {
+		t.Fatalf("prompts:\n%s", errOut)
+	}
+	if _, err := os.Stat(filepath.Join(project, "sbxenv.yaml")); err != nil {
+		t.Fatal("not written")
+	}
+}
+
 func TestSetupSbxRefusesForeignEnvFile(t *testing.T) {
 	isolateHome(t)
 	project := t.TempDir()
