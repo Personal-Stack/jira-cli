@@ -100,7 +100,30 @@ jira config validate
 `jira doctor` tells you: a `tls` check failing with `tls_certificate` /
 `unknown_certificate_authority` means you need it.
 
-### Export the CA certificate from your browser
+### Option A: let the CLI download it (simplest; works with Docker)
+
+```bash
+jira certs fetch                                   # uses base_url from your config
+```
+
+```bash
+jira certs fetch https://jira.company.internal     # or any URL
+```
+
+The command:
+
+- reads the server's certificate chain and, if the server omits the root (common), follows the "CA Issuers" links in the certificates, keeping a downloaded certificate only if it cryptographically signs the one below it;
+- shows every certificate with its **SHA-256 fingerprint** and asks you to type `yes` (`--yes` for scripts; `--dry-run` only shows);
+- saves the CA certificates (never the server's own certificate) to `~/.config/jira-cli/<host>-ca.pem`, proves the file works with a verified handshake, and prints the `ca_bundle` line to put in your config.
+
+**Trust on first use:** the certificates come from the network you're about
+to trust. Compare the root's fingerprint with the one your IT/PKI team
+publishes, especially on networks you don't control. If the output says
+`root_found: false`, the saved file ends at an intermediate CA. That works,
+but the intermediate expires sooner than the root; get the root from IT or the
+browser when you can.
+
+### Option B: export the CA certificate from your browser
 
 Open Jira in the browser first. You want the **top** certificate of the chain
 (the root CA, the one whose name usually contains "Root"), not the Jira
@@ -157,6 +180,7 @@ In `config.yaml` (absolute path; `~` is not expanded):
 
 - The server may send an **incomplete chain**. Browsers fetch the missing intermediate silently; the CLI does not. Export the **intermediate** too (the entry just below the root) and combine both: `cat company-root.pem company-intermediate.pem > ~/.config/jira-cli/company-ca.pem`.
 - A corporate proxy may **inspect TLS** (Zscaler, Netskope, Palo Alto...). Then the top of the chain is the proxy's CA, which is the one you need.
+- `jira certs fetch --dry-run` shows the chain the CLI sees, including through your proxy.
 - Diagnose precisely, from a clone: `scripts/tls-diagnose.sh jira.company.internal ~/.config/jira-cli/company-ca.pem`. It shows the server's chain and says for each certificate whether it works as `ca_bundle`.
 
 ## 5. Token (Personal Access Token)

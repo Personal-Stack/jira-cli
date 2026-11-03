@@ -102,7 +102,7 @@ func PackageName(profile string) string {
 // groups must not shadow them.
 var reservedCommands = map[string]bool{
 	"auth": true, "config": true, "spec": true, "commands": true, "capabilities": true,
-	"doctor": true, "help": true, "completion": true,
+	"doctor": true, "help": true, "completion": true, "certs": true,
 }
 
 // reservedFlags are global or executor flags; generated parameter flags must
