@@ -115,11 +115,26 @@ jobs:
           path: dist
       - name: Serve archives from a local mirror
         run: |
-          New-Item -ItemType Directory -Force mirror/$env:TEST_VERSION | Out-Null
-          Copy-Item dist/* mirror/$env:TEST_VERSION/
-          Set-Content -NoNewline mirror/LATEST $env:TEST_VERSION
-          Start-Process python -ArgumentList '-m','http.server','8765','--bind','127.0.0.1','--directory','mirror' -WindowStyle Hidden
-          Start-Sleep 3
+          # Absolute paths: Start-Process resolves relative paths against the
+          # process working directory, which is not necessarily $PWD.
+          $mirror = Join-Path $PWD 'mirror'
+          New-Item -ItemType Directory -Force (Join-Path $mirror $env:TEST_VERSION) | Out-Null
+          Copy-Item dist/* (Join-Path $mirror $env:TEST_VERSION)
+          Set-Content -NoNewline (Join-Path $mirror 'LATEST') $env:TEST_VERSION
+          $log = Join-Path $env:RUNNER_TEMP 'mirror-http.log'
+          Start-Process python -ArgumentList '-m','http.server','8765','--bind','127.0.0.1','--directory',$mirror `
+            -WorkingDirectory $mirror -RedirectStandardError $log -WindowStyle Hidden
+          # Wait until the mirror really serves the expected version.
+          $ok = $false
+          for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
+            try { $ok = ((Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/LATEST).Content.Trim() -eq $env:TEST_VERSION) } catch { Start-Sleep 1 }
+          }
+          if (-not $ok) {
+            Get-ChildItem -Recurse $mirror | Select-Object FullName | Format-Table -AutoSize | Out-String | Write-Host
+            if (Test-Path $log) { Get-Content $log | Write-Host }
+            throw "local mirror did not serve $mirror/LATEST"
+          }
+          Write-Host "mirror ready: $mirror"
       - name: Install (latest from mirror)
         run: ./scripts/install.ps1 -BaseUrl http://127.0.0.1:8765
       - name: Verify in a new process with the persisted user PATH

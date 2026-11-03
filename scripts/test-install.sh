@@ -11,7 +11,20 @@ INSTALL="$ROOT/scripts/install.sh"
 SH=$(command -v dash || command -v sh)   # POSIX shell, like `curl ... | sh`
 WORK=$(mktemp -d)
 VERSION=v0.0.0-installtest
-cleanup() { [ -n "${SRV:-}" ] && kill "$SRV" 2>/dev/null; rm -rf "$WORK"; }
+# Scenarios use throwaway HOME directories. Keep Go's caches outside them:
+# Go makes its module cache read-only, so a module cache under a temporary
+# HOME cannot be deleted by a non-root user (CI runners), and a fresh cache
+# would re-download every module and the toolchain for each scenario.
+if command -v go >/dev/null 2>&1; then
+  GOMODCACHE=$(go env GOMODCACHE) GOCACHE=$(go env GOCACHE) GOPATH=$(go env GOPATH)
+  export GOMODCACHE GOCACHE GOPATH
+fi
+cleanup() {
+  # wait returns 143 for the killed server; it must not trip set -e in the trap
+  if [ -n "${SRV:-}" ]; then kill "$SRV" 2>/dev/null || true; wait "$SRV" 2>/dev/null || true; fi
+  chmod -R u+w "$WORK" 2>/dev/null   # in case anything read-only was created anyway
+  rm -rf "$WORK"
+}
 trap cleanup EXIT
 
 DIST=${1:-}
