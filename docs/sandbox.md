@@ -57,6 +57,7 @@ Expect `credentials` to show `env:JIRA_CREDENTIAL_JIRA_PROD` and `authentication
 |---|---|
 | `--template IMAGE` | Your already configured image (e.g. from JFrog) instead of the agent's default (`sandboxOptions.template`) |
 | `--agent-kit REF` | Compose a published agent kit (e.g. `sbx/opencode:<tag>`) instead of the built-in `opencode` |
+| `--agent NAME` | The agent kit's name. If sbx says `agent "opencode" does not match agent kit name "X"`, re-run with `--agent X` |
 | `--ca-bundle FILE` | Company CA. Copied into the settings folder and referenced by its path there |
 | `--allow-writes` | Drop the read-only guard (default: `read_only: true` and `JIRA_READ_ONLY=1`) |
 | `--binary image` | Take the binary from `ghcr.io/personal-stack/jira-cli` (no Go needed) |

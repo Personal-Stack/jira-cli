@@ -36,6 +36,7 @@ CRED_REF="jira-prod"
 SERVICE="jira"
 SETTINGS="${XDG_CONFIG_HOME:-$HOME/.config}/jira-cli-sbx"
 AGENT="opencode"
+AGENT_SET=0
 AGENT_KIT=""
 TEMPLATE=""
 CA_BUNDLE=""
@@ -58,9 +59,10 @@ Options:
   --credential-ref REF credential_ref in config.yaml (default: jira-prod)
   --service NAME       sbx secret / credential service name (default: jira)
   --settings DIR       host folder with config.yaml and bashrc (default: ~/.config/jira-cli-sbx)
-  --agent NAME         sbx agent (default: opencode)
+  --agent NAME         sbx agent: a built-in name, or the NAME of the agent kit as sbx reports it
+                       ("agent kit name ..."). Default: opencode, or derived from --agent-kit
   --agent-kit REF      compose this agent kit instead of a built-in agent (e.g. sbx/opencode:<tag>);
-                       --agent is then derived from it
+                       if sbx rejects the derived name, pass --agent with the name it reports
   --template IMAGE     sandbox image to use instead of the agent's default (your configured image)
   --ca-bundle FILE     company CA (PEM or DER) for config.yaml; copied into <settings>
   --allow-writes       do not set read_only / JIRA_READ_ONLY (default: read-only)
@@ -83,7 +85,7 @@ while [ $# -gt 0 ]; do
     --credential-ref) CRED_REF="${2:?--credential-ref needs a value}"; shift ;;
     --service) SERVICE="${2:?--service needs a value}"; shift ;;
     --settings) SETTINGS="${2:?--settings needs a value}"; shift ;;
-    --agent) AGENT="${2:?--agent needs a value}"; shift ;;
+    --agent) AGENT="${2:?--agent needs a value}"; AGENT_SET=1; shift ;;
     --agent-kit) AGENT_KIT="${2:?--agent-kit needs a value}"; shift ;;
     --template) TEMPLATE="${2:?--template needs a value}"; shift ;;
     --ca-bundle) CA_BUNDLE="${2:?--ca-bundle needs a value}"; shift ;;
@@ -118,7 +120,7 @@ case "$CRED_REF" in *[!A-Za-z0-9._-]*|"") die "invalid --credential-ref '$CRED_R
 case "$SERVICE" in *[!a-z0-9-]*|-*|"") die "invalid --service '$SERVICE' (lowercase-kebab)" ;; esac
 case "$BINARY" in auto|go|image) ;; *) die "--binary must be go or image" ;; esac
 
-if [ -n "$AGENT_KIT" ]; then
+if [ -n "$AGENT_KIT" ] && [ "$AGENT_SET" = 0 ]; then
   # Handle = last path segment without tag or digest (sbx/opencode:1.2@sha256:... -> opencode).
   h="${AGENT_KIT%%@*}"; h="${h##*/}"; AGENT="${h%%:*}"
 fi
