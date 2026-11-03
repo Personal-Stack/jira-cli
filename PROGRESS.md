@@ -6,7 +6,7 @@ Last updated: 2026-11-02. Branch: `claude/tender-bohr-rsigl2`.
 
 - Phases 1, 2, 3 and 5 are implemented and pass 72 tests (unit, `httptest` integration over TLS, generator fixtures, race detector). Total statement coverage 68.3%.
 - Structured logging layer with redaction and correlation IDs is in place and exercised in CI (see "Logging" below).
-- **Nothing has been run against a real Jira Data Center instance yet.** That is Phase 4 and the next step (read-only plan below).
+- **Phase 4 (real Jira DC) is in progress.** Confirmed on the user's production instance (via Docker wrapper and native macOS): PAT authentication, TLS with the company CA, `issue search`. Fixed from those runs: `doctor` failing on disabled anonymous access (401), bash 3.2 script failure, DER `.cert` CA files, file names with spaces. Still open: Jira version check, the three pagination shapes, more read commands, the read-only guard on prod, the licensed e2e write scenario, OAuth.
 - OAuth 2.0 is implemented to the RFC (auth code + PKCE + refresh) and tested against a fake authorization server only. Jira DC specifics (PKCE support, client secret requirement, refresh rotation) are unverified.
 
 ## Decisions taken (approved in the plan)
@@ -167,7 +167,7 @@ export JIRA_LOG_LEVEL=debug JIRA_LOG_FORMAT=json JIRA_LOG_FILE=$PWD/phase4-trace
 then:
 
 ```bash
-make build && export PATH=$PWD/bin:$PATH
+# native binary or Docker wrapper on PATH (see docs/getting-started.md)
 jira config validate
 jira auth login                         # or: export JIRA_CREDENTIAL_FILE=~/secrets/jira-dc (chmod 600)
 jira doctor                             # record: jira_version, warnings
@@ -197,7 +197,7 @@ sensitive (the CLI never prints tokens).
 ## Left / open items (prioritised)
 
 1. **Full e2e run with a license** (see above): finish the wizard admin step and the scenario on real Jira 10.3.26.
-2. **Phase 4 results**: fix whatever the real instance shows (pagination caps, version differences, auth).
+2. **Phase 4, remaining read-only checks on production**: `doctor` version, pagination (`issue search --all`, `board get-all --all`, `user find`), `issue get`/`get-transitions`/`field list`/`project get-all`, `issue search-post`, guard test (`issue delete --yes` must exit 9). PAT auth, TLS and `issue search` are confirmed.
 3. OAuth against real Jira DC: confirm endpoints (`/rest/oauth2/latest/...`), PKCE, client secret, scopes, refresh rotation; adjust docs.
 4. Keyring backends: manual test on macOS/Windows/Linux desktop.
 5. Release process: pipeline complete (archives, GHCR image with SBOM/provenance, smoke tests, release last). Missing: a first dry run and first tag; image signing (cosign keyless would publish entries to the public Rekor log, which leaks private repo/image names; decide first).
