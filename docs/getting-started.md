@@ -9,7 +9,7 @@ the end.
 | Your machine | Recommended | Why |
 |---|---|---|
 | **macOS** | **Native binary** | Uses the Keychain for TLS trust (company CAs installed by IT just work) and for your token. No CA file needed |
-| **Windows** | Native binary (`install.ps1`) | Uses the Windows certificate store and Credential Manager |
+| **Windows** | Native binary, installed from Git Bash with `install.sh` | Uses the Windows certificate store and Credential Manager |
 | **Linux** | Native binary | Uses the system CA bundle; secret-service keyring when available |
 | No native binary allowed, or you want isolation | **Docker wrapper** (Linux, macOS, WSL) | Only Docker needed. The container cannot see your OS keychain or certificate store, so you provide the company CA as a file (section 4) and the token is kept in a `0600` file |
 
@@ -32,11 +32,15 @@ directory to your `PATH` and, on macOS, removes the browser's quarantine flag
 so Gatekeeper does not block the (not yet code-signed) binary. Open a new
 terminal afterwards. To update, run the same command with the new archive.
 
-Windows: download the `_windows_amd64.zip`, `SHA256SUMS` and `install.ps1`, then:
+Windows: download the `_windows_amd64.zip`, `SHA256SUMS` and `install.sh`, then
+in **Git Bash** (comes with Git for Windows):
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -Archive .\jira-cli_<version>_windows_amd64.zip
+```bash
+sh install.sh --archive jira-cli_<version>_windows_amd64.zip
 ```
+
+The PATH entry applies to Git Bash; for cmd/PowerShell see
+[installation.md](installation.md#windows-git-bash).
 
 ### Native, from a release with the GitHub CLI
 

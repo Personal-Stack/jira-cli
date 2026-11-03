@@ -30,12 +30,9 @@ Linux / macOS (installs to `~/.local/bin` and adds it to `PATH`):
 gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber && sh /tmp/install.sh
 ```
 
-Windows (installs to `%LOCALAPPDATA%\Programs\jira-cli\bin` and adds it to the user `PATH`):
-
-```powershell
-gh release download -R Personal-Stack/jira-cli -p install.ps1 -D $env:TEMP --clobber
-powershell -ExecutionPolicy Bypass -File $env:TEMP\install.ps1
-```
+Windows: run the same `install.sh` from **Git Bash** (installs `jira.exe` to
+`~/.local/bin`; the PATH entry applies to Git Bash, see
+[docs/installation.md](docs/installation.md#windows-git-bash)).
 
 From a clone: `make install` (needs Go 1.27).
 Only Docker on the machine: `sh scripts/install.sh --docker` installs a `jira`

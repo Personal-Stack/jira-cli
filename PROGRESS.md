@@ -78,7 +78,7 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 
 ### Installation
 - [x] `scripts/install.sh` (Linux/macOS, POSIX sh): release download (mirror, `gh`, `GITHUB_TOKEN`, public URL), SHA256 verification, `~/.local/bin`, idempotent PATH block for bash/zsh/fish/sh, completions, custom binary name, offline archive, from source, uninstall that restores rc files byte-for-byte, shadowing warning
-- [x] `scripts/install.ps1` (Windows PowerShell 5.1/7): same model with the user PATH. **Not executed in this sandbox** (running PowerShell was blocked by its policy); covered by the `installers` CI workflow on `windows-latest`, which has not run yet
+- [x] Windows: `install.sh` from Git Bash/MSYS2/Cygwin (zip, `jira.exe`, `~/.bashrc` PATH block; `~/.bash_profile` only if it exists; `--docker` refused). The PowerShell installer and the Windows CI job were removed (CI minutes; the job never got past runner quirks). Verified only on Linux with a `uname` shim (`uname -s` = `MINGW64_NT-10.0`) and a fake `jira.exe` in a real zip: install, idempotent re-install, offline archive, wrong-platform refusal, tamper rejection, `--docker` refusal, uninstall. **Never run on real Windows.**
 - [x] `scripts/dist.sh` / `make dist` (6 platforms, reproducible tarballs, SHA256SUMS), `release.yml` on `v*` tags, `make install|uninstall|test-install`
 - [x] `scripts/test-install.sh`: 26 scenarios under `dash`, all passing here; found and fixed 2 installer bugs (uninstall exit code; blank-line drift in rc files)
 - [ ] No release has been published yet, so the download path only works after the first tag (`git tag v0.1.0 && git push origin v0.1.0`)

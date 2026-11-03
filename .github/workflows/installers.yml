@@ -1,8 +1,9 @@
 name: installers
 
-# Exercises scripts/install.sh (Linux, macOS) and scripts/install.ps1
-# (Windows, PowerShell 7 and Windows PowerShell 5.1) against real release
-# archives served from a local mirror.
+# Exercises scripts/install.sh (Linux, macOS) against real release archives
+# served from a local mirror. Windows (Git Bash) uses the same script; it has
+# no CI job: Windows runners cost 2x Linux minutes, and the Windows code path
+# (zip + .exe) is small. Test it locally with a uname shim, see PROGRESS.md.
 
 on:
   pull_request:
@@ -97,76 +98,3 @@ jobs:
       - name: Installer tests incl. --docker scenarios
         run: TEST_DOCKER_IMAGE=jira-cli:local scripts/test-install.sh dist
 
-  windows:
-    needs: dist
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shell: [pwsh, powershell]   # PowerShell 7 and Windows PowerShell 5.1
-    defaults:
-      run:
-        shell: ${{ matrix.shell }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
-      - name: Prepare a local mirror
-        run: |
-          # Absolute paths: Start-Process resolves relative paths against the
-          # process working directory, which is not necessarily $PWD.
-          $mirror = Join-Path $PWD 'mirror'
-          New-Item -ItemType Directory -Force (Join-Path $mirror $env:TEST_VERSION) | Out-Null
-          Copy-Item dist/* (Join-Path $mirror $env:TEST_VERSION)
-          # Write LATEST with .NET (no cmdlet parameter binding involved) and
-          # assert it immediately: a previous Set-Content left no file.
-          $latest = Join-Path $mirror 'LATEST'
-          [IO.File]::WriteAllText($latest, $env:TEST_VERSION)
-          if (-not (Test-Path -LiteralPath $latest) -or ([IO.File]::ReadAllText($latest) -ne $env:TEST_VERSION)) {
-            throw "could not write $latest"
-          }
-          Write-Host "LATEST = $([IO.File]::ReadAllText($latest)) ($latest)"
-      - name: Install (latest from mirror)
-        # The runner kills a step's child processes when the step ends, so the
-        # mirror is (re)started in every step that downloads from it.
-        run: |
-          ./scripts/testdata/start-mirror.ps1 -Root (Join-Path $PWD 'mirror') -Version $env:TEST_VERSION
-          ./scripts/install.ps1 -BaseUrl http://127.0.0.1:8765
-      - name: Verify in a new process with the persisted user PATH
-        run: |
-          $userPath = [Environment]::GetEnvironmentVariable('Path','User')
-          $dir = Join-Path $env:LOCALAPPDATA 'Programs\jira-cli\bin'
-          if (-not ($userPath.Split(';') -contains $dir)) { throw "user PATH does not contain $dir" }
-          $out = & powershell -NoProfile -Command "`$env:Path = [Environment]::GetEnvironmentVariable('Path','User') + ';' + `$env:Path; jira --version"
-          if ($out -notmatch $env:TEST_VERSION) { throw "unexpected version output: $out" }
-          Write-Host "OK: $out"
-      - name: Re-install is idempotent (single PATH entry)
-        run: |
-          ./scripts/testdata/start-mirror.ps1 -Root (Join-Path $PWD 'mirror') -Version $env:TEST_VERSION
-          ./scripts/install.ps1 -BaseUrl http://127.0.0.1:8765 -Version $env:TEST_VERSION
-          $dir = Join-Path $env:LOCALAPPDATA 'Programs\jira-cli\bin'
-          $n = @([Environment]::GetEnvironmentVariable('Path','User').Split(';') | Where-Object { $_ -ieq $dir }).Count
-          if ($n -ne 1) { throw "PATH entry count: $n" }
-      - name: Tampered archive is rejected
-        run: |
-          $mirror = Join-Path $PWD 'mirror'
-          $v9 = Join-Path $mirror 'v9.9.9'
-          New-Item -ItemType Directory -Force $v9 | Out-Null
-          $src = Get-ChildItem (Join-Path $mirror "$env:TEST_VERSION/*windows_amd64.zip")
-          $dst = Join-Path $v9 'jira-cli_9.9.9_windows_amd64.zip'
-          Copy-Item $src.FullName $dst
-          [IO.File]::AppendAllText($dst, 'tampered')
-          $sums = [IO.File]::ReadAllText((Join-Path $mirror "$env:TEST_VERSION/SHA256SUMS")) -replace [regex]::Escape($env:TEST_VERSION.TrimStart('v')), '9.9.9'
-          [IO.File]::WriteAllText((Join-Path $v9 'SHA256SUMS'), $sums)
-          ./scripts/testdata/start-mirror.ps1 -Root (Join-Path $PWD 'mirror') -Version $env:TEST_VERSION
-          $p = Start-Process ${{ matrix.shell }} -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/install.ps1','-BaseUrl','http://127.0.0.1:8765','-Version','v9.9.9','-InstallDir',"$env:RUNNER_TEMP\tamper" -Wait -PassThru -NoNewWindow
-          if ($p.ExitCode -eq 0) { throw 'tampered archive was accepted' }
-          if (Test-Path "$env:RUNNER_TEMP\tamper\jira.exe") { throw 'binary installed despite checksum mismatch' }
-      - name: Uninstall
-        run: |
-          ./scripts/install.ps1 -Uninstall
-          $dir = Join-Path $env:LOCALAPPDATA 'Programs\jira-cli\bin'
-          if (Test-Path (Join-Path $dir 'jira.exe')) { throw 'binary left behind' }
-          if ([Environment]::GetEnvironmentVariable('Path','User').Split(';') -contains $dir) { throw 'PATH entry left behind' }

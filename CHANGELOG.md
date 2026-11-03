@@ -14,7 +14,7 @@ First release.
 - Discovery: `commands list|describe`, `capabilities`, `spec status`; an Agent Skill in `skills/jira`.
 
 ### Distribution
-- Installers for Linux/macOS (`install.sh`) and Windows (`install.ps1`), checksum-verified, user-local, PATH set up; a Docker wrapper (`install.sh --docker`).
+- One installer, `install.sh`, for Linux, macOS and Windows (Git Bash): checksum-verified, user-local, PATH set up; a Docker wrapper (`install.sh --docker`, not on Git Bash).
 - Multi-arch container image `ghcr.io/personal-stack/jira-cli` (linux/amd64, linux/arm64).
 
 ### Verification status

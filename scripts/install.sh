@@ -1,5 +1,5 @@
 #!/bin/sh
-# jira-cli installer for Linux and macOS.
+# jira-cli installer for Linux, macOS and Windows (Git Bash, MSYS2, Cygwin).
 #
 # Installs the `jira` binary to ~/.local/bin (no sudo) and adds that directory
 # to PATH in your shell startup file. Every download is verified against the
@@ -13,7 +13,8 @@
 #   sh install.sh --docker               no Go/binary: install a `jira` wrapper that runs the Docker image
 #   sh install.sh --uninstall            remove binary, completions and PATH entry
 #
-# Run `sh install.sh --help` for all options. Windows: use install.ps1.
+# Run `sh install.sh --help` for all options. On Windows, run it from Git Bash;
+# the PATH entry it adds applies to Git Bash only (see docs/installation.md).
 set -eu
 
 REPO="Personal-Stack/jira-cli"
@@ -82,7 +83,9 @@ while [ $# -gt 0 ]; do
 done
 
 case "$BIN_NAME" in *[!A-Za-z0-9._-]*|"") die "invalid --name '$BIN_NAME'" ;; esac
-TARGET="$INSTALL_DIR/$BIN_NAME"
+EXE=""
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) EXE=".exe" ;; esac
+TARGET="$INSTALL_DIR/$BIN_NAME$EXE"
 
 # ---------- shell integration ----------
 
@@ -92,8 +95,13 @@ rc_files() {
     zsh) printf '%s\n' "${ZDOTDIR:-$HOME}/.zshrc" ;;
     bash)
       printf '%s\n' "$HOME/.bashrc"
-      # macOS Terminal starts login shells, which read .bash_profile.
-      [ "$(uname -s)" = Darwin ] && printf '%s\n' "$HOME/.bash_profile"
+      # macOS Terminal and Git Bash start login shells, which read .bash_profile.
+      # Git Bash: only if it exists; when it does not, Git for Windows creates
+      # one that loads .bashrc, and creating it here would hide ~/.profile.
+      case "$(uname -s)" in
+        Darwin) printf '%s\n' "$HOME/.bash_profile" ;;
+        MINGW*|MSYS*|CYGWIN*) [ -f "$HOME/.bash_profile" ] && printf '%s\n' "$HOME/.bash_profile" ;;
+      esac
       ;;
     fish) printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/jira-cli.fish" ;;
     *) printf '%s\n' "$HOME/.profile" ;;
@@ -184,7 +192,7 @@ os=$(uname -s); arch=$(uname -m)
 case "$os" in
   Linux) os=linux ;;
   Darwin) os=darwin ;;
-  MINGW*|MSYS*|CYGWIN*) die "Windows detected: use install.ps1 (PowerShell)" ;;
+  MINGW*|MSYS*|CYGWIN*) os=windows ;;
   *) die "unsupported operating system: $os" ;;
 esac
 case "$arch" in
@@ -192,6 +200,7 @@ case "$arch" in
   aarch64|arm64) arch=arm64 ;;
   *) die "unsupported architecture: $arch (supported: amd64, arm64)" ;;
 esac
+ext=tar.gz; [ "$os" = windows ] && ext=zip
 
 TMP=$(mktemp -d 2>/dev/null || mktemp -d -t jira-cli)
 trap 'rm -rf "$TMP"' EXIT INT TERM
@@ -275,6 +284,7 @@ fetch_release() {
 BIN_SRC=""
 REPO_ROOT=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
 if [ "$DOCKER" = 1 ]; then
+  [ "$os" != windows ] || die "--docker is not supported from Git Bash (path and TTY translation break the wrapper); install the native binary, or run this installer inside WSL"
   if [ "$os" = darwin ]; then
     warn "on macOS the native binary uses the Keychain for both TLS trust (company CAs installed by IT) and tokens; the Docker image cannot see the Keychain, so you will need tls.ca_bundle and a 0600 token file. Prefer installing without --docker."
   fi
@@ -309,25 +319,25 @@ elif [ "$FROM_SOURCE" = 1 ]; then
   command -v go >/dev/null 2>&1 || die "Go is required for --from-source (https://go.dev/dl/); or use --docker"
   ver=$(cd "$SRC_DIR" && git describe --tags --always --dirty 2>/dev/null || echo dev)
   say "Building jira-cli $ver from $SRC_DIR"
-  (cd "$SRC_DIR" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$ver" -o "$TMP/jira" ./cmd/jira)
-  BIN_SRC="$TMP/jira"
+  (cd "$SRC_DIR" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$ver" -o "$TMP/jira$EXE" ./cmd/jira)
+  BIN_SRC="$TMP/jira$EXE"
 else
   if [ -n "$ARCHIVE" ]; then
     [ -f "$ARCHIVE" ] || die "archive not found: $ARCHIVE"
     asset=$(basename "$ARCHIVE")
     # Refuse an archive built for another platform before touching anything.
     case "$asset" in
-      jira-cli_*_"${os}_${arch}".tar.gz) ;;
+      jira-cli_*_"${os}_${arch}.$ext") ;;
       jira-cli_*_*_*.tar.gz|jira-cli_*_*_*.zip)
         want=$(printf '%s' "$asset" | sed -E 's/^jira-cli_.*_([a-z]+)_([a-z0-9]+)\.(tar\.gz|zip)$/\1\/\2/')
-        die "$asset is built for $want, but this machine is $os/$arch; download jira-cli_<version>_${os}_${arch}.tar.gz" ;;
+        die "$asset is built for $want, but this machine is $os/$arch; download jira-cli_<version>_${os}_${arch}.$ext" ;;
     esac
     cp "$ARCHIVE" "$TMP/$asset"
     sums="$(dirname "$ARCHIVE")/SHA256SUMS"
     if [ -f "$sums" ]; then verify "$TMP/$asset" "$sums"; else warn "no SHA256SUMS next to the archive; integrity not verified"; fi
   else
     resolve_version
-    asset="jira-cli_${VERSION#v}_${os}_${arch}.tar.gz"
+    asset="jira-cli_${VERSION#v}_${os}_${arch}.$ext"
     say "Downloading jira-cli $VERSION ($os/$arch)"
     fetch_release "$asset" SHA256SUMS
     verify "$TMP/$asset" "$TMP/SHA256SUMS"
@@ -335,11 +345,14 @@ else
   mkdir -p "$TMP/x"
   case "$asset" in
     *.tar.gz) tar -xzf "$TMP/$asset" -C "$TMP/x" ;;
-    *.zip) die "zip archives are for Windows; use install.ps1" ;;
+    *.zip)
+      if command -v unzip >/dev/null 2>&1; then unzip -q "$TMP/$asset" -d "$TMP/x"
+      elif command -v bsdtar >/dev/null 2>&1; then bsdtar -xf "$TMP/$asset" -C "$TMP/x"
+      else die "need unzip to extract $asset (Git for Windows ships it)"; fi ;;
     *) die "unknown archive type: $asset" ;;
   esac
-  BIN_SRC=$(find "$TMP/x" -type f -name jira | head -n1)
-  [ -n "$BIN_SRC" ] || die "archive does not contain a 'jira' binary"
+  BIN_SRC=$(find "$TMP/x" -type f -name "jira$EXE" | head -n1)
+  [ -n "$BIN_SRC" ] || die "archive does not contain a 'jira$EXE' binary"
 fi
 
 # ---------- install ----------
@@ -392,6 +405,12 @@ if [ "$on_path" = 1 ] && [ -n "$other" ] && [ "$other" != "$TARGET" ]; then
   warn "'$BIN_NAME' resolves to $other, which shadows $TARGET; reinstall with --name jira-dc or reorder PATH"
 elif [ -n "$first" ] && [ "$first" != "$TARGET" ]; then
   warn "'$BIN_NAME' resolves to $first; reinstall with --name jira-dc to avoid the clash"
+fi
+
+if [ "$os" = windows ]; then
+  win_dir="$INSTALL_DIR"; command -v cygpath >/dev/null 2>&1 && win_dir=$(cygpath -w "$INSTALL_DIR")
+  info "Windows: the PATH entry above applies to Git Bash. For cmd/PowerShell, add $win_dir"
+  info "to your user PATH (Settings > System > About > Advanced system settings > Environment Variables)."
 fi
 
 say ""

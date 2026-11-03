@@ -68,7 +68,7 @@ jobs:
       - name: Build archives
         run: scripts/dist.sh "$VERSION" dist
       - name: Attach installers
-        run: cp scripts/install.sh scripts/install.ps1 dist/
+        run: cp scripts/install.sh dist/
       - name: Smoke test the linux/amd64 binary
         run: |
           tar -xzf dist/jira-cli_"${VERSION#v}"_linux_amd64.tar.gz -C "$RUNNER_TEMP"
@@ -158,7 +158,7 @@ jobs:
           ## Install
 
           **Native** (Linux/macOS): download \`install.sh\`, \`SHA256SUMS\` and the archive for your platform, then \`sh install.sh --archive <archive>\`; or \`gh release download $VERSION -R $GITHUB_REPOSITORY -p install.sh -D /tmp && sh /tmp/install.sh --version $VERSION\`.
-          **Windows**: \`install.ps1 -Archive <zip>\`.
+          **Windows** (Git Bash): \`sh install.sh --archive jira-cli_<version>_windows_amd64.zip\`.
 
           **Docker image** (linux/amd64, linux/arm64):
 
