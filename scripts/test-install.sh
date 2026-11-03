@@ -21,7 +21,7 @@ if [ -z "$DIST" ]; then
 fi
 MIRROR="$WORK/mirror"
 mkdir -p "$MIRROR/$VERSION"
-cp "$DIST"/jira-cli_* "$DIST/SHA256SUMS" "$MIRROR/$VERSION/"
+cp "$DIST"/jira-cli_* "$DIST/jira-docker.sh" "$DIST/SHA256SUMS" "$MIRROR/$VERSION/"
 echo "$VERSION" > "$MIRROR/LATEST"
 PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 (cd "$MIRROR" && exec python3 -m http.server "$PORT" --bind 127.0.0.1 > "$WORK/http.log" 2>&1) &
@@ -105,6 +105,32 @@ if command -v go > /dev/null; then
   echo "== from source"
   fresh_home bash
   if run --from-source "$ROOT"; then ok "built and installed from source"; else ko "from source"; cat "$WORK/out"; fi
+fi
+
+# Docker wrapper mode; needs a running daemon and an existing image
+# (TEST_DOCKER_IMAGE, default jira-cli:local) so no build/pull happens here.
+DIMG=${TEST_DOCKER_IMAGE:-jira-cli:local}
+if command -v docker > /dev/null && docker image inspect "$DIMG" > /dev/null 2>&1; then
+  echo "== --docker from a clone (image $DIMG)"
+  fresh_home bash
+  if run --docker --image "$DIMG"; then ok "install --docker"; else ko "install --docker"; cat "$WORK/out"; fi
+  head -1 "$HOME/.local/bin/jira" | grep -q '^#!/bin/sh' && grep -q "JIRA_CLI_IMAGE:-$DIMG" "$HOME/.local/bin/jira" && ok "wrapper installed with the image baked in" || ko "wrapper content"
+  "$HOME/.local/bin/jira" --version | grep -q "jira version" && ok "wrapper runs the container" || ko "wrapper run"
+  [ "$(blocks "$HOME/.bashrc")" = 1 ] && ok "PATH block added" || ko "PATH block"
+  run --uninstall && [ ! -e "$HOME/.local/bin/jira" ] && cmp -s "$HOME/.bashrc" "$HOME/.bashrc.orig" && ok "uninstall restores everything" || ko "docker uninstall"
+
+  echo "== --docker from a release mirror (wrapper checksum-verified)"
+  fresh_home bash
+  cp "$INSTALL" "$WORK/install-copy.sh"   # outside the repo: forces the release path
+  if ( cd "$WORK" && env -u GITHUB_TOKEN "$SH" "$WORK/install-copy.sh" --docker --image "$DIMG" --base-url "$BASE" > "$WORK/out" 2>&1 ); then
+    grep -q "sha256 verified" "$WORK/out" && ok "wrapper downloaded and verified" || { ko "no verification"; cat "$WORK/out"; }
+  else ko "mirror --docker install"; cat "$WORK/out"; fi
+  sed "s/^#!/# tampered\n#!/" "$MIRROR/$VERSION/jira-docker.sh" > "$WORK/t" && cp "$WORK/t" "$MIRROR/v9.9.9/jira-docker.sh" && grep -v jira-docker.sh "$MIRROR/v9.9.9/SHA256SUMS" > "$WORK/s" && grep jira-docker.sh "$MIRROR/$VERSION/SHA256SUMS" >> "$WORK/s" && cp "$WORK/s" "$MIRROR/v9.9.9/SHA256SUMS"
+  fresh_home bash
+  if ( cd "$WORK" && env -u GITHUB_TOKEN "$SH" "$WORK/install-copy.sh" --docker --image "$DIMG" --base-url "$BASE" --version v9.9.9 > "$WORK/out" 2>&1 ); then ko "tampered wrapper accepted"
+  else grep -q "checksum mismatch for jira-docker.sh" "$WORK/out" && ok "tampered wrapper rejected" || { ko "wrong failure"; cat "$WORK/out"; }; fi
+else
+  echo "SKIP  --docker scenarios (no docker daemon or image $DIMG)"
 fi
 
 echo

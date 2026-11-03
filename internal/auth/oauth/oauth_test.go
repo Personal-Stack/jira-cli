@@ -33,7 +33,11 @@ func (s *memStore) Get(ref string) (*credentials.Found, error) {
 	if !ok {
 		return nil, credentials.ErrNotFound
 	}
-	return &credentials.Found{Secret: credentials.NewSecret([]byte(v)), Source: s.src}, nil
+	store := "file"
+	if s.src == "keyring" || s.src == "file-store" {
+		store = s.src
+	}
+	return &credentials.Found{Secret: credentials.NewSecret([]byte(v)), Source: s.src, Store: store}, nil
 }
 func (s *memStore) Writer() (credentials.Writer, error) { return memWriter{s}, nil }
 
@@ -196,5 +200,21 @@ func TestRevokedRefreshToken(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "revoked") {
 		t.Fatal("refresh token value leaked into error")
+	}
+}
+
+func TestRefreshPersistsToFileStore(t *testing.T) {
+	as := &fakeAS{}
+	srv := httptest.NewServer(as.handler(t))
+	defer srv.Close()
+	conf := &oauth2.Config{ClientID: "cli", Endpoint: oauth2.Endpoint{TokenURL: srv.URL + "/token"}}
+	store := &memStore{m: map[string]string{"ref": "rt-1"}, src: "file-store"}
+	p := New("ref", conf, srv.Client(), store)
+	req, _ := http.NewRequest("GET", "https://jira", nil)
+	if err := p.Apply(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(store.m["ref"], "at-refreshed") {
+		t.Fatal("refreshed token not persisted to the file store")
 	}
 }

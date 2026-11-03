@@ -82,6 +82,14 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 - [x] `scripts/test-install.sh`: 26 scenarios under `dash`, all passing here; found and fixed 2 installer bugs (uninstall exit code; blank-line drift in rc files)
 - [ ] No release has been published yet, so the download path only works after the first tag (`git tag v0.1.0 && git push origin v0.1.0`)
 
+### Docker wrapper (run the CLI without Go or a native binary)
+- [x] `scripts/jira-docker.sh` installed as `jira` by `install.sh --docker` (builds `jira-cli:local` from a clone, or pulls `ghcr.io/personal-stack/jira-cli:<version>` with a checksum-verified wrapper)
+- [x] Opt-in file credential store (`JIRA_CREDENTIAL_STORE=file`, 0600 files / 0700 dir, atomic writes); OAuth refresh persists to it. This changes the earlier guarantee "secrets are only written to the keyring"; docs/credentials.md and docs/security.md updated
+- [x] Tests: 19 wrapper checks against a real container as an unprivileged user; 7 `--docker` installer checks (33 installer checks total); found and fixed 2 wrapper bugs (relative `--log-file` mount; duplicate cwd mount)
+- [x] Multi-arch image (amd64/arm64 via cross-compilation) built and verified; `release.yml` pushes it to GHCR on tags (not yet run)
+- [x] Measured: ~710 ms start-up per command vs milliseconds native; reaching a host-loopback Jira needs `JIRA_DOCKER_NETWORK=host`
+- [ ] Not tested on macOS/Windows Docker Desktop
+
 ### Phase 6 (partial)
 - [x] Multi-stage Dockerfile (distroless, nonroot, ~20 MB). Built and run locally: headless mode with mounted secret works; no secrets in layers
 - [x] GitHub Actions CI: spec-validate, verify-generated, vet/gofmt, race tests, govulncheck, build, smoke test, docker build/run

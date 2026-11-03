@@ -26,7 +26,11 @@ const (
 	EnvCredentialFile = "JIRA_CREDENTIAL_FILE" // file holding the selected instance's credential
 	EnvCredentialsDir = "JIRA_CREDENTIALS_DIR" // directory of <credential_ref> files (default /run/secrets)
 	EnvNoKeyring      = "JIRA_NO_KEYRING"      // "1" disables the OS keyring
-	envPrefix         = "JIRA_CREDENTIAL_"     // JIRA_CREDENTIAL_<REF>, e.g. JIRA_CREDENTIAL_JIRA_PRODUCTION
+	// EnvStore selects where `auth login` writes: "keyring" (default) or
+	// "file" (0600 files in JIRA_CREDENTIALS_DIR; for containers and hosts
+	// without a keyring). With "file" the keyring is not used at all.
+	EnvStore          = "JIRA_CREDENTIAL_STORE"
+	envPrefix         = "JIRA_CREDENTIAL_" // JIRA_CREDENTIAL_<REF>, e.g. JIRA_CREDENTIAL_JIRA_PRODUCTION
 	keyringService    = "jira-cli"
 	defaultSecretsDir = "/run/secrets"
 	maxSecretSize     = 64 << 10
@@ -83,12 +87,14 @@ type Writer interface {
 type Found struct {
 	Secret   Secret
 	Source   string   // e.g. "keyring", "file:/run/secrets/jira-prod", "env:JIRA_CREDENTIAL_JIRA_PROD"
+	Store    string   // provider name: file, secrets-dir, file-store, env, keyring
 	Warnings []string // e.g. permissive file mode
 }
 
 // Chain queries providers in order.
 type Chain struct {
 	Providers []Provider
+	storeErr  error
 	// Log receives secret-free resolution events (reference, source,
 	// warnings). Nil disables logging.
 	Log *slog.Logger
@@ -116,11 +122,22 @@ func Default(o Options) *Chain {
 	if dir == "" {
 		dir = defaultSecretsDir
 	}
-	ps = append(ps, &DirProvider{Dir: dir}, &EnvProvider{Getenv: getenv})
-	if getenv(EnvNoKeyring) != "1" {
-		ps = append(ps, &Keyring{})
+	c := &Chain{}
+	switch store := getenv(EnvStore); store {
+	case "file":
+		// Writable directory store first in write order; no keyring.
+		ps = append(ps, &FileStore{DirProvider{Dir: dir}}, &EnvProvider{Getenv: getenv})
+	case "", "keyring":
+		ps = append(ps, &DirProvider{Dir: dir}, &EnvProvider{Getenv: getenv})
+		if getenv(EnvNoKeyring) != "1" {
+			ps = append(ps, &Keyring{})
+		}
+	default:
+		ps = append(ps, &DirProvider{Dir: dir}, &EnvProvider{Getenv: getenv})
+		c.storeErr = fmt.Errorf("%s=%q is invalid (keyring or file)", EnvStore, store)
 	}
-	return &Chain{Providers: ps}
+	c.Providers = ps
+	return c
 }
 
 // Get resolves ref.
@@ -136,7 +153,7 @@ func (c *Chain) Get(ref string) (*Found, error) {
 			continue
 		}
 		if ok {
-			f := &Found{Secret: s, Source: p.Name()}
+			f := &Found{Secret: s, Source: p.Name(), Store: p.Name()}
 			if fp, ok := p.(sourced); ok {
 				f.Source, f.Warnings = fp.source(ref)
 			}
@@ -168,12 +185,15 @@ func (c *Chain) names() []string {
 
 // Writer returns the first writable provider.
 func (c *Chain) Writer() (Writer, error) {
+	if c.storeErr != nil {
+		return nil, c.storeErr
+	}
 	for _, p := range c.Providers {
 		if w, ok := p.(Writer); ok {
 			return w, nil
 		}
 	}
-	return nil, errors.New("no writable credential store (OS keyring disabled or unavailable); provide the credential via a mounted file or environment variable")
+	return nil, errors.New("no writable credential store (OS keyring disabled or unavailable); set " + EnvStore + "=file, or provide the credential via a mounted file or environment variable")
 }
 
 type sourced interface {
@@ -219,6 +239,55 @@ func (d *DirProvider) Get(ref string) (Secret, bool, error) {
 
 func (d *DirProvider) source(ref string) (string, []string) {
 	return "file:" + filepath.Join(d.Dir, ref), d.warn
+}
+
+// FileStore is a writable DirProvider: one file per reference, mode 0600, in
+// a directory created with mode 0700. It exists for containers and hosts
+// without an OS keyring (JIRA_CREDENTIAL_STORE=file). Protection relies on
+// file permissions, as for gh, kubectl or the AWS CLI; prefer the keyring
+// where one is available.
+type FileStore struct{ DirProvider }
+
+func (f *FileStore) Name() string { return "file-store" }
+
+func (f *FileStore) Set(ref string, s Secret) error {
+	if !ValidRef(ref) {
+		return fmt.Errorf("invalid credential reference %q", ref)
+	}
+	if err := os.MkdirAll(f.Dir, 0o700); err != nil {
+		return err
+	}
+	if st, err := os.Stat(f.Dir); err == nil && st.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("credential directory %s is accessible by group/others (mode %o); chmod 700 it", f.Dir, st.Mode().Perm())
+	}
+	tmp, err := os.CreateTemp(f.Dir, "."+ref+".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(s.Bytes()); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), filepath.Join(f.Dir, ref)) // atomic replace
+}
+
+func (f *FileStore) Delete(ref string) error {
+	if !ValidRef(ref) {
+		return fmt.Errorf("invalid credential reference %q", ref)
+	}
+	err := os.Remove(filepath.Join(f.Dir, ref))
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrNotFound
+	}
+	return err
 }
 
 // EnvProvider serves JIRA_CREDENTIAL_<REF>. Environment variables are visible

@@ -1,7 +1,8 @@
 name: release
 
 # Push a tag like v0.1.0 to publish binaries for Linux, macOS and Windows
-# (amd64, arm64), SHA256SUMS and the installers as a GitHub release.
+# (amd64, arm64), SHA256SUMS, the installers and the Docker wrapper as a
+# GitHub release, and a multi-arch image to ghcr.io/personal-stack/jira-cli.
 
 on:
   push:
@@ -9,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 defaults:
   run:
@@ -38,3 +40,25 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes \
             --title "jira-cli $GITHUB_REF_NAME"
+
+  image:
+    runs-on: ubuntu-latest
+    needs: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and push linux/amd64 + linux/arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ github.ref_name }}
+          push: true
+          tags: |
+            ghcr.io/personal-stack/jira-cli:${{ github.ref_name }}
+            ghcr.io/personal-stack/jira-cli:latest

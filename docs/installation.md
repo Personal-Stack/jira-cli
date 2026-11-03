@@ -6,6 +6,7 @@ per-user directory (no admin rights) and add that directory to `PATH`.
 | Platform | Installer | Default location | PATH change |
 |---|---|---|---|
 | Linux, macOS | `scripts/install.sh` (POSIX sh) | `~/.local/bin/jira` | marked block in `~/.bashrc` (+ `~/.bash_profile` on macOS), `~/.zshrc`, fish `conf.d/jira-cli.fish`, or `~/.profile` |
+| Linux, macOS, WSL (with Docker) | `scripts/install.sh --docker` (wrapper, see docs/docker.md) | `~/.local/bin/jira` (shell script) | same as Linux/macOS |
 | Windows | `scripts/install.ps1` (PowerShell 5.1 / 7) | `%LOCALAPPDATA%\Programs\jira-cli\bin\jira.exe` | user `PATH` (registry; new terminals) |
 
 Every download is verified against the release's `SHA256SUMS` before
@@ -48,6 +49,7 @@ powershell -ExecutionPolicy Bypass -File $env:TEMP\install.ps1
 | `--base-url URL` | `-BaseUrl URL` | internal mirror (air-gapped networks) |
 | `--archive FILE` | `-Archive FILE` | offline install from a downloaded archive (`SHA256SUMS` next to it is checked) |
 | `--from-source [DIR]` | | build with Go from a clone (`make install`) |
+| `--docker [--image IMG]` | | install the Docker wrapper instead of the binary |
 | `--uninstall` | `-Uninstall` | remove binary, completions and PATH entry (config and keyring entries are kept) |
 
 The installers warn if another `jira` earlier on `PATH` would shadow this one.

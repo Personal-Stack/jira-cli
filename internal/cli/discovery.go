@@ -201,7 +201,7 @@ func (a *App) capabilitiesCmd() *cobra.Command {
 				"profiles":            profiles,
 				"active":              active,
 				"auth_methods":        []string{"pat", "oauth"},
-				"credential_backends": []string{"file (JIRA_CREDENTIAL_FILE)", "secrets-dir (JIRA_CREDENTIALS_DIR, default /run/secrets)", "env (JIRA_CREDENTIAL_<REF>)", "keyring"},
+				"credential_backends": []string{"file (JIRA_CREDENTIAL_FILE)", "secrets-dir (JIRA_CREDENTIALS_DIR, default /run/secrets)", "env (JIRA_CREDENTIAL_<REF>)", "keyring", "file-store (JIRA_CREDENTIAL_STORE=file)"},
 				"output_formats":      []string{"json", "yaml", "table"},
 				"features": map[string]bool{
 					"dry_run": true, "pagination": true, "risk_classification": true, "read_only_mode": true,

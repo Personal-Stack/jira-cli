@@ -10,6 +10,7 @@
 #   sh install.sh --dir /usr/local/bin   system-wide (may need sudo)
 #   sh install.sh --from-source          build from this repository clone (needs Go)
 #   sh install.sh --archive FILE         offline install from a downloaded archive
+#   sh install.sh --docker               no Go/binary: install a `jira` wrapper that runs the Docker image
 #   sh install.sh --uninstall            remove binary, completions and PATH entry
 #
 # Run `sh install.sh --help` for all options. Windows: use install.ps1.
@@ -25,6 +26,8 @@ COMPLETIONS=0
 FROM_SOURCE=0
 ARCHIVE=""
 UNINSTALL=0
+DOCKER=0
+IMAGE="${JIRA_CLI_IMAGE:-}"
 MARK_BEGIN="# >>> jira-cli >>>"
 MARK_END="# <<< jira-cli <<<"
 
@@ -45,6 +48,10 @@ Options:
   --base-url URL       mirror with layout URL/<tag>/<asset> (env JIRA_CLI_BASE_URL)
   --from-source [DIR]  build with Go from a repository clone (default: this script's repo)
   --archive FILE       install from a local release archive (SHA256SUMS next to it, if present, is checked)
+  --docker             install a 'jira' wrapper that runs the CLI in Docker (no Go needed).
+                       From a clone it builds jira-cli:local; otherwise it pulls
+                       ghcr.io/personal-stack/jira-cli:<version>
+  --image IMAGE        image for --docker (env JIRA_CLI_IMAGE)
   --uninstall          remove the binary, completions and the PATH block
   -h, --help           show this help
 
@@ -66,6 +73,8 @@ while [ $# -gt 0 ]; do
       if [ $# -gt 1 ] && [ "${2#-}" = "$2" ]; then SRC_DIR="$2"; shift; fi ;;
     --archive) ARCHIVE="${2:?--archive needs a value}"; shift ;;
     --uninstall) UNINSTALL=1 ;;
+    --docker) DOCKER=1 ;;
+    --image) IMAGE="${2:?--image needs a value}"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1 (see --help)" ;;
   esac
@@ -218,13 +227,83 @@ http_get() { # http_get URL OUT [extra curl args...]
   fi
 }
 
-# ---------- obtain binary ----------
+# ---------- release downloads ----------
+
+have_gh() { command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; }
+
+resolve_version() {
+  [ -z "$VERSION" ] || return 0
+  say "Resolving latest release"
+  if [ -n "$BASE_URL" ]; then
+    http_get "$BASE_URL/LATEST" "$TMP/LATEST"; VERSION=$(tr -d ' \r\n' < "$TMP/LATEST")
+  elif have_gh; then
+    VERSION=$(gh release view -R "$REPO" --json tagName -q .tagName)
+  else
+    auth=""; [ -n "${GITHUB_TOKEN:-}" ] && auth="Authorization: Bearer $GITHUB_TOKEN"
+    http_get "https://api.github.com/repos/$REPO/releases/latest" "$TMP/latest.json" ${auth:+-H "$auth"} \
+      || die "cannot query releases (private repository: run 'gh auth login' or set GITHUB_TOKEN)"
+    VERSION=$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' "$TMP/latest.json" | head -n1)
+  fi
+  [ -n "$VERSION" ] || die "could not determine the latest release; pass --version"
+}
+
+# fetch_release NAME...: downloads release assets of $VERSION into $TMP.
+fetch_release() {
+  if [ -n "$BASE_URL" ]; then
+    for f in "$@"; do http_get "$BASE_URL/$VERSION/$f" "$TMP/$f"; done
+  elif have_gh; then
+    for f in "$@"; do gh release download "$VERSION" -R "$REPO" -D "$TMP" -p "$f" --clobber; done
+  elif [ -n "${GITHUB_TOKEN:-}" ]; then
+    [ -f "$TMP/release.json" ] || http_get "https://api.github.com/repos/$REPO/releases/tags/$VERSION" "$TMP/release.json" -H "Authorization: Bearer $GITHUB_TOKEN"
+    for f in "$@"; do
+      # Asset API URLs in document order, paired with the following "name".
+      u=$(grep -oE '"(url|name)": *"[^"]*"' "$TMP/release.json" | sed 's/^"\([a-z]*\)": *"\(.*\)"$/\1 \2/' |
+          awk -v n="$f" '$1=="url" && $2 ~ /\/releases\/assets\// {u=$2} $1=="name" && $2==n {print u; exit}')
+      [ -n "$u" ] || die "release $VERSION has no asset $f"
+      http_get "$u" "$TMP/$f" -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/octet-stream"
+    done
+  else
+    for f in "$@"; do
+      http_get "https://github.com/$REPO/releases/download/$VERSION/$f" "$TMP/$f" \
+        || die "download failed (private repository: run 'gh auth login' or set GITHUB_TOKEN)"
+    done
+  fi
+}
+
+# ---------- obtain what to install ----------
 
 BIN_SRC=""
-if [ "$FROM_SOURCE" = 1 ]; then
-  [ -n "$SRC_DIR" ] || SRC_DIR=$(cd "$(dirname "$0")/.." && pwd)
+REPO_ROOT=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
+if [ "$DOCKER" = 1 ]; then
+  command -v docker >/dev/null 2>&1 || die "--docker needs Docker (https://docs.docker.com/get-docker/)"
+  docker info >/dev/null 2>&1 || die "cannot reach the Docker daemon (is it running? is your user in the 'docker' group?)"
+  case "$IMAGE" in *[!A-Za-z0-9._/:@-]*) die "invalid --image '$IMAGE'" ;; esac
+  if [ -f "$REPO_ROOT/Dockerfile" ] && [ -f "$REPO_ROOT/scripts/jira-docker.sh" ] && [ -z "$VERSION" ]; then
+    # Running from a clone: use its wrapper; build the image unless one was given.
+    cp "$REPO_ROOT/scripts/jira-docker.sh" "$TMP/jira-docker.sh"
+    if [ -z "$IMAGE" ]; then
+      IMAGE="jira-cli:local"
+      ver=$(cd "$REPO_ROOT" && git describe --tags --always --dirty 2>/dev/null || echo dev)
+      say "Building image $IMAGE ($ver) from $REPO_ROOT (Go runs inside the build; not needed on this machine)"
+      docker build --build-arg VERSION="$ver" -t "$IMAGE" "$REPO_ROOT" || die "docker build failed"
+    fi
+  else
+    resolve_version
+    [ -n "$IMAGE" ] || IMAGE="ghcr.io/personal-stack/jira-cli:$VERSION"
+    say "Downloading the Docker wrapper for $VERSION"
+    fetch_release jira-docker.sh SHA256SUMS
+    verify "$TMP/jira-docker.sh" "$TMP/SHA256SUMS"
+  fi
+  if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    say "Pulling $IMAGE"
+    docker pull "$IMAGE" || die "cannot pull $IMAGE (private registry: gh auth token | docker login ghcr.io -u <github-user> --password-stdin)"
+  fi
+  sed "s|__JIRA_CLI_IMAGE__|$IMAGE|" "$TMP/jira-docker.sh" > "$TMP/jira-wrapper"
+  BIN_SRC="$TMP/jira-wrapper"
+elif [ "$FROM_SOURCE" = 1 ]; then
+  [ -n "$SRC_DIR" ] || SRC_DIR="$REPO_ROOT"
   [ -f "$SRC_DIR/go.mod" ] || die "$SRC_DIR is not a jira-cli checkout (no go.mod)"
-  command -v go >/dev/null 2>&1 || die "Go is required for --from-source (https://go.dev/dl/)"
+  command -v go >/dev/null 2>&1 || die "Go is required for --from-source (https://go.dev/dl/); or use --docker"
   ver=$(cd "$SRC_DIR" && git describe --tags --always --dirty 2>/dev/null || echo dev)
   say "Building jira-cli $ver from $SRC_DIR"
   (cd "$SRC_DIR" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$ver" -o "$TMP/jira" ./cmd/jira)
@@ -237,45 +316,10 @@ else
     sums="$(dirname "$ARCHIVE")/SHA256SUMS"
     if [ -f "$sums" ]; then verify "$TMP/$asset" "$sums"; else warn "no SHA256SUMS next to the archive; integrity not verified"; fi
   else
-    if [ -z "$VERSION" ]; then
-      say "Resolving latest release"
-      if [ -n "$BASE_URL" ]; then
-        http_get "$BASE_URL/LATEST" "$TMP/LATEST"; VERSION=$(tr -d ' \r\n' < "$TMP/LATEST")
-      elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-        VERSION=$(gh release view -R "$REPO" --json tagName -q .tagName)
-      else
-        auth=""; [ -n "${GITHUB_TOKEN:-}" ] && auth="Authorization: Bearer $GITHUB_TOKEN"
-        http_get "https://api.github.com/repos/$REPO/releases/latest" "$TMP/latest.json" ${auth:+-H "$auth"} \
-          || die "cannot query releases (private repository: run 'gh auth login' or set GITHUB_TOKEN)"
-        VERSION=$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' "$TMP/latest.json" | head -n1)
-      fi
-      [ -n "$VERSION" ] || die "could not determine the latest release; pass --version"
-    fi
+    resolve_version
     asset="jira-cli_${VERSION#v}_${os}_${arch}.tar.gz"
     say "Downloading jira-cli $VERSION ($os/$arch)"
-    if [ -n "$BASE_URL" ]; then
-      http_get "$BASE_URL/$VERSION/$asset" "$TMP/$asset"
-      http_get "$BASE_URL/$VERSION/SHA256SUMS" "$TMP/SHA256SUMS"
-    elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-      gh release download "$VERSION" -R "$REPO" -D "$TMP" -p "$asset" -p SHA256SUMS
-    elif [ -n "${GITHUB_TOKEN:-}" ]; then
-      api="https://api.github.com/repos/$REPO/releases/tags/$VERSION"
-      http_get "$api" "$TMP/release.json" -H "Authorization: Bearer $GITHUB_TOKEN"
-      # Asset API URLs in document order, paired with the following "name".
-      asset_url() {
-        grep -oE '"(url|name)": *"[^"]*"' "$TMP/release.json" | sed 's/^"\([a-z]*\)": *"\(.*\)"$/\1 \2/' |
-          awk -v n="$1" '$1=="url" && $2 ~ /\/releases\/assets\// {u=$2} $1=="name" && $2==n {print u; exit}'
-      }
-      for f in "$asset" SHA256SUMS; do
-        u=$(asset_url "$f"); [ -n "$u" ] || die "release $VERSION has no asset $f"
-        http_get "$u" "$TMP/$f" -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/octet-stream"
-      done
-    else
-      dl="https://github.com/$REPO/releases/download/$VERSION"
-      if ! { http_get "$dl/$asset" "$TMP/$asset" && http_get "$dl/SHA256SUMS" "$TMP/SHA256SUMS"; }; then
-        die "download failed (private repository: run 'gh auth login' or set GITHUB_TOKEN)"
-      fi
-    fi
+    fetch_release "$asset" SHA256SUMS
     verify "$TMP/$asset" "$TMP/SHA256SUMS"
   fi
   mkdir -p "$TMP/x"
@@ -296,7 +340,12 @@ cp "$BIN_SRC" "$INSTALL_DIR/.$BIN_NAME.tmp.$$"
 chmod 755 "$INSTALL_DIR/.$BIN_NAME.tmp.$$"
 mv -f "$INSTALL_DIR/.$BIN_NAME.tmp.$$" "$TARGET"   # atomic replace
 installed=$("$TARGET" --version 2>/dev/null) || die "installed binary does not run: $TARGET"
-say "Installed $installed -> $TARGET"
+if [ "$DOCKER" = 1 ]; then
+  say "Installed $installed (Docker image $IMAGE) -> $TARGET"
+  info "credentials: \${XDG_CONFIG_HOME:-~/.config}/jira-cli/credentials (0600 files; containers have no keyring)"
+else
+  say "Installed $installed -> $TARGET"
+fi
 
 if [ "$COMPLETIONS" = 1 ]; then install_completions; fi
 

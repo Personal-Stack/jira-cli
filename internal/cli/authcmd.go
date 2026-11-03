@@ -32,8 +32,10 @@ func (a *App) authCmd() *cobra.Command {
 	var manual, noVerify bool
 	login := &cobra.Command{
 		Use:   "login",
-		Short: "Store credentials for an instance in the OS keyring",
-		Long: `Store credentials for the selected instance in the OS keyring.
+		Short: "Store credentials for an instance (OS keyring, or files with JIRA_CREDENTIAL_STORE=file)",
+		Long: `Store credentials for the selected instance in the OS keyring, or, with
+JIRA_CREDENTIAL_STORE=file (the Docker wrapper's default), in a 0600 file in
+JIRA_CREDENTIALS_DIR.
 
 PAT: the token is read from standard input (hidden prompt on a terminal, or
 piped: ` + "`printf %s \"$TOKEN\" | jira auth login --method pat`" + `). It is never
@@ -71,7 +73,7 @@ point JIRA_CREDENTIAL_FILE at it (see docs/credentials.md).`,
 	login.Flags().BoolVar(&noVerify, "no-verify", false, "pat: store the token without verifying it against Jira")
 
 	logout := &cobra.Command{
-		Use: "logout", Short: "Remove the instance's credential from the OS keyring", Args: cobra.NoArgs,
+		Use: "logout", Short: "Remove the instance's credential from the credential store", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			in, _, err := a.Instance()
 			if err != nil {
@@ -83,13 +85,13 @@ point JIRA_CREDENTIAL_FILE at it (see docs/credentials.md).`,
 			}
 			if err := w.Delete(in.Auth.CredentialRef); err != nil {
 				if errors.Is(err, credentials.ErrNotFound) {
-					return clierr.New(clierr.LayerCredentials, "not_found", "no keyring entry for "+in.Auth.CredentialRef).
+					return clierr.New(clierr.LayerCredentials, "not_found", "no "+w.Name()+" entry for "+in.Auth.CredentialRef).
 						WithHint("credentials from files or environment variables must be removed where they are defined")
 				}
-				return clierr.Wrap(clierr.LayerCredentials, "keyring_error", "cannot delete keyring entry", err)
+				return clierr.Wrap(clierr.LayerCredentials, "store_error", "cannot delete "+w.Name()+" entry", err)
 			}
 			f, _ := a.Format()
-			return output.Write(a.Out, map[string]any{"ok": true, "removed": in.Auth.CredentialRef, "store": "keyring"}, f)
+			return output.Write(a.Out, map[string]any{"ok": true, "removed": in.Auth.CredentialRef, "store": w.Name()}, f)
 		},
 	}
 
@@ -214,7 +216,7 @@ func (a *App) loginPAT(cmd *cobra.Command, in *config.Instance, noVerify bool) e
 	if err := pat.Validate(tok); err != nil {
 		return clierr.Wrap(clierr.LayerCredentials, "invalid_token", "invalid token", err)
 	}
-	result := map[string]any{"ok": true, "instance": in.Name, "credential_ref": in.Auth.CredentialRef, "store": "keyring", "verified": false}
+	result := map[string]any{"ok": true, "instance": in.Name, "credential_ref": in.Auth.CredentialRef, "verified": false}
 	if !noVerify {
 		p, err := a.ProfileFor(in)
 		if err != nil {
@@ -236,9 +238,10 @@ func (a *App) loginPAT(cmd *cobra.Command, in *config.Instance, noVerify bool) e
 		return clierr.Wrap(clierr.LayerCredentials, "no_keyring", err.Error(), nil)
 	}
 	if err := w.Set(in.Auth.CredentialRef, tok); err != nil {
-		return clierr.Wrap(clierr.LayerCredentials, "keyring_error", "cannot store token in the OS keyring", err).
-			WithHint("in headless environments use JIRA_CREDENTIAL_FILE instead of `auth login`")
+		return clierr.Wrap(clierr.LayerCredentials, "store_error", "cannot store token in "+w.Name(), err).
+			WithHint("without a keyring set " + credentials.EnvStore + "=file, or use JIRA_CREDENTIAL_FILE instead of `auth login`")
 	}
+	result["store"] = w.Name()
 	f, _ := a.Format()
 	return output.Write(a.Out, result, f)
 }
@@ -269,10 +272,10 @@ func (a *App) loginOAuth(cmd *cobra.Command, in *config.Instance, manual bool) e
 		return clierr.Wrap(clierr.LayerCredentials, "no_keyring", err.Error(), nil)
 	}
 	if err := w.Set(in.Auth.CredentialRef, s); err != nil {
-		return clierr.Wrap(clierr.LayerCredentials, "keyring_error", "cannot store token in the OS keyring", err)
+		return clierr.Wrap(clierr.LayerCredentials, "store_error", "cannot store token in "+w.Name(), err)
 	}
 	f, _ := a.Format()
-	res := map[string]any{"ok": true, "instance": in.Name, "credential_ref": in.Auth.CredentialRef, "store": "keyring", "refreshable": tok.RefreshToken != ""}
+	res := map[string]any{"ok": true, "instance": in.Name, "credential_ref": in.Auth.CredentialRef, "store": w.Name(), "refreshable": tok.RefreshToken != ""}
 	if !tok.Expiry.IsZero() {
 		res["expiry"] = tok.Expiry
 	}

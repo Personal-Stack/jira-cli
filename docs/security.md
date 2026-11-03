@@ -21,7 +21,7 @@
 
 | Threat | Vector | Mitigation | Residual risk |
 |---|---|---|---|
-| Credential theft at rest | config file, temp files, image layers | no secrets in config; keyring or mounted secrets; nothing in the Docker image; mounted files permission-checked | env-var credentials readable by same-user processes (documented; prefer files) |
+| Credential theft at rest | config file, temp files, image layers, file store | no secrets in config; keyring or mounted secrets by default; opt-in file store (`JIRA_CREDENTIAL_STORE=file`, Docker wrapper) uses 0600 files in a 0700 dir; nothing in the Docker image; mounted files permission-checked | env-var credentials readable by same-user processes (documented; prefer files) |
 | Token leakage | logs, errors, `--verbose`, dry-run, crash output | `Secret` redaction type; logger never receives headers/bodies; dry-run prints `[REDACTED]`; OAuth errors carry only the error code | a user piping `--verbose` output elsewhere still sees URLs and JQL (not secrets) |
 | Malicious OpenAPI spec | crafted refs, huge files, terminal escape sequences in descriptions, code injection into generated Go | external refs disabled; size cap; control characters stripped; all strings emitted via `strconv.Quote` and `go/format`; checksums pinned and reviewed via REPORT.md diffs | a spec could declare misleading summaries; review the diff |
 | TLS interception | corporate MITM, misconfigured CA | verification on; explicit CA bundle; `doctor` shows issuer/subject | `tls.verify: false` is possible by explicit config (warned) |

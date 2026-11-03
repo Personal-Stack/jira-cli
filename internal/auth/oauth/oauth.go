@@ -42,6 +42,7 @@ type Provider struct {
 	loadErr  error
 	tok      *oauth2.Token
 	source   string
+	store    string
 	warnings []string
 }
 
@@ -112,7 +113,7 @@ func (p *Provider) load() error {
 		p.loadErr = err
 		return err
 	}
-	p.source, p.warnings = f.Source, f.Warnings
+	p.source, p.store, p.warnings = f.Source, f.Store, f.Warnings
 	p.tok, p.loadErr = ParseToken(f.Secret)
 	return p.loadErr
 }
@@ -158,11 +159,11 @@ func (p *Provider) token(ctx context.Context, force bool) (*oauth2.Token, error)
 	return nt, nil
 }
 
-// persist stores refreshed tokens back to the keyring when the token came
-// from it. Tokens from mounted files/env are kept in memory only; we never
-// write secrets to files.
+// persist writes refreshed tokens back to the store they came from, if that
+// store is writable (keyring, or the opt-in file store). Tokens from mounted
+// secret files or env vars are kept in memory only.
 func (p *Provider) persist(t *oauth2.Token) {
-	if p.source != "keyring" {
+	if p.store != "keyring" && p.store != "file-store" {
 		return
 	}
 	w, err := p.Store.Writer()

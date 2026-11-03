@@ -87,3 +87,53 @@ func TestEnvName(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestFileStore(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "creds")
+	e := map[string]string{EnvStore: "file", EnvCredentialsDir: dir}
+	c := Default(Options{PrimaryRef: "jira-prod", Getenv: env(e)})
+	for _, p := range c.Providers {
+		if p.Name() == "keyring" {
+			t.Fatal("keyring must not be used with the file store")
+		}
+	}
+	w, err := c.Writer()
+	if err != nil || w.Name() != "file-store" {
+		t.Fatalf("writer: %v %v", w, err)
+	}
+	if err := w.Set("jira-prod", NewSecret([]byte("tok-1"))); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := os.Stat(filepath.Join(dir, "jira-prod"))
+	dst, _ := os.Stat(dir)
+	if st.Mode().Perm() != 0o600 || dst.Mode().Perm() != 0o700 {
+		t.Fatalf("modes: file %o dir %o", st.Mode().Perm(), dst.Mode().Perm())
+	}
+	f, err := c.Get("jira-prod")
+	if err != nil || f.Secret.Reveal() != "tok-1" || f.Store != "file-store" || len(f.Warnings) != 0 {
+		t.Fatalf("get: %+v %v", f, err)
+	}
+	w.Set("jira-prod", NewSecret([]byte("tok-2"))) // rotation = atomic replace
+	if f, _ = c.Get("jira-prod"); f.Secret.Reveal() != "tok-2" {
+		t.Fatal("replace failed")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatalf("temp files left behind: %v", entries)
+	}
+	if err := w.Set("../escape", NewSecret([]byte("x"))); err == nil {
+		t.Fatal("path traversal accepted")
+	}
+	if err := w.Delete("jira-prod"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Delete("jira-prod"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second delete: %v", err)
+	}
+	os.Chmod(dir, 0o755)
+	if err := w.Set("x", NewSecret([]byte("x"))); err == nil {
+		t.Fatal("must refuse a group/world-accessible credential directory")
+	}
+	if _, err := Default(Options{Getenv: env(map[string]string{EnvStore: "vault"})}).Writer(); err == nil {
+		t.Fatal("invalid store accepted")
+	}
+}

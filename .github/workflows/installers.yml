@@ -8,6 +8,9 @@ on:
   pull_request:
     paths:
       - "scripts/install.*"
+      - "scripts/jira-docker.sh"
+      - "scripts/test-docker-wrapper.sh"
+      - "Dockerfile"
       - "scripts/dist.sh"
       - "scripts/test-install.sh"
       - "cmd/**"
@@ -59,6 +62,25 @@ jobs:
           path: dist
       - name: Installer tests (install.sh)
         run: scripts/test-install.sh dist
+
+  docker-wrapper:
+    needs: dist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Build image
+        run: docker build --build-arg VERSION="$TEST_VERSION" -t jira-cli:local .
+      - name: Wrapper tests (real container)
+        run: scripts/test-docker-wrapper.sh jira-cli:local
+      - name: Installer tests incl. --docker scenarios
+        run: TEST_DOCKER_IMAGE=jira-cli:local scripts/test-install.sh dist
 
   windows:
     needs: dist

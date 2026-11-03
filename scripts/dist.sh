@@ -28,5 +28,6 @@ for p in $PLATFORMS; do
   rm -rf "$stage"
   echo "built $name"
 done
-(cd "$OUT" && sha256sum jira-cli_* > SHA256SUMS)
+cp scripts/jira-docker.sh "$OUT/jira-docker.sh"   # Docker wrapper (install.sh --docker)
+(cd "$OUT" && sha256sum jira-cli_* jira-docker.sh > SHA256SUMS)
 echo "checksums: $OUT/SHA256SUMS"

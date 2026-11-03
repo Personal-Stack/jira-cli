@@ -33,7 +33,9 @@ gh release download -R Personal-Stack/jira-cli -p install.ps1 -D $env:TEMP --clo
 powershell -ExecutionPolicy Bypass -File $env:TEMP\install.ps1
 ```
 
-From a clone: `make install` (needs Go 1.27). Docker: `make docker`.
+From a clone: `make install` (needs Go 1.27).
+Only Docker on the machine: `sh scripts/install.sh --docker` installs a `jira`
+wrapper that runs the CLI image ([docs/docker.md](docs/docker.md)).
 The repository is private, so downloads use the GitHub CLI or `GITHUB_TOKEN`;
 mirrors, offline archives and uninstall are covered in
 [docs/installation.md](docs/installation.md).
@@ -96,6 +98,7 @@ docker run --rm \
 | Topic | Document |
 |---|---|
 | Installation | [docs/installation.md](docs/installation.md) |
+| Docker wrapper (no Go/binary on the machine) | [docs/docker.md](docs/docker.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
 | OpenAPI generation, overlays, spec updates | [docs/openapi-generation.md](docs/openapi-generation.md) |
 | Authentication (PAT, OAuth) | [docs/authentication.md](docs/authentication.md) |
