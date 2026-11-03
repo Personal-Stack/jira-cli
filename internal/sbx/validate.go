@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"time"
@@ -14,6 +15,16 @@ import (
 
 // Validators for single answers, so a wrong value is reported when it is
 // given instead of after the whole setup. NewPlan applies the same rules.
+
+// Values matching these are written into YAML and shell snippets unquoted.
+var (
+	plainPath = regexp.MustCompile(`^/[A-Za-z0-9._/-]*$`)
+	plainName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	kebab     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	hostRe    = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
+	refRe     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/:@-]*$`)
+	baseURLRe = regexp.MustCompile(`^https://[A-Za-z0-9._~:/%+=,;-]+$`)
+)
 
 // ValidName checks an agent, instance, credential ref or sandbox name.
 func ValidName(v string) error {
@@ -33,7 +44,7 @@ func ValidSecretName(v string) error {
 
 // ValidRef checks an image or kit reference.
 func ValidRef(v string) error {
-	if !imageRe.MatchString(v) {
+	if !refRe.MatchString(v) {
 		return fmt.Errorf("%q is not an image or kit reference", v)
 	}
 	return nil
@@ -47,11 +58,10 @@ func ValidSettingsPath(v string) error {
 	return nil
 }
 
-// ValidFile checks that path is a readable regular file.
-func ValidFile(path string) error {
-	st, err := os.Stat(path)
-	if err != nil || st.IsDir() {
-		return fmt.Errorf("file not found: %s", path)
+// ValidDir checks that path is an existing directory.
+func ValidDir(path string) error {
+	if st, err := os.Stat(path); err != nil || !st.IsDir() || !filepath.IsAbs(path) {
+		return fmt.Errorf("not a directory: %s", path)
 	}
 	return nil
 }

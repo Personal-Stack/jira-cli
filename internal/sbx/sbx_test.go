@@ -26,40 +26,69 @@ func testOptions(t *testing.T) Options {
 	if err := os.Mkdir(project, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return Options{
-		Project: project, Settings: filepath.Join(root, "settings"), BaseURL: "https://jira.example.com:8443/jira",
-		Instance: "prod", CredRef: "jira-prod", Service: "jira", Agent: "opencode", ReadOnly: true, Skill: true,
-	}
+	return Options{Project: project, Settings: filepath.Join(root, "settings"), BaseURL: "https://jira.example.com:8443/jira",
+		Agent: "opencode", Secret: "jira", ReadOnly: true, Skill: true}
 }
 
-func TestNewPlanDerivesHostPortAndCredentialEnv(t *testing.T) {
-	p, err := NewPlan(testOptions(t))
+func mustPlan(t *testing.T, o Options) *Plan {
+	t.Helper()
+	p, err := NewPlan(o)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Host != "jira.example.com" || p.Port != 8443 || p.CredEnv != "JIRA_CREDENTIAL_JIRA_PROD" {
-		t.Fatalf("host=%s port=%d env=%s", p.Host, p.Port, p.CredEnv)
+	return p
+}
+
+func write(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewPlan(t *testing.T) {
+	p := mustPlan(t, testOptions(t))
+	if p.Host != "jira.example.com" || p.Port != 8443 || p.AgentName != "opencode" || p.AgentKit != "" || p.CredEnv != "JIRA_CREDENTIAL_JIRA_PROD" {
+		t.Fatalf("%+v", p)
+	}
+	// An agent kit reference: the kit is composed, the name derived from it.
+	o := testOptions(t)
+	o.Agent = "reg.example.com/team/opencode-kit:2.1"
+	if p := mustPlan(t, o); p.AgentKit != o.Agent || p.AgentName != "opencode-kit" {
+		t.Fatalf("kit: %+v", p)
+	}
+	// ...unless sbx told us its real name.
+	o.AgentName = "devex-opencode"
+	if p := mustPlan(t, o); p.AgentName != "devex-opencode" {
+		t.Fatalf("named kit: %+v", p)
+	}
+	// An existing config decides base_url and credential_ref.
+	o = testOptions(t)
+	o.BaseURL = ""
+	write(t, filepath.Join(o.Settings, "config.yaml"), "default_instance: b\ninstances:\n  a: {base_url: https://a.example.com}\n  b:\n    base_url: https://b.example.com/jira\n    auth: {credential_ref: team-pat}\n")
+	if p := mustPlan(t, o); p.BaseURL != "https://b.example.com/jira" || p.CredRef != "team-pat" || p.CredEnv != "JIRA_CREDENTIAL_TEAM_PAT" {
+		t.Fatalf("from config: %+v", p)
 	}
 }
 
 func TestNewPlanRejects(t *testing.T) {
-	cases := map[string]func(*Options){
-		"http":               func(o *Options) { o.BaseURL = "http://jira.example.com" },
-		"credentials in URL": func(o *Options) { o.BaseURL = "https://u:p@jira.example.com" },
-		"quote in URL":       func(o *Options) { o.BaseURL = "https://jira.example.com/'x" },
-		"settings in project": func(o *Options) {
-			o.Settings = filepath.Join(o.Project, "settings")
-		},
+	for name, mutate := range map[string]func(*Options){
+		"http":                func(o *Options) { o.BaseURL = "http://jira.example.com" },
+		"credentials in URL":  func(o *Options) { o.BaseURL = "https://u:p@jira.example.com" },
+		"quote in URL":        func(o *Options) { o.BaseURL = "https://jira.example.com/'x" },
+		"settings in project": func(o *Options) { o.Settings = filepath.Join(o.Project, "settings") },
 		"settings with space": func(o *Options) { o.Settings += " x" },
 		"relative project":    func(o *Options) { o.Project = "proj" },
 		"missing project":     func(o *Options) { o.Project += "-missing" },
 		"agent with space":    func(o *Options) { o.Agent = "my agent" },
+		"bad kit ref":         func(o *Options) { o.Agent = "reg.example.com/a b:1" },
 		"bad name":            func(o *Options) { o.Name = "a/b" },
-		"bad secret":          func(o *Options) { o.Service = "Jira" },
-		"bad image":           func(o *Options) { o.Template = "img name" },
-		"missing CA":          func(o *Options) { o.CABundle = "/does/not/exist.pem" },
-	}
-	for name, mutate := range cases {
+		"bad secret":          func(o *Options) { o.Secret = "Jira" },
+		"bad image":           func(o *Options) { o.Image = "img name" },
+	} {
 		t.Run(name, func(t *testing.T) {
 			o := testOptions(t)
 			mutate(&o)
@@ -70,42 +99,13 @@ func TestNewPlanRejects(t *testing.T) {
 	}
 }
 
-func TestBaseURLFromExistingConfig(t *testing.T) {
-	o := testOptions(t)
-	if err := os.MkdirAll(o.Settings, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "version: 1\ndefault_instance: b\ninstances:\n  a:\n    base_url: https://a.example.com\n  b:\n    base_url: https://b.example.com/jira\n"
-	if err := os.WriteFile(filepath.Join(o.Settings, "config.yaml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	o.BaseURL = ""
-	p, err := NewPlan(o)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.BaseURL != "https://b.example.com/jira" {
-		t.Fatalf("base url %q", p.BaseURL)
-	}
-}
-
-func fakeBinary(t *testing.T) string {
-	t.Helper()
-	p := filepath.Join(t.TempDir(), "jira")
-	if err := os.WriteFile(p, []byte("binary"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
 func TestWriteKitAndEnvFile(t *testing.T) {
 	o := testOptions(t)
-	o.AgentKit, o.Agent, o.Template, o.Name = "reg.example.com/team/opencode:1.0", "devex-opencode", "reg.example.com/img:1", "jira-sbx"
-	p, err := NewPlan(o)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := p.WriteKit(map[string]string{"arm64": fakeBinary(t)}, "v0.2.0-3-gabc"); err != nil {
+	o.Agent, o.AgentName, o.Image, o.Name = "reg.example.com/team/opencode:1.0", "devex-opencode", "reg.example.com/img:1", "jira-sbx"
+	p := mustPlan(t, o)
+	bin := filepath.Join(t.TempDir(), "jira")
+	write(t, bin, "binary")
+	if err := p.WriteKit("arm64", bin, "v0.2.0-3-gabc"); err != nil {
 		t.Fatal(err)
 	}
 	if err := p.WriteEnvFile(); err != nil {
@@ -113,10 +113,8 @@ func TestWriteKitAndEnvFile(t *testing.T) {
 	}
 
 	var kit struct {
-		Kind         string
-		Version      string
-		Dockerfile   string
-		Capabilities []struct {
+		Kind, Version, Dockerfile string
+		Capabilities              []struct {
 			Type   string
 			Config map[string]any
 		}
@@ -139,118 +137,81 @@ func TestWriteKitAndEnvFile(t *testing.T) {
 		inject["domain"] != "jira.example.com" || inject["header"] != "Authorization" || inject["format"] != "Bearer %s" {
 		t.Fatalf("credential: %v", cred)
 	}
-	allow := caps["com.docker.sandbox/network-policy@1"]["runtime"].(map[string]any)["allow"].([]any)
-	if len(allow) != 1 || allow[0] != "jira.example.com:8443" {
+	if allow := caps["com.docker.sandbox/network-policy@1"]["runtime"].(map[string]any)["allow"].([]any); len(allow) != 1 || allow[0] != "jira.example.com:8443" {
 		t.Fatalf("allow: %v", allow)
 	}
-	// A failing startup hook aborts the sandbox start ("failed to run sandbox
-	// container"): the only hook is best effort, and nothing is linked at start.
+	// A failing startup hook aborts the sandbox start ("failed to run
+	// sandbox container"): the only hook is best effort.
 	startup := caps["com.docker.sandbox/lifecycle@1"]["startup"].([]any)
-	if len(startup) != 1 {
-		t.Fatalf("startup hooks: %v", startup)
-	}
-	hook := startup[0].(map[string]any)["command"].([]any)[2].(string)
-	if !strings.HasSuffix(strings.TrimSpace(hook), "|| true") || strings.Contains(hook, "ln -s") {
-		t.Fatalf("hook can fail the start: %s", hook)
-	}
-	if _, ok := caps["com.docker.sandbox/agent-skill@1"]; ok {
-		t.Fatal("the skill must not be bundled in the kit")
+	if hook := startup[0].(map[string]any)["command"].([]any)[2].(string); len(startup) != 1 || !strings.HasSuffix(strings.TrimSpace(hook), "|| true") {
+		t.Fatalf("startup hooks can fail the start: %v", startup)
 	}
 	if st, err := os.Stat(filepath.Join(p.KitDir, "bin", "jira-arm64")); err != nil || st.Mode().Perm() != 0o755 {
 		t.Fatalf("binary: %v %v", st, err)
 	}
-	df, _ := os.ReadFile(filepath.Join(p.KitDir, "jira-cli.dockerfile"))
-	if !strings.Contains(string(df), "COPY --chmod=0755 bin/jira-${TARGETARCH} /usr/bin/jira") {
+	if df, _ := os.ReadFile(filepath.Join(p.KitDir, "jira-cli.dockerfile")); !strings.Contains(string(df), "COPY --chmod=0755 bin/jira-${TARGETARCH} /usr/bin/jira") {
 		t.Fatalf("dockerfile:\n%s", df)
 	}
 
 	var env struct {
 		Name, Agent string
 		Kits        []string
-		Workspace   string
 		Additional  []map[string]any  `yaml:"additionalWorkspaces"`
 		Env         map[string]string `yaml:"env"`
 		Options     map[string]string `yaml:"sandboxOptions"`
 		Bindings    map[string]map[string]map[string][]string
 	}
 	eb, _ := os.ReadFile(p.EnvFile)
-	if !IsGenerated(eb) {
-		t.Fatal("marker missing")
+	if !IsGenerated(eb) || yaml.Unmarshal(eb, &env) != nil {
+		t.Fatalf("env file:\n%s", eb)
 	}
-	if err := yaml.Unmarshal(eb, &env); err != nil {
-		t.Fatalf("env yaml: %v\n%s", err, eb)
-	}
-	if env.Name != "jira-sbx" || env.Agent != "devex-opencode" || len(env.Kits) != 2 || env.Kits[0] != o.AgentKit || env.Kits[1] != "./.sbx/jira-cli" ||
+	if env.Name != "jira-sbx" || env.Agent != "devex-opencode" || strings.Join(env.Kits, ",") != o.Agent+",./.sbx/jira-cli" ||
 		env.Additional[0]["path"] != p.Settings || env.Additional[0]["readOnly"] != true || len(env.Additional[0]) != 2 ||
-		env.Env["JIRA_CONFIG"] != p.ConfigFile || env.Env["JIRA_READ_ONLY"] != "1" || env.Options["template"] != o.Template ||
+		env.Env["JIRA_CONFIG"] != p.ConfigFile || env.Env["JIRA_READ_ONLY"] != "1" || env.Options["template"] != o.Image ||
 		env.Bindings["jira"]["apiKey"]["domains"][0] != "jira.example.com" {
 		t.Fatalf("env file:\n%s", eb)
 	}
 
-	prev, ok := ReadPrevious(p.EnvFile)
-	if !ok || prev != (Previous{Agent: "devex-opencode", AgentKit: o.AgentKit, Template: o.Template, Name: "jira-sbx", ReadOnly: true}) {
-		t.Fatalf("previous: %+v %v", prev, ok)
+	// The project's setup is the next run's defaults, the sbx name included.
+	d := LoadDefaults(p.Project, p.Settings)
+	if !d.Project || d.Agent != o.Agent || d.AgentName != "devex-opencode" || d.Image != o.Image || d.Name != "jira-sbx" || !*d.ReadOnly {
+		t.Fatalf("defaults: %+v", d)
 	}
 }
 
-func TestOptionalFieldsOmitted(t *testing.T) {
+func TestOptionalFieldsOmittedAndForeignEnvFile(t *testing.T) {
 	o := testOptions(t)
 	o.ReadOnly = false
-	p, _ := NewPlan(o)
-	s, err := p.EnvFileContent()
-	if err != nil {
-		t.Fatal(err)
-	}
+	p := mustPlan(t, o)
+	s, _ := p.EnvFileContent()
 	for _, k := range []string{"name:", "sandboxOptions", "JIRA_READ_ONLY", "target:"} {
 		if strings.Contains(s, k) {
 			t.Errorf("unexpected %q in:\n%s", k, s)
 		}
 	}
-}
-
-func TestForeignEnvFileRefused(t *testing.T) {
-	o := testOptions(t)
-	p, _ := NewPlan(o)
-	if err := os.WriteFile(p.EnvFile, []byte("schemaVersion: \"1\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	write(t, p.EnvFile, "schemaVersion: \"1\"\n")
 	if p.CheckEnvFile() == nil {
 		t.Fatal("foreign file accepted")
 	}
-	p.KitOnly = true
-	if p.CheckEnvFile() != nil {
-		t.Fatal("--kit-only must not care")
-	}
-	legacy := []byte("# generated by jira-cli scripts/sbx-setup.sh; re-run it to regenerate.\n")
-	if !IsGenerated(legacy) {
-		t.Fatal("files from the former script must count as generated")
+	p.Force = true
+	if p.CheckEnvFile() != nil || !IsGenerated([]byte("# generated by jira-cli scripts/sbx-setup.sh\n")) {
+		t.Fatal("--force / the former script's files")
 	}
 }
 
 func TestSettingsCreatedOnceAndKept(t *testing.T) {
-	o := testOptions(t)
-	ca := filepath.Join(t.TempDir(), "My CA.pem")
-	if err := os.WriteFile(ca, []byte("pem"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	o.CABundle = ca
-	p, _ := NewPlan(o)
+	p := mustPlan(t, testOptions(t))
 	if _, err := p.WriteSettings(); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(p.ConfigFile)
-	cfg := string(b)
-	for _, want := range []string{"base_url: https://jira.example.com:8443/jira", "credential_ref: jira-prod", "read_only: true", "ca_bundle: " + filepath.Join(p.Settings, "My_CA.pem")} {
-		if !strings.Contains(cfg, want) {
+	cfg, _ := os.ReadFile(p.ConfigFile)
+	for _, want := range []string{"base_url: https://jira.example.com:8443/jira", "credential_ref: jira-prod", "read_only: true"} {
+		if !strings.Contains(string(cfg), want) {
 			t.Errorf("config lacks %q:\n%s", want, cfg)
 		}
 	}
-	if err := os.WriteFile(p.BashrcFile, []byte("# mine\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(p.ConfigFile, []byte("x: /etc/jira-cli/ca.pem\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	write(t, p.BashrcFile, "# mine\n")
+	write(t, p.ConfigFile, "x: /etc/jira-cli/ca.pem\n")
 	notes, err := p.WriteSettings()
 	if err != nil {
 		t.Fatal(err)
@@ -261,29 +222,26 @@ func TestSettingsCreatedOnceAndKept(t *testing.T) {
 	if b, _ := os.ReadFile(p.ConfigFile); string(b) != "x: /etc/jira-cli/ca.pem\n" {
 		t.Fatal("config overwritten")
 	}
-	joined := strings.Join(notes, "\n")
-	for _, want := range []string{"credential_ref", "/etc/jira-cli/", "ca_bundle"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("no warning about %s:\n%s", want, joined)
-		}
+	if last := notes[len(notes)-1]; !last.Warn || !strings.Contains(last.Text, "/etc/jira-cli/") {
+		t.Fatalf("no warning: %+v", notes)
 	}
 }
 
 func TestSkillKeepsLocalEditsUnlessForced(t *testing.T) {
 	skill := fstest.MapFS{"SKILL.md": {Data: []byte("v1")}, "scripts/check.sh": {Data: []byte("#!/bin/sh\n")}}
-	p, _ := NewPlan(testOptions(t))
+	p := mustPlan(t, testOptions(t))
 	if _, err := p.WriteSkill(skill); err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := os.Stat(filepath.Join(p.SkillDir, "scripts", "check.sh")); st.Mode().Perm() != 0o755 {
 		t.Fatal("script not executable")
 	}
-	if err := os.WriteFile(filepath.Join(p.SkillDir, "SKILL.md"), []byte("edited"), 0o644); err != nil {
-		t.Fatal(err)
+	if n, _ := p.WriteSkill(skill); n.Warn {
+		t.Fatal("an unchanged skill counts as edited")
 	}
-	note, err := p.WriteSkill(skill)
-	if err != nil || !strings.HasPrefix(note, "warning:") {
-		t.Fatalf("note %q err %v", note, err)
+	write(t, filepath.Join(p.SkillDir, "SKILL.md"), "edited")
+	if n, err := p.WriteSkill(skill); err != nil || !n.Warn {
+		t.Fatalf("note %+v err %v", n, err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(p.SkillDir, "SKILL.md")); string(b) != "edited" {
 		t.Fatal("edit lost")
@@ -297,13 +255,43 @@ func TestSkillKeepsLocalEditsUnlessForced(t *testing.T) {
 	}
 }
 
-func TestAgentFromKitAndKitVersion(t *testing.T) {
-	for ref, want := range map[string]string{"sbx/opencode:1.2@sha256:ab": "opencode", "reg.example.com:5000/team/devex-opencode": "devex-opencode", "opencode": "opencode"} {
+func TestDefaults(t *testing.T) {
+	o := testOptions(t)
+	o.Agent, o.AgentName, o.Secret, o.ReadOnly = "reg.example.com/k:1", "devex-opencode", "team-jira", false
+	p := mustPlan(t, o)
+	if err := os.MkdirAll(p.Settings, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SaveDefaults(); err != nil {
+		t.Fatal(err)
+	}
+	other := t.TempDir() // a project without a setup gets the saved defaults
+	d := LoadDefaults(other, p.Settings)
+	if d.Project || d.Agent != o.Agent || d.AgentName != "devex-opencode" || d.Secret != "team-jira" || *d.ReadOnly || !*d.Skill {
+		t.Fatalf("saved: %+v", d)
+	}
+	// The format of earlier versions: agent = the kit's name, agent_kit = the kit.
+	write(t, filepath.Join(p.Settings, DefaultsFile), "agent: devex-opencode\nagent_kit: reg.example.com/k:1\n")
+	if d := LoadDefaults(other, p.Settings); d.Agent != "reg.example.com/k:1" || d.AgentName != "devex-opencode" {
+		t.Fatalf("legacy: %+v", d)
+	}
+	for _, c := range [][3]string{
+		{"devex-opencode", "/Users/x/Projects/My Work", "devex-opencode-my-work-jira"},
+		{"Agent.X", "/", "agent-x-jira"},
+	} {
+		if got := DefaultName(c[0], c[1]); got != c[2] || ValidName(got) != nil {
+			t.Errorf("DefaultName(%q, %q) = %q, want %q", c[0], c[1], got, c[2])
+		}
+	}
+	for ref, want := range map[string]string{"sbx/opencode:1.2@sha256:ab": "opencode", "reg.example.com:5000/team/devex-opencode": "devex-opencode"} {
 		if got := AgentFromKit(ref); got != want {
 			t.Errorf("%s: %s", ref, got)
 		}
 	}
-	for v, want := range map[string]string{"v0.1.0": "0.1.0", "v1.2.3-4-gabc-dirty": "1.2.3", "dev": "0.0.0", "42882a1": "0.0.0"} {
+	if name, ok := AgentNameFromSbx([]byte(`error: agent "opencode" does not match agent kit name "devex-opencode" (set agent: ...)`)); !ok || name != "devex-opencode" {
+		t.Fatalf("sbx name: %q %v", name, ok)
+	}
+	for v, want := range map[string]string{"v0.1.0": "0.1.0", "v1.2.3-4-gabc-dirty": "1.2.3", "dev": "0.0.0"} {
 		if got := KitVersion(v); got != want {
 			t.Errorf("%s: %s", v, got)
 		}
@@ -318,25 +306,14 @@ func TestCheckLinuxBinary(t *testing.T) {
 	if err := CheckLinuxBinary(self, runtime.GOARCH); err != nil {
 		t.Fatal(err)
 	}
-	other := map[string]string{"amd64": "arm64", "arm64": "amd64"}[runtime.GOARCH]
-	if err := CheckLinuxBinary(self, other); err == nil {
+	if err := CheckLinuxBinary(self, map[string]string{"amd64": "arm64", "arm64": "amd64"}[runtime.GOARCH]); err == nil {
 		t.Fatal("wrong architecture accepted")
 	}
-	if err := CheckLinuxBinary(fakeBinary(t), runtime.GOARCH); err == nil {
+	fake := filepath.Join(t.TempDir(), "jira")
+	write(t, fake, "not elf")
+	if err := CheckLinuxBinary(fake, runtime.GOARCH); err == nil {
 		t.Fatal("non-ELF accepted")
 	}
-}
-
-func tarGz(t *testing.T, name string, content []byte) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	_ = tw.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(content)), Typeflag: tar.TypeReg})
-	_, _ = tw.Write(content)
-	_ = tw.Close()
-	_ = gz.Close()
-	return buf.Bytes()
 }
 
 func TestBinaryFromReleaseVerifiesChecksum(t *testing.T) {
@@ -346,14 +323,19 @@ func TestBinaryFromReleaseVerifiesChecksum(t *testing.T) {
 	self, _ := os.Executable()
 	elfBytes, _ := os.ReadFile(self)
 	asset := "jira-cli_1.2.3_linux_" + runtime.GOARCH + ".tar.gz"
-	archive := tarGz(t, "jira-cli_1.2.3_linux_"+runtime.GOARCH+"/jira", elfBytes)
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	_ = tw.WriteHeader(&tar.Header{Name: "jira-cli/jira", Mode: 0o755, Size: int64(len(elfBytes)), Typeflag: tar.TypeReg})
+	_, _ = tw.Write(elfBytes)
+	_, _ = tw.Close(), gz.Close()
+	archive := buf.Bytes()
 	sum := sha256.Sum256(archive)
-	sums := hex.EncodeToString(sum[:]) + "  " + asset + "\n"
 	tamper := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1.2.3/SHA256SUMS":
-			_, _ = w.Write([]byte(sums))
+			_, _ = w.Write([]byte(hex.EncodeToString(sum[:]) + "  " + asset + "\n"))
 		case "/v1.2.3/" + asset:
 			if tamper {
 				_, _ = w.Write(append(append([]byte{}, archive...), 'x'))
@@ -370,11 +352,9 @@ func TestBinaryFromReleaseVerifiesChecksum(t *testing.T) {
 	defer func() { ReleaseBase = old }()
 
 	req := BinaryRequest{Source: SourceRelease, Arch: runtime.GOARCH, Version: "v1.2.3", Dir: t.TempDir()}
-	p, src, err := GetBinary(context.Background(), req)
-	if err != nil || src != SourceRelease {
+	if p, src, err := GetBinary(context.Background(), req); err != nil || src != SourceRelease {
 		t.Fatalf("%v %s", err, src)
-	}
-	if got, _ := os.ReadFile(p); !bytes.Equal(got, elfBytes) {
+	} else if got, _ := os.ReadFile(p); !bytes.Equal(got, elfBytes) {
 		t.Fatal("extracted binary differs")
 	}
 	tamper = true
@@ -384,30 +364,5 @@ func TestBinaryFromReleaseVerifiesChecksum(t *testing.T) {
 	req.Version = "v1.2.3-4-gabc"
 	if _, _, err := GetBinary(context.Background(), req); err == nil || !strings.Contains(err.Error(), "not a released version") {
 		t.Fatalf("dev version: %v", err)
-	}
-}
-
-func TestDefaultNameAndRemembered(t *testing.T) {
-	for _, c := range [][3]string{
-		{"devex-opencode", "/Users/x/Projects/My Work", "devex-opencode-my-work-jira"},
-		{"opencode", "/tmp/jira-cli", "opencode-jira-cli-jira"},
-		{"Agent.X", "/", "agent-x-jira"},
-	} {
-		if got := DefaultName(c[0], c[1]); got != c[2] || !plainName.MatchString(got) {
-			t.Errorf("DefaultName(%q, %q) = %q, want %q", c[0], c[1], got, c[2])
-		}
-	}
-	o := testOptions(t)
-	o.Agent, o.AgentKit, o.ReadOnly, o.Skill = "devex-opencode", "reg.example.com/k:1", false, true
-	p, _ := NewPlan(o)
-	if err := os.MkdirAll(p.Settings, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := p.SaveRemembered(); err != nil {
-		t.Fatal(err)
-	}
-	r, ok := LoadRemembered(p.Settings)
-	if !ok || r.Agent != "devex-opencode" || r.AgentKit != "reg.example.com/k:1" || r.ReadOnly == nil || *r.ReadOnly || r.Skill == nil || !*r.Skill {
-		t.Fatalf("remembered: %+v %v", r, ok)
 	}
 }

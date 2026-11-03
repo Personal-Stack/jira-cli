@@ -99,7 +99,7 @@ LISTENER=$!
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$WORK/port" ] && break; sleep 0.2; done
 JIRA_URL="https://127.0.0.1:$(cat "$WORK/port")"
 mkdir -p "$HOME/sbxproj"
-(cd "$HOME/sbxproj" && PATH="$WORK/sbxbin:$PATH" JIRA_DOCKER_NETWORK=host "$BIN/jira" setup-sbx --base-url "$JIRA_URL" --agent-kit reg.example.com/devex/opencode:1 --name sbx-test < /dev/null) > "$WORK/o" 2> "$WORK/e"; rc=$?
+(cd "$HOME/sbxproj" && PATH="$WORK/sbxbin:$PATH" JIRA_DOCKER_NETWORK=host "$BIN/jira" setup-sbx --base-url "$JIRA_URL" --agent reg.example.com/devex/opencode:1 --name sbx-test < /dev/null) > "$WORK/o" 2> "$WORK/e"; rc=$?
 kill "$LISTENER" 2> /dev/null
 SBXSET="$HOME/.config/jira-cli-sbx"
 [ $rc = 0 ] && [ -f "$HOME/sbxproj/sbxenv.yaml" ] && [ -f "$HOME/sbxproj/.opencode/skills/jira/SKILL.md" ] && [ -f "$SBXSET/config.yaml" ] \
@@ -112,7 +112,7 @@ grep -q "path: $SBXSET" "$HOME/sbxproj/sbxenv.yaml" && grep -q "JIRA_CONFIG: $SB
   && ok "setup-sbx files are owned by the user" || ko "setup-sbx ownership"
 grep -q "cd $HOME/sbxproj && sbx env run" "$WORK/e" && grep -q 'sbx names the agent kit "devex-opencode": using it' "$WORK/e" \
   && grep -q "sbx accepts the environment" "$WORK/e" && grep -qx "agent: devex-opencode" "$HOME/sbxproj/sbxenv.yaml" \
-  && grep -qx "agent: devex-opencode" "$SBXSET/setup.yaml" && grep -qx jira "$SBX_STATE/secrets" \
+  && grep -qx "agent_name: devex-opencode" "$SBXSET/setup.yaml" && grep -qx jira "$SBX_STATE/secrets" \
   && ok "setup-sbx: host checks after the container (secret stored, agent name taken from sbx, plan accepted)" || { ko "setup-sbx host checks"; cat "$WORK/e"; cat "$HOME/sbxproj/sbxenv.yaml"; }
 
 # Guided setup-sbx: the wrapper asks for the project on the host (the

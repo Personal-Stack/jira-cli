@@ -8,7 +8,7 @@
 #   - the current directory mounted read-only at the same path, so
 #     `--file issue.json` works;
 #   - for `jira setup-sbx`: the project (current directory or --project) and
-#     the settings folder read-write, --ca-bundle / --binary-file read-only;
+#     the settings folder read-write, --binary-file read-only;
 #   - credentials stored as 0600 files in ~/.config/jira-cli/credentials
 #     (JIRA_CREDENTIAL_STORE=file), because containers have no OS keyring;
 #   - your uid/gid, so files it writes are yours;
@@ -98,16 +98,16 @@ if [ "${2:-}" = setup-sbx ]; then   # $1 is the image (set above)
   fi
   sbx_project="$PWD" sbx_settings="$CFG_HOME/jira-cli-sbx" prev="" sbx_host=1
   for a in "$@"; do
-    case "$a" in --dry-run|--skip-checks|--kit-only|-h|--help) sbx_host=0 ;; esac
+    case "$a" in --dry-run|--skip-checks|-h|--help) sbx_host=0 ;; esac
     case "$prev" in
       --project) sbx_project="$a" ;;
       --settings) sbx_settings="$a" ;;
-      --ca-bundle|--binary-file) ro "$a" ;;
+      --binary-file) ro "$a" ;;
     esac
     case "$a" in
       --project=*) sbx_project="${a#--project=}" ;;
       --settings=*) sbx_settings="${a#--settings=}" ;;
-      --ca-bundle=*|--binary-file=*) ro "${a#*=}" ;;
+      --binary-file=*) ro "${a#*=}" ;;
     esac
     prev="$a"
   done
@@ -168,9 +168,10 @@ sbx_host_checks() {
   name=$(printf '%s\n' "$out" | sed -n 's/.*agent kit name "\([A-Za-z0-9._-]*\)".*/\1/p' | head -n 1)
   if [ -n "$name" ]; then
     echo "  ! sbx names the agent kit \"$name\": using it" >&2
-    for f in "$sbx_project/sbxenv.yaml" "$sbx_settings/setup.yaml"; do
-      if [ -f "$f" ]; then sed "s/^agent: .*/agent: $name/" "$f" > "$f.tmp" && mv "$f.tmp" "$f"; fi
-    done
+    f="$sbx_project/sbxenv.yaml"
+    sed "s/^agent: .*/agent: $name/" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    f="$sbx_settings/setup.yaml"   # remembered for the next project
+    if [ -f "$f" ]; then { grep -v '^agent_name:' "$f"; echo "agent_name: $name"; } > "$f.tmp" && mv "$f.tmp" "$f"; fi
     if out=$(cd "$sbx_project" && sbx env plan 2>&1); then echo "  ✓ sbx accepts the environment" >&2; return 0; fi
   fi
   echo "  ! sbx rejected the environment:" >&2

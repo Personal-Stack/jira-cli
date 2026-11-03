@@ -1,0 +1,139 @@
+package sbx
+
+import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// DefaultsFile, in the settings folder, keeps the last setup's choices; they
+// are the defaults for the next project.
+const DefaultsFile = "setup.yaml"
+
+// Defaults are the choices a run starts from: this project's previous setup
+// if it has one, else the last setup of any project (DefaultsFile).
+type Defaults struct {
+	Agent, AgentName, Image, Secret string
+	ReadOnly, Skill                 *bool
+
+	Name    string // the project's own sandbox name (only when Project)
+	From    string // where they came from, "" if nowhere
+	Project bool   // from this project's sbxenv.yaml
+}
+
+// saved is DefaultsFile's format. AgentKit is how earlier versions stored a
+// kit (with Agent holding its name).
+type saved struct {
+	Agent     string `yaml:"agent,omitempty"`
+	AgentName string `yaml:"agent_name,omitempty"`
+	AgentKit  string `yaml:"agent_kit,omitempty"`
+	Image     string `yaml:"image,omitempty"`
+	Secret    string `yaml:"secret,omitempty"` // also read by scripts/jira-docker.sh
+	ReadOnly  *bool  `yaml:"read_only,omitempty"`
+	Skill     *bool  `yaml:"skill,omitempty"`
+}
+
+// LoadDefaults reads the defaults for project.
+func LoadDefaults(project, settings string) Defaults {
+	var d Defaults
+	path := filepath.Join(settings, DefaultsFile)
+	var s saved
+	if b, err := os.ReadFile(path); err == nil && yaml.Unmarshal(b, &s) == nil {
+		if s.AgentKit != "" {
+			s.Agent, s.AgentName = s.AgentKit, s.Agent
+		}
+		d = Defaults{Agent: s.Agent, AgentName: s.AgentName, Image: s.Image, Secret: s.Secret, ReadOnly: s.ReadOnly, Skill: s.Skill, From: "your last setup (" + path + ")"}
+	}
+	b, err := os.ReadFile(filepath.Join(project, "sbxenv.yaml"))
+	if err != nil || !IsGenerated(b) {
+		return d
+	}
+	var env struct {
+		Name    string            `yaml:"name"`
+		Agent   string            `yaml:"agent"`
+		Kits    []any             `yaml:"kits"`
+		Env     map[string]string `yaml:"env"`
+		Options struct {
+			Template string `yaml:"template"`
+		} `yaml:"sandboxOptions"`
+	}
+	if yaml.Unmarshal(b, &env) != nil {
+		return d
+	}
+	ro := env.Env["JIRA_READ_ONLY"] == "1"
+	d.Agent, d.AgentName, d.Image, d.Name, d.ReadOnly = env.Agent, "", env.Options.Template, env.Name, &ro
+	for _, k := range env.Kits {
+		if ref, ok := k.(string); ok && !strings.HasPrefix(ref, ".") {
+			d.Agent, d.AgentName = ref, env.Agent
+			break
+		}
+	}
+	d.From, d.Project = "this project's previous setup", true
+	return d
+}
+
+// SaveDefaults stores this plan's choices for the next project.
+func (p *Plan) SaveDefaults() error {
+	ro, skill := p.ReadOnly, p.Skill
+	s := saved{Agent: p.Agent, Image: p.Image, Secret: p.Secret, ReadOnly: &ro, Skill: &skill}
+	if p.AgentKit != "" && p.AgentName != AgentFromKit(p.AgentKit) {
+		s.AgentName = p.AgentName
+	}
+	b, err := yaml.Marshal(s)
+	if err != nil {
+		return err
+	}
+	head := "# Choices of the last 'jira setup-sbx', used as defaults for the next project.\n"
+	return os.WriteFile(filepath.Join(p.Settings, DefaultsFile), append([]byte(head), b...), 0o644)
+}
+
+var notNameChars = regexp.MustCompile(`[^a-z0-9]+`)
+
+// DefaultName is a new project's sandbox name: <agent>-<project folder>-jira.
+// sbx's own default, <agent>-<project folder>, is the name `sbx run` gives a
+// sandbox in that folder; reusing it collides with such a sandbox.
+func DefaultName(agentName, project string) string {
+	var parts []string
+	for _, s := range []string{agentName, filepath.Base(project), "jira"} {
+		if s = strings.Trim(notNameChars.ReplaceAllString(strings.ToLower(s), "-"), "-"); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, "-")
+}
+
+type configInfo struct{ baseURL, credRef string }
+
+// readConfig reads base_url and credential_ref of the default (or first)
+// instance of a jira-cli config file.
+func readConfig(path string) configInfo {
+	var c struct {
+		Default   string `yaml:"default_instance"`
+		Instances map[string]struct {
+			BaseURL string `yaml:"base_url"`
+			Auth    struct {
+				CredRef string `yaml:"credential_ref"`
+			} `yaml:"auth"`
+		} `yaml:"instances"`
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || yaml.Unmarshal(b, &c) != nil {
+		return configInfo{}
+	}
+	in, ok := c.Instances[c.Default]
+	if !ok {
+		for _, i := range c.Instances {
+			in = i
+			break
+		}
+	}
+	return configInfo{in.BaseURL, in.Auth.CredRef}
+}
+
+// BaseURLFromConfig returns the Jira base URL of <settings>/config.yaml, or "".
+func BaseURLFromConfig(settings string) string {
+	return readConfig(filepath.Join(settings, "config.yaml")).baseURL
+}

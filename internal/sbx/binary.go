@@ -26,23 +26,18 @@ const (
 	SourceSelf    = "self"    // this executable, when it is linux/<arch>
 	SourceGo      = "go"      // go build from a jira-cli clone
 	SourceRelease = "release" // the GitHub release of this version, SHA-256 verified
-	SourceImage   = "image"   // extracted from the published container image
 	SourceFile    = "file"    // a file the user names
 )
-
-// DefaultImage is the published container image.
-const DefaultImage = "ghcr.io/personal-stack/jira-cli"
 
 // ReleaseBase is where release assets are downloaded from (a variable for tests).
 var ReleaseBase = "https://github.com/Personal-Stack/jira-cli/releases/download"
 
 // BinaryRequest describes where to get a linux jira binary from.
 type BinaryRequest struct {
-	Source  string // auto, self, go, release, image, file
+	Source  string // auto, self, go, release, file
 	Arch    string // GOARCH of the sandbox (= the host's, sandboxes are VMs of the host architecture)
 	Version string // this CLI's version
 	Clone   string // jira-cli clone for SourceGo ("" = search from the working directory)
-	Image   string // image for SourceImage ("" = DefaultImage:<version or latest>)
 	File    string // for SourceFile
 	Dir     string // scratch directory for downloads and builds
 	Log     func(string)
@@ -56,7 +51,7 @@ func GetBinary(ctx context.Context, r BinaryRequest) (path, source string, err e
 	}
 	try := []string{r.Source}
 	if r.Source == "" || r.Source == "auto" {
-		try = []string{SourceSelf, SourceGo, SourceRelease, SourceImage}
+		try = []string{SourceSelf, SourceGo, SourceRelease}
 	}
 	var errs []string
 	for _, s := range try {
@@ -68,15 +63,13 @@ func GetBinary(ctx context.Context, r BinaryRequest) (path, source string, err e
 			p, err = fromGo(ctx, r)
 		case SourceRelease:
 			p, err = fromRelease(ctx, r)
-		case SourceImage:
-			p, err = fromImage(ctx, r)
 		case SourceFile:
 			p, err = r.File, nil
 			if p == "" {
 				err = errors.New("no file given")
 			}
 		default:
-			return "", "", fmt.Errorf("unknown binary source %q (auto, self, go, release, image, file)", s)
+			return "", "", fmt.Errorf("unknown binary source %q (auto, self, go, release, file)", s)
 		}
 		if err == nil {
 			err = CheckLinuxBinary(p, r.Arch)
@@ -248,34 +241,4 @@ func extractJira(archive []byte, out string) error {
 			return err
 		}
 	}
-}
-
-func fromImage(ctx context.Context, r BinaryRequest) (string, error) {
-	if _, err := exec.LookPath("docker"); err != nil {
-		return "", errors.New("docker is not installed")
-	}
-	img := r.Image
-	if img == "" {
-		tag := "latest"
-		if isRelease(r.Version) {
-			tag = r.Version
-		}
-		img = DefaultImage + ":" + tag
-	}
-	r.Log("extracting jira from " + img + " (linux/" + r.Arch + ")")
-	cid, err := exec.CommandContext(ctx, "docker", "create", "--platform", "linux/"+r.Arch, img).Output()
-	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			return "", fmt.Errorf("docker create %s: %s", img, strings.TrimSpace(string(ee.Stderr)))
-		}
-		return "", err
-	}
-	id := strings.TrimSpace(string(cid))
-	defer exec.Command("docker", "rm", id).Run() //nolint:errcheck // best-effort cleanup
-	out := filepath.Join(r.Dir, "jira-image-"+r.Arch)
-	if b, err := exec.CommandContext(ctx, "docker", "cp", id+":/usr/local/bin/jira", out).CombinedOutput(); err != nil {
-		return "", fmt.Errorf("docker cp: %s", strings.TrimSpace(string(b)))
-	}
-	return out, nil
 }

@@ -4,260 +4,152 @@ Run an AI agent (OpenCode by default) in a [Docker Sandbox](https://docs.docker.
 with jira-cli available, while the **Jira personal access token stays on your
 machine**.
 
-## How it works
-
-`jira setup-sbx` generates a local sbx kit and an `sbxenv.yaml`:
-
-| Piece | Where | What |
-|---|---|---|
-| Kit `jira-cli` (mixin) | `<project>/.sbx/jira-cli/` | `/usr/bin/jira` (linux, for your machine's architecture; `/usr/bin` because some images leave `/usr/local/bin` off `PATH`, and installing it in the kit's image layer means nothing has to run at sandbox start), an egress rule for your Jira host, the credential, and a shell hook |
-| Environment | `<project>/sbxenv.yaml` | the agent, the kit, your settings mounted read-only (at the same path as on the host), `JIRA_CONFIG` / `JIRA_NO_KEYRING` / `JIRA_READ_ONLY`, and the credential binding |
-| Skill | `<project>/.opencode/skills/jira/` | the agent skill (embedded in `jira`), as an OpenCode project skill (`--no-skill` to skip). Re-runs refresh it unless you edited it |
-| Settings | `~/.config/jira-cli-sbx/` (host) | `config.yaml` and `bashrc`. Created once and never overwritten, so edit them freely |
-| Token | sbx credential store (host) | `sbx secret set jira` |
-
-**The token.** Inside the sandbox, `JIRA_CREDENTIAL_<REF>` (for example
-`JIRA_CREDENTIAL_JIRA_PROD`) holds only a sentinel value. The sandbox proxy
-replaces the `Authorization` header with `Bearer <your PAT>` on requests to
-your Jira host. The agent can't read the real token, even with `env` or `cat`.
-This follows the kit spec's `credential@1` with `proxyManaged: true`.
-
-## How the setup makes sure it works
-
-sbx is the authority on what works (agent kit names, secrets, the
-environment format), so `jira setup-sbx` asks sbx instead of you wherever it
-can. It also stops at the first problem, before anything is written:
-
-1. **Checks, before any question.** It checks three things: that sbx is
-   installed and answers (signed in), that a Linux `jira` for the kit is
-   available, and which sbx secrets exist.
-2. **Answers, each checked when given.** The project must exist (and an
-   `sbxenv.yaml` that isn't ours is decided right there). The Jira host must
-   resolve and accept a connection. Names, references and the CA file are
-   valid. A wrong answer is asked again.
-3. **sbx validates the whole environment** with `sbx env plan` on a scratch
-   copy, before your project is touched. If sbx knows your agent kit under
-   another name (`agent kit name "..."`), that name is used automatically and
-   saved for next time. Any other sbx error is shown as is, and nothing is written.
-4. **The PAT:** the sbx secret exists, or sbx stores it now (sbx prompts for it).
-5. **Only then** are the files written, followed by the next steps.
-
-You don't type everything again: answers are saved and offered next time.
-A project you set up before, or a new project after any earlier setup, shows
-the settings and asks once: *Use these settings?*
-
-`--skip-checks` skips steps 1 and 3 and the reachability check, and only
-writes the files (e.g. without sbx installed).
-
 ## Set up
-
-With `jira` installed (any install method), run the guided setup:
 
 ```bash
 jira setup-sbx
 ```
 
-From a clone, `make sbx` does the same with the code of the clone. Run
-without flags in a terminal, it asks for:
+Run it without flags in a terminal and it asks:
+- **Project:** the folder the agent works in.
+- **Jira base URL:** checked for reachability as you enter it.
+- **Agent:** a built-in agent such as `opencode`, or your agent kit's reference (`registry/repo:tag`).
+- **Sandbox image:** empty for the agent's default.
+- **Sandbox name:** a new project gets `<agent>-<folder>-jira`.
+- **Read-only:** default yes.
 
-| Question | Notes |
+After a summary and **Proceed**, it writes the files and prints the next
+steps. From a jira-cli clone, `make sbx` runs the same thing with the clone's
+code.
+
+Your answers are saved, so the next run for any project shows them and asks
+one question: **Use these settings?**
+
+For scripts, use flags instead:
+
+```bash
+jira setup-sbx --project ~/Projects/my-work --base-url https://jira.company.internal --agent registry.example.com/team/opencode:2.1
+```
+
+| Flag | Use |
 |---|---|
-| Project | The folder the agent works in. Mounted read/write; `sbxenv.yaml` goes there |
-| Jira base URL | `https://`, with the context path if any. Remembered in `config.yaml` |
-| Agent kit reference | Empty for a built-in agent, e.g. `opencode` |
-| Agent name | For a kit, the name sbx reports (`agent kit name "..."`) |
-| Sandbox image | Your configured image, e.g. from JFrog. Empty for the agent's default |
-| Custom sandbox name | Empty for sbx's default, `<agent>-<project folder>` |
-| Company CA file | Usually empty |
-| Read-only | Default yes |
-| Copy the skill | Into `<project>/.opencode/skills/jira`; default yes |
-| Advanced | sbx secret name, credential ref, settings folder, binary source |
+| `--agent` | A built-in agent or an agent kit reference |
+| `--image` | Sandbox image instead of the agent's default |
+| `--name` | Sandbox name |
+| `--secret` | sbx secret holding the PAT (default `jira`) |
+| `--allow-writes` | Let the agent write to Jira (default: read-only) |
+| `--no-skill` | Don't install the skill |
+| `--force` | Replace an `sbxenv.yaml` jira-cli didn't generate, or an edited skill |
+| `--skip-checks` | Only write the files (no sbx, reachability or secret checks) |
+| `--run` | Start the sandbox at the end |
+| `--binary-file`, `--source-dir` | Where the Linux `jira` for the sandbox comes from (see below) |
 
-It shows a summary and asks for confirmation before writing anything. Then:
+`jira setup-sbx --help` lists them all. The global `--dry-run` shows the
+`sbxenv.yaml` it would write.
 
-1. It gets a Linux `jira` for the sandbox (see [The Linux binary](#the-linux-binary)).
-2. It writes the files.
-3. It runs `sbx secret set jira` if that secret doesn't exist yet (sbx prompts for the PAT).
-4. It runs `sbx env plan` and, if you said so, `sbx env run`. For that last
-   step jira hands the terminal to sbx, so Ctrl+C inside the agent is the
-   agent's, not jira's.
+## How it makes sure it works
 
-Ctrl+C at any prompt stops the setup before anything is written (exit code 130).
+sbx decides what works: the agent kit names, the secrets and the environment
+format. So setup-sbx asks sbx rather than you. It stops at the first problem,
+and nothing is written before everything has passed:
 
-Defaults carry over between projects. Your agent, agent kit, image, read-only
-and skill choices are saved in `~/.config/jira-cli-sbx/setup.yaml` and
-offered for the next project, so a kit's agent name is typed once. A project
-that was set up before keeps its own previous answers.
+1. **Checks, before any question:**
+   - sbx is installed and responds;
+   - a Linux `jira` for the sandbox is available;
+   - which sbx secrets already exist.
+2. **Each answer is checked when you give it:** the project folder exists, the
+   Jira host accepts a connection, and names and references are valid. A wrong
+   answer is asked again.
+3. **sbx checks the complete environment** with `sbx env plan` on a scratch
+   copy, before your project is touched. If sbx knows your agent kit under
+   another name (`agent kit name "..."`), that name is used and remembered.
+   Any other sbx error is shown as is.
+4. **The PAT:** the sbx secret exists, or sbx stores it now. sbx prompts for
+   it, so it never passes through jira-cli.
+5. **Only then** the files are written:
 
-**Sandbox names.** A new project's sandbox is called `<agent>-<project folder>-jira`.
-sbx's own default, `<agent>-<project folder>`, is the name `sbx run` gives a
-sandbox in that folder, and reusing it collides with that sandbox ("failed to
-run sandbox container"). A project set up before keeps its name.
+| What | Where |
+|---|---|
+| Kit: the Linux `jira` at `/usr/bin/jira`, egress to your Jira host, the credential, a `bashrc` hook | `<project>/.sbx/jira-cli/` (binary gitignored) |
+| Environment: agent, kit, image, name, settings mount, `JIRA_*` variables, credential binding | `<project>/sbxenv.yaml` |
+| The agent skill | `<project>/.opencode/skills/jira/` |
+| `config.yaml` and `bashrc`: created once, then yours to edit | `~/.config/jira-cli-sbx/` (mounted read-only at the same path) |
+| Your answers, for the next run | `~/.config/jira-cli-sbx/setup.yaml` |
 
-When it finishes, it prints the **next steps** with the exact commands:
-- store the PAT (if needed);
-- start the sandbox;
-- check `jira doctor` inside it;
-- what to ask the agent;
-- what to look at if the sandbox does not start.
-
-In a terminal the output is colored; `NO_COLOR` or `--no-color` turns that off.
-In each prompt, Enter keeps the value shown in brackets and `-` clears an
-optional one.
-
-Without a terminal, or for scripting, pass options instead:
-
-```bash
-jira setup-sbx --project /Users/x/Projects/my-work --base-url https://jira.company.internal --agent devex-opencode --name jira-sbx
-```
-
-Check the result from the host:
-
-```bash
-sbx env exec -- bash -lc 'jira doctor'
-```
-
-Expect `credentials` to show `env:JIRA_CREDENTIAL_JIRA_PROD` and `authentication` to be `ok`.
+**The token.** Inside the sandbox, `JIRA_CREDENTIAL_<REF>` holds only a
+sentinel. The sbx proxy sets `Authorization: Bearer <PAT>` on requests to
+your Jira host, so the agent can't read the token, not even with `env` or `cat`.
 
 ### With the Docker wrapper (`install.sh --docker`)
 
-`jira setup-sbx` works through the wrapper too. The container only sees what
-the wrapper mounts, so:
+`jira setup-sbx` works the same through the wrapper:
+- The wrapper asks for the project on your machine first, then mounts it and
+  the settings folder.
+- sbx isn't in the container, so the wrapper runs the sbx steps on your
+  machine right after: the secret, `sbx env plan`, and the agent-name fix.
+- In the container, the binary is the container's own `jira`, which is
+  already Linux.
 
-1. **The project is asked for on your machine,** before the container starts.
-   The wrapper checks that the folder exists, mounts it and the settings
-   folder read-write, and passes it on. The container doesn't ask again.
-   (With flags: `--project DIR` is mounted the same way.)
-   The other path options can't be asked inside the container, so pass them
-   as flags, and the wrapper mounts them: `--ca-bundle FILE`, `--settings DIR`
-   and `--binary-file FILE`.
-2. **The binary comes from the container itself.** It is already Linux, on your
-   machine's architecture, so no Go or download is needed.
-3. **sbx is not in the container.** When it finishes, it prints the host
-   steps. Run them on your machine:
+A wrapper and image from before this command don't have it. Update both
+from a clone:
 
 ```bash
-sbx secret ls
+git pull && sh scripts/install.sh --docker
 ```
-
-If `jira` is not listed, add it (sbx prompts for the PAT):
-
-```bash
-sbx secret set jira
-```
-
-```bash
-cd /Users/x/Projects/my-work && sbx env run
-```
-
-A wrapper and image from before this command don't have `setup-sbx`. Update
-both from a clone with `git pull && sh scripts/install.sh --docker`.
-
-### Options you will likely need
-
-| Option | Use |
-|---|---|
-| `--template IMAGE` | Your already configured image (e.g. from JFrog) instead of the agent's default (`sandboxOptions.template`) |
-| `--agent-kit REF` | Compose a published agent kit (e.g. `sbx/opencode:<tag>`) instead of the built-in `opencode` |
-| `--agent NAME` | The agent kit's name. If sbx says `agent "opencode" does not match agent kit name "X"`, re-run with `--agent X` |
-| `--name NAME` | Custom sandbox name (`name:` in `sbxenv.yaml`) |
-| `--ca-bundle FILE` | Company CA. Copied into the settings folder and referenced by its path there |
-| `--allow-writes` | Drop the read-only guard (default: `read_only: true` and `JIRA_READ_ONLY=1`) |
-| `--binary SOURCE` | Where the Linux binary comes from (see below) |
-| `--kit-only` | Your project already has an `sbxenv.yaml`: generate the kit and settings, then merge (below) |
-
-`jira setup-sbx --help` lists all options. The global `--dry-run` shows the
-plan and the `sbxenv.yaml` without writing anything.
 
 ### The Linux binary
 
-The sandbox is a Linux VM with your machine's architecture, so it needs a
-Linux `jira`. A macOS `jira` can't run there. With `--binary auto` (the
-default), the first of these that works is used:
+The sandbox is a Linux VM with your machine's architecture. The first of
+these that works is used, and each is checked to be a Linux executable for
+that architecture:
 
-| Source | When |
-|---|---|
-| `self` | `jira` itself is Linux on the same architecture |
-| `go` | You run it inside a jira-cli clone with Go installed (`--source-dir` to point at one) |
-| `release` | Your `jira` is a release (e.g. `v0.1.0`): downloads `jira-cli_<version>_linux_<arch>.tar.gz` from the GitHub release and checks it against the release's `SHA256SUMS` |
-| `image` | Docker can pull `ghcr.io/personal-stack/jira-cli:<version>` |
+1. `jira` itself, when it is Linux, e.g. in the Docker wrapper.
+2. A build from the jira-cli clone you run it in (or `--source-dir`), if Go is installed.
+3. The GitHub release matching your `jira` version, checked against its `SHA256SUMS`.
 
-`--binary-file FILE` uses a binary you provide. Every binary is checked to be
-a Linux executable for the right architecture before it is used.
-
-A private image registry needs pull credentials in `sbxenv.yaml`. For example:
-
-```yaml
-registries:
-  company.jfrog.io:
-    username: {value: me@company.com}
-    secret: {command: "security find-generic-password -s jfrog -w"}
-```
+`--binary-file FILE` uses a binary you provide.
 
 ## First start: approvals
 
-On the first `sbx env run`, sbx stops and asks you to approve the new
-permissions the environment requests. Messages such as "3 need approval" or
-"present, not recorded as applied, needs your approval" are that check, not
-an error. From the jira-cli kit:
-
-1. egress to your Jira host;
-2. the sbx secret (`jira`) injected as `Authorization: Bearer …` for that host;
-3. the read-only mount of the settings folder.
-
-Approve them. sbx records the approval and only asks again when the
-requested permissions change, for example another Jira host, another
-secret name, or a new project.
+On the first `sbx env run`, sbx asks you to approve what the environment
+requests: egress to your Jira host, the `jira` secret for that host, and the
+read-only settings mount. Messages like "3 need approval" are this check, not
+an error. sbx asks again only if those change.
 
 ## Making changes
 
 | You change | Then |
 |---|---|
-| `~/.config/jira-cli-sbx/config.yaml` or `bashrc` | Nothing. It is a live read-only mount; new shells and commands see it |
-| jira-cli (new version, or code in a clone) | Re-run `jira setup-sbx` (or `make sbx` in the clone), then recreate the sandbox: `sbx env rm && sbx env run` |
-| The skill | It is a normal project file in `.opencode/skills/jira`. Edit it there, or refresh it by re-running `jira setup-sbx` (`--force` if you edited it) |
+| `~/.config/jira-cli-sbx/config.yaml` or `bashrc` | Nothing: it is a live mount |
+| The jira-cli version | Re-run `jira setup-sbx` (one confirmation), then `sbx env rm && sbx env run` |
+| The skill | Edit `.opencode/skills/jira`; re-runs keep your edits (`--force` replaces them) |
 | The token | `sbx secret set jira` |
 
-The settings are read-only inside the sandbox, so the agent can't change its
-own configuration.
+## If the sandbox does not start
 
-## Existing `sbxenv.yaml`
+`failed to run sandbox container` doesn't say why. In the project folder:
 
-`jira setup-sbx` refuses to overwrite an `sbxenv.yaml` it did not generate. Run it
-with `--kit-only`, which writes the kit and the settings only, and merge these
-entries into your file:
-
-```yaml
-kits:
-  - ./.sbx/jira-cli
-additionalWorkspaces:
-  - {path: /Users/x/.config/jira-cli-sbx, readOnly: true}   # appears at the same path inside
-env:
-  JIRA_CONFIG: /Users/x/.config/jira-cli-sbx/config.yaml
-  JIRA_NO_KEYRING: "1"
-  JIRA_READ_ONLY: "1"
-bindings:
-  jira:
-    apiKey:
-      domains: [jira.company.internal]
+```bash
+sbx env plan
 ```
+
+```bash
+sbx ls
+```
+
+```bash
+sbx diagnose
+```
+
+A sandbox with the same name from an earlier `sbx run` collides with the
+environment; remove it with `sbx rm NAME`.
 
 ## Verification status
 
-**Tested in this repository:**
+**Tested here:**
+- Go tests with a fake sbx covering every early stop (nothing is written when one triggers), the agent-name takeover, defaults across projects, and the release download with its checksum.
+- The Docker wrapper test, with a fake sbx on the host.
+- The generated kit validates against the sandbox-kit-spec v3 schemas, and its image layer builds.
+- On a real sbx (your runs), an earlier version of the files worked: CLI, token injection and skill.
 
-- The generated kit validates against the sandbox-kit-spec v3 JSON schemas, including each capability's schema. Broken variants of it are rejected.
-- The overlay builds for linux/amd64 and linux/arm64 with the expected files and modes.
-- With the environment the sandbox provides, the binary reports the credential as `env:JIRA_CREDENTIAL_JIRA_PROD`, `config validate` passes, and a delete is refused with exit code 9.
-
-**Not tested:** a real `sbx` run. That covers the proxy header injection, the
-`bash.bashrc` hook, the built-in `opencode` agent name, and `sandboxOptions.template`
-with your image. Run the check above after the first `sbx env run`. If
-`authentication` fails while `credentials` is `ok`, the header is not being
-injected for your host. Check the binding domains with `sbx env plan`.
-
-**TLS:** the sandbox proxy terminates TLS with its own CA, which the sandbox
-trusts through the system store. jira-cli always keeps the system roots and
-adds `ca_bundle` on top. Whether the proxy, on the host, trusts your company's
-Jira certificate depends on the host; if it does not, the error is reported by
-the proxy, not by jira-cli.
+**Not tested:** this version of the command against a real `sbx`.

@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"strings"
 )
 
 // sbxUI styles setup-sbx's human output on stderr: sections, ✓ / ! marks,
@@ -49,15 +48,6 @@ func (u *sbxUI) kv(k, v string) { u.println("  " + u.dim(fmt.Sprintf("%-10s", k)
 
 // cmd renders a shell command to copy.
 func (u *sbxUI) cmd(s string) string { return u.dim("$ ") + u.bold(s) }
-
-// result prints a note from the generator: "warning: ..." as !, the rest as ✓.
-func (u *sbxUI) result(n string) {
-	if w, ok := strings.CutPrefix(n, "warning: "); ok {
-		u.warn(w)
-		return
-	}
-	u.ok(n)
-}
 
 // question renders a prompt with its default.
 func (u *sbxUI) question(q, cur string) string {

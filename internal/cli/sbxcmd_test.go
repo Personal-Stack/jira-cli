@@ -90,7 +90,7 @@ func runSbx(t *testing.T, fs *fakeSbx, stdin string, args ...string) (int, strin
 	app := NewApp("v9.9.9", generated.Profiles, generated.DefaultProfile)
 	app.In, app.Out, app.Err = strings.NewReader(stdin), &out, &errb
 	app.IsTerminal = func() bool { return false }
-	full := append([]string{"setup-sbx", "--binary-file", self, "--arch", runtime.GOARCH}, args...)
+	full := append([]string{"setup-sbx", "--binary-file", self}, args...)
 	code := app.Execute(context.Background(), full)
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -121,7 +121,7 @@ func TestSetupSbxFlags(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatalf("output: %v\n%s", err, out)
 	}
-	if res["binary_source"] != "file" || res["credential_env"] != "JIRA_CREDENTIAL_JIRA_PROD" || res["name"] != "jira-sbx" || res["validated"] != true {
+	if res["binary_source"] != "file" || res["credential_env"] != "JIRA_CREDENTIAL_JIRA_PROD" || res["name"] != "jira-sbx" || res["checked_with_sbx"] != true {
 		t.Fatalf("result: %v", res)
 	}
 	env, _ := os.ReadFile(filepath.Join(project, "sbxenv.yaml"))
@@ -179,15 +179,11 @@ func TestSetupSbxInteractiveValidatesEachAnswerAndTakesSbxAgentName(t *testing.T
 		"http://x",                          // not https: asked again
 		"https://down.example.com",          // unreachable: asked again
 		"https://jira.example.com",          //
-		"not a ref",                         // invalid kit reference: asked again
-		"reg.example.com/team/opencode:2.1", // the kit
-		"",                                  // agent name: the derived "opencode" (sbx will correct it)
+		"reg.example.com/a b:1",             // invalid kit reference: asked again
+		"reg.example.com/team/opencode:2.1", // the kit (sbx knows it as devex-opencode)
 		"",                                  // image: none
 		"",                                  // sandbox name: the default
-		"",                                  // CA: none
 		"",                                  // read-only: yes
-		"n",                                 // skill: no
-		"",                                  // advanced: no
 		"",                                  // proceed
 		"",                                  // start: no
 	), "-i")
@@ -195,7 +191,7 @@ func TestSetupSbxInteractiveValidatesEachAnswerAndTakesSbxAgentName(t *testing.T
 		t.Fatalf("exit %d", code)
 	}
 	for _, want := range []string{"not a directory", "must be https://", "cannot reach down.example.com:443", "is not an image or kit reference",
-		`sbx names the agent kit "devex-opencode", not "opencode"`} {
+		`sbx names the agent kit "devex-opencode": using it`} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("stderr lacks %q", want)
 		}
@@ -229,7 +225,7 @@ func TestSetupSbxNewProjectInheritsAgentFromLastSetup(t *testing.T) {
 	}
 	fs := &fakeSbx{secrets: "jira apiKey\n", kitName: "devex-opencode"}
 	code, _, _ := runSbx(t, fs, "", "--project", first, "--base-url", "https://jira.example.com",
-		"--agent-kit", "reg.example.com/team/opencode:2.1", "--template", "reg.example.com/img:1")
+		"--agent", "reg.example.com/team/opencode:2.1", "--image", "reg.example.com/img:1")
 	if code != 0 {
 		t.Fatalf("first: exit %d", code)
 	}
@@ -253,7 +249,7 @@ func TestSetupSbxNewProjectInheritsAgentFromLastSetup(t *testing.T) {
 
 	// Flags still win, and a new kit without --agent derives its own name.
 	third := t.TempDir()
-	code, _, _ = runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, "", "--project", third, "--agent-kit", "reg.example.com/other/claude-kit:1", "--name", "x")
+	code, _, _ = runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, "", "--project", third, "--agent", "reg.example.com/other/claude-kit:1", "--name", "x")
 	if code != 0 {
 		t.Fatalf("third: exit %d", code)
 	}
@@ -286,7 +282,7 @@ func TestSetupSbxMissingSecret(t *testing.T) {
 	empty(t, project)
 	// Guided: sbx stores it (it prompts), before the files are written.
 	fs = &fakeSbx{secrets: "NAME  TYPE\n"}
-	code, _, _ = runSbx(t, fs, answers(project, "https://jira.example.com", "", "", "", "", "", "", "", "", "", ""), "-i")
+	code, _, _ = runSbx(t, fs, answers(project, "https://jira.example.com", "", "", "", "", "", ""), "-i")
 	if code != 0 || !fs.setSecret {
 		t.Fatalf("exit %d, secret set %v", code, fs.setSecret)
 	}
@@ -310,7 +306,7 @@ func TestSetupSbxExistingSetupKeepsItsSandboxName(t *testing.T) {
 func TestSetupSbxDeclined(t *testing.T) {
 	isolateHome(t)
 	project := t.TempDir()
-	code, _, errOut := runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, answers(project, "https://jira.example.com", "", "", "", "", "", "", "", "", "n"), "-i")
+	code, _, errOut := runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, answers(project, "https://jira.example.com", "", "", "", "", "n"), "-i")
 	if code == 0 || !strings.Contains(errOut, "nothing was written") {
 		t.Fatalf("declining: exit %d\n%s", code, errOut)
 	}
@@ -337,16 +333,15 @@ func TestSetupSbxInContainer(t *testing.T) {
 	t.Setenv("JIRA_CLI_CONTAINER", "1")
 	fs := &fakeSbx{}
 	code, _, errOut := runSbx(t, fs, "", "--project", project, "--base-url", "https://jira.example.com")
-	if code != 0 || len(fs.calls) != 0 || !strings.Contains(errOut, "checks the sbx secret and runs 'sbx env plan' on your machine") {
+	if code != 0 || len(fs.calls) != 0 || !strings.Contains(errOut, "checks the sbx secret and the environment on your machine") {
 		t.Fatalf("exit %d calls %v\n%s", code, fs.calls, errOut)
 	}
-	// Guided, with the project from the wrapper: no project, CA or settings
-	// questions. (A fresh HOME: no saved defaults, so every question is asked.)
+	// Guided, with the project from the wrapper: no project question.
+	// (A fresh HOME: no saved defaults, so every question is asked.)
 	isolateHome(t)
 	project2 := t.TempDir()
-	code, _, errOut = runSbx(t, &fakeSbx{}, answers("https://jira.example.com", "", "", "", "", "", "", "y", "", "", "", ""), "-i", "--project", project2)
-	if code != 0 || strings.Contains(errOut, "Project the agent works in") || strings.Contains(errOut, "Company CA certificate file") ||
-		!strings.Contains(errOut, "project    "+project2) || !strings.Contains(errOut, "pass --ca-bundle FILE") || !strings.Contains(errOut, "change it with --settings DIR") {
+	code, _, errOut = runSbx(t, &fakeSbx{}, answers("https://jira.example.com", "", "", "", "", "", ""), "-i", "--project", project2)
+	if code != 0 || strings.Contains(errOut, "Project the agent works in") || !strings.Contains(errOut, "project    "+project2) {
 		t.Fatalf("exit %d:\n%s", code, errOut)
 	}
 }
@@ -384,7 +379,7 @@ func TestSetupSbxRefusesForeignEnvFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, _, errOut := runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, "", "--project", project, "--base-url", "https://jira.example.com")
-	if code == 0 || !strings.Contains(errOut, "--kit-only") {
+	if code == 0 || !strings.Contains(errOut, "--force") {
 		t.Fatalf("exit %d:\n%s", code, errOut)
 	}
 	if b, _ := os.ReadFile(filepath.Join(project, "sbxenv.yaml")); string(b) != "schemaVersion: \"1\"\n" {
