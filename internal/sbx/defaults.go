@@ -16,8 +16,8 @@ const DefaultsFile = "setup.yaml"
 // Defaults are the choices a run starts from: this project's previous setup
 // if it has one, else the last setup of any project (DefaultsFile).
 type Defaults struct {
-	Agent, AgentName, Image, Secret string
-	ReadOnly, Skill                 *bool
+	Agent, AgentName, Secret string
+	ReadOnly, Skill          *bool
 
 	Name    string // the project's own sandbox name (only when Project)
 	From    string // where they came from, "" if nowhere
@@ -30,7 +30,6 @@ type saved struct {
 	Agent     string `yaml:"agent,omitempty"`
 	AgentName string `yaml:"agent_name,omitempty"`
 	AgentKit  string `yaml:"agent_kit,omitempty"`
-	Image     string `yaml:"image,omitempty"`
 	Secret    string `yaml:"secret,omitempty"` // also read by scripts/jira-docker.sh
 	ReadOnly  *bool  `yaml:"read_only,omitempty"`
 	Skill     *bool  `yaml:"skill,omitempty"`
@@ -45,26 +44,23 @@ func LoadDefaults(project, settings string) Defaults {
 		if s.AgentKit != "" {
 			s.Agent, s.AgentName = s.AgentKit, s.Agent
 		}
-		d = Defaults{Agent: s.Agent, AgentName: s.AgentName, Image: s.Image, Secret: s.Secret, ReadOnly: s.ReadOnly, Skill: s.Skill, From: "your last setup (" + path + ")"}
+		d = Defaults{Agent: s.Agent, AgentName: s.AgentName, Secret: s.Secret, ReadOnly: s.ReadOnly, Skill: s.Skill, From: "your last setup (" + path + ")"}
 	}
 	b, err := os.ReadFile(filepath.Join(project, "sbxenv.yaml"))
 	if err != nil || !IsGenerated(b) {
 		return d
 	}
 	var env struct {
-		Name    string            `yaml:"name"`
-		Agent   string            `yaml:"agent"`
-		Kits    []any             `yaml:"kits"`
-		Env     map[string]string `yaml:"env"`
-		Options struct {
-			Template string `yaml:"template"`
-		} `yaml:"sandboxOptions"`
+		Name  string            `yaml:"name"`
+		Agent string            `yaml:"agent"`
+		Kits  []any             `yaml:"kits"`
+		Env   map[string]string `yaml:"env"`
 	}
 	if yaml.Unmarshal(b, &env) != nil {
 		return d
 	}
 	ro := env.Env["JIRA_READ_ONLY"] == "1"
-	d.Agent, d.AgentName, d.Image, d.Name, d.ReadOnly = env.Agent, "", env.Options.Template, env.Name, &ro
+	d.Agent, d.AgentName, d.Name, d.ReadOnly = env.Agent, "", env.Name, &ro
 	for _, k := range env.Kits {
 		if ref, ok := k.(string); ok && !strings.HasPrefix(ref, ".") {
 			d.Agent, d.AgentName = ref, env.Agent
@@ -78,7 +74,7 @@ func LoadDefaults(project, settings string) Defaults {
 // SaveDefaults stores this plan's choices for the next project.
 func (p *Plan) SaveDefaults() error {
 	ro, skill := p.ReadOnly, p.Skill
-	s := saved{Agent: p.Agent, Image: p.Image, Secret: p.Secret, ReadOnly: &ro, Skill: &skill}
+	s := saved{Agent: p.Agent, Secret: p.Secret, ReadOnly: &ro, Skill: &skill}
 	if p.AgentKit != "" && p.AgentName != AgentFromKit(p.AgentKit) {
 		s.AgentName = p.AgentName
 	}

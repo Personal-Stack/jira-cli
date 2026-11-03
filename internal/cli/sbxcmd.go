@@ -72,7 +72,7 @@ Files: <project>/.sbx/jira-cli (kit), <project>/sbxenv.yaml,
 (created once, yours to edit). See docs/sandbox.md.`,
 		Example: `  jira setup-sbx
   jira setup-sbx --project ~/Projects/my-work --base-url https://jira.company.internal \
-    --agent registry.example.com/team/opencode:2.1 --image registry.example.com/team/sandbox:1`,
+    --agent registry.example.com/team/opencode:2.1`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s := &sbxSetup{a: a, f: f, set: cmd.Flags().Changed, ui: a.newSbxUI(),
@@ -89,7 +89,6 @@ Files: <project>/.sbx/jira-cli (kit), <project>/sbxenv.yaml,
 	fl.StringVar(&f.o.Project, "project", "", "folder the agent works in; sbxenv.yaml goes here (default: current directory)")
 	fl.StringVar(&f.o.BaseURL, "base-url", "", "Jira base URL (default: from <settings>/config.yaml)")
 	fl.StringVar(&f.o.Agent, "agent", "opencode", "a built-in sbx agent, or an agent kit reference (registry/repo:tag)")
-	fl.StringVar(&f.o.Image, "image", "", "sandbox image instead of the agent's default")
 	fl.StringVar(&f.o.Name, "name", "", "sandbox name (default for a new project: <agent>-<folder>-jira)")
 	fl.StringVar(&f.o.Secret, "secret", "jira", "sbx secret that holds the PAT")
 	fl.BoolVar(&f.allowWrites, "allow-writes", false, "let the agent write to Jira (default: read-only)")
@@ -254,7 +253,7 @@ func (s *sbxSetup) applyDefaults() bool {
 		flag string
 		dst  *string
 		val  string
-	}{{"image", &o.Image, d.Image}, {"secret", &o.Secret, d.Secret}} {
+	}{{"secret", &o.Secret, d.Secret}} {
 		if !s.set(v.flag) && v.val != "" {
 			*v.dst = v.val
 		}
@@ -364,7 +363,6 @@ func (s *sbxSetup) ask(ctx context.Context) error {
 	if o.Agent != before {
 		o.AgentName = ""
 	}
-	q.text(&o.Image, "Sandbox image (empty = the agent's default)", optional(sbx.ValidRef))
 	s.refreshName()
 	if q.err == nil {
 		ui.note("'-' uses sbx's own default, <agent>-<folder>, which 'sbx run' also gives a sandbox there.")
@@ -392,7 +390,6 @@ func (s *sbxSetup) summary() {
 	ui.kv("project", o.Project)
 	ui.kv("jira", o.BaseURL)
 	ui.kv("agent", o.Agent+map[bool]string{true: ui.dim(" (sbx name: " + s.agentName() + ")")}[sbx.IsKitRef(o.Agent)])
-	ui.kv("image", or(o.Image, "agent default"))
 	ui.kv("name", or(o.Name, "sbx default"))
 	ui.kv("read-only", map[bool]string{true: "yes", false: "no"}[o.ReadOnly])
 	ui.kv("token", fmt.Sprintf("sbx secret %q", o.Secret))
@@ -411,7 +408,7 @@ func (s *sbxSetup) validate(ctx context.Context, plan *sbx.Plan) error {
 		scratch := *plan
 		dir := filepath.Join(s.tmp, fmt.Sprint("plan-", attempt))
 		scratch.KitDir, scratch.EnvFile = filepath.Join(dir, ".sbx", "jira-cli"), filepath.Join(dir, "sbxenv.yaml")
-		if err := scratch.WriteKit(runtime.GOARCH, s.bin, s.a.Version); err != nil {
+		if err := scratch.WriteKit(s.bin, s.a.Version); err != nil {
 			return err
 		}
 		if err := scratch.WriteEnvFile(); err != nil {
@@ -463,7 +460,7 @@ func (s *sbxSetup) ensureSecret(ctx context.Context, secret string) error {
 
 func (s *sbxSetup) write(plan *sbx.Plan) ([]sbx.Note, error) {
 	s.ui.section("Writing " + plan.Project)
-	if err := plan.WriteKit(runtime.GOARCH, s.bin, s.a.Version); err != nil {
+	if err := plan.WriteKit(s.bin, s.a.Version); err != nil {
 		return nil, err
 	}
 	notes := []sbx.Note{{Text: "kit " + plan.KitDir}}
@@ -559,7 +556,7 @@ func sbxNextSteps(p *sbx.Plan, secretStored, running bool) []sbxStep {
 	}
 	return append(steps,
 		sbxStep{"Check jira in it (from another terminal): credentials env:" + p.CredEnv + ", authentication ok:",
-			[]string{cd + "sbx env exec -- bash -lc 'jira doctor'"}},
+			[]string{cd + "sbx env exec -- " + shellQuote(p.BinPath()) + " doctor"}},
 		sbxStep{"Ask the agent, e.g. \"list my 5 most recently updated Jira issues\".", nil},
 		sbxStep{"If the sandbox does not start, look at the plan and at existing sandboxes (a sandbox with the same name: sbx rm NAME):",
 			[]string{cd + "sbx env plan", "sbx ls", "sbx diagnose"}},

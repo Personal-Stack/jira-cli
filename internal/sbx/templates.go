@@ -20,8 +20,7 @@ const dockerfile = `# syntax=docker/dockerfile:1
 # installing it here needs nothing at sandbox start.
 # Built by sbx on create; the context is this directory.
 FROM scratch
-ARG TARGETARCH
-COPY --chmod=0755 bin/jira-${TARGETARCH} /usr/bin/jira
+COPY --chmod=0755 bin/jira /usr/bin/jira
 `
 
 var kitTmpl = mustTemplate("kit", `# syntax=docker/sandbox-kit:3
@@ -80,8 +79,8 @@ capabilities:
       content: |
         ## Jira (jira-cli)
 
-        {{code "jira"}} is on PATH (/usr/bin/jira; use the full path if a shell cannot
-        find it). Use the {{code "jira"}} skill
+        The CLI is {{code .BinPath}} (in the mounted project; it may also be on PATH as
+        {{code "jira"}}). Use the {{code "jira"}} skill
         (.opencode/skills/jira): discover commands with {{code "jira commands list"}} and
         {{code "jira commands describe <group> <command>"}} instead of guessing them.
 
@@ -105,7 +104,7 @@ capabilities:
 `)
 
 var envTmpl = mustTemplate("env", GeneratedMarker+`; re-run it to regenerate.
-# Start: sbx env run    Check: sbx env exec -- bash -lc 'jira doctor'
+# Start: sbx env run    Check: sbx env exec -- {{.BinPath}} doctor
 schemaVersion: "1"
 {{- if .Name}}
 name: {{.Name}}
@@ -125,10 +124,6 @@ env:
   JIRA_NO_KEYRING: "1"
 {{- if .ReadOnly}}
   JIRA_READ_ONLY: "1"
-{{- end}}
-{{- if .Image}}
-sandboxOptions:
-  template: {{.Image}}
 {{- end}}
 # Approves injecting the sbx secret "{{.Secret}}" into requests to {{.Host}}.
 bindings:
@@ -157,4 +152,21 @@ var bashrcTmpl = mustTemplate("bashrc", `# Sourced by bash in the jira-cli sandb
 
 alias jira-recent='jira issue search --max-results 20 --fields summary,status,assignee -o table --jql'
 # export JIRA_LOG_LEVEL=debug
+`)
+
+// skillSectionTmpl is inserted after the skill's title, so the agent knows
+// the binary and the setup without searching.
+var skillSectionTmpl = mustTemplate("skill", `## This sandbox
+
+- The CLI is **{{code .BinPath}}**. Run it by this path (it may also be on PATH
+  as {{code "jira"}}); do not search for it or install anything.
+- Configuration: {{code .ConfigFile}} (read-only, instance {{code "prod"}} at {{.BaseURL}}).
+- Authentication is done by the sandbox: {{code .CredEnv}} is a placeholder that the
+  sandbox replaces on requests to {{.Host}}. Do not run {{code "jira auth login"}}, and
+  never print the variable.
+{{- if .ReadOnly}}
+- Read-only: every command that is not a read is refused (exit code 9). Do not
+  work around it; ask the user.
+{{- end}}
+- Check the setup with {{code (print .BinPath " doctor")}}.
 `)

@@ -87,7 +87,6 @@ func TestNewPlanRejects(t *testing.T) {
 		"bad kit ref":         func(o *Options) { o.Agent = "reg.example.com/a b:1" },
 		"bad name":            func(o *Options) { o.Name = "a/b" },
 		"bad secret":          func(o *Options) { o.Secret = "Jira" },
-		"bad image":           func(o *Options) { o.Image = "img name" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			o := testOptions(t)
@@ -101,11 +100,11 @@ func TestNewPlanRejects(t *testing.T) {
 
 func TestWriteKitAndEnvFile(t *testing.T) {
 	o := testOptions(t)
-	o.Agent, o.AgentName, o.Image, o.Name = "reg.example.com/team/opencode:1.0", "devex-opencode", "reg.example.com/img:1", "jira-sbx"
+	o.Agent, o.AgentName, o.Name = "reg.example.com/team/opencode:1.0", "devex-opencode", "jira-sbx"
 	p := mustPlan(t, o)
 	bin := filepath.Join(t.TempDir(), "jira")
 	write(t, bin, "binary")
-	if err := p.WriteKit("arm64", bin, "v0.2.0-3-gabc"); err != nil {
+	if err := p.WriteKit(bin, "v0.2.0-3-gabc"); err != nil {
 		t.Fatal(err)
 	}
 	if err := p.WriteEnvFile(); err != nil {
@@ -146,10 +145,10 @@ func TestWriteKitAndEnvFile(t *testing.T) {
 	if hook := startup[0].(map[string]any)["command"].([]any)[2].(string); len(startup) != 1 || !strings.HasSuffix(strings.TrimSpace(hook), "|| true") {
 		t.Fatalf("startup hooks can fail the start: %v", startup)
 	}
-	if st, err := os.Stat(filepath.Join(p.KitDir, "bin", "jira-arm64")); err != nil || st.Mode().Perm() != 0o755 {
+	if st, err := os.Stat(p.BinPath()); err != nil || st.Mode().Perm() != 0o755 || p.BinPath() != filepath.Join(p.Project, ".sbx", "jira-cli", "bin", "jira") {
 		t.Fatalf("binary: %v %v", st, err)
 	}
-	if df, _ := os.ReadFile(filepath.Join(p.KitDir, "jira-cli.dockerfile")); !strings.Contains(string(df), "COPY --chmod=0755 bin/jira-${TARGETARCH} /usr/bin/jira") {
+	if df, _ := os.ReadFile(filepath.Join(p.KitDir, "jira-cli.dockerfile")); !strings.Contains(string(df), "COPY --chmod=0755 bin/jira /usr/bin/jira") {
 		t.Fatalf("dockerfile:\n%s", df)
 	}
 
@@ -167,14 +166,14 @@ func TestWriteKitAndEnvFile(t *testing.T) {
 	}
 	if env.Name != "jira-sbx" || env.Agent != "devex-opencode" || strings.Join(env.Kits, ",") != o.Agent+",./.sbx/jira-cli" ||
 		env.Additional[0]["path"] != p.Settings || env.Additional[0]["readOnly"] != true || len(env.Additional[0]) != 2 ||
-		env.Env["JIRA_CONFIG"] != p.ConfigFile || env.Env["JIRA_READ_ONLY"] != "1" || env.Options["template"] != o.Image ||
+		env.Env["JIRA_CONFIG"] != p.ConfigFile || env.Env["JIRA_READ_ONLY"] != "1" || env.Options != nil ||
 		env.Bindings["jira"]["apiKey"]["domains"][0] != "jira.example.com" {
 		t.Fatalf("env file:\n%s", eb)
 	}
 
 	// The project's setup is the next run's defaults, the sbx name included.
 	d := LoadDefaults(p.Project, p.Settings)
-	if !d.Project || d.Agent != o.Agent || d.AgentName != "devex-opencode" || d.Image != o.Image || d.Name != "jira-sbx" || !*d.ReadOnly {
+	if !d.Project || d.Agent != o.Agent || d.AgentName != "devex-opencode" || d.Name != "jira-sbx" || !*d.ReadOnly {
 		t.Fatalf("defaults: %+v", d)
 	}
 }
@@ -228,10 +227,17 @@ func TestSettingsCreatedOnceAndKept(t *testing.T) {
 }
 
 func TestSkillKeepsLocalEditsUnlessForced(t *testing.T) {
-	skill := fstest.MapFS{"SKILL.md": {Data: []byte("v1")}, "scripts/check.sh": {Data: []byte("#!/bin/sh\n")}}
+	skill := fstest.MapFS{"SKILL.md": {Data: []byte("---\nname: jira\n---\n\n# Jira\n\nBody.\n")}, "scripts/check.sh": {Data: []byte("#!/bin/sh\n")}}
 	p := mustPlan(t, testOptions(t))
 	if _, err := p.WriteSkill(skill); err != nil {
 		t.Fatal(err)
+	}
+	// The sandbox section follows the title: the agent finds the binary at once.
+	md, _ := os.ReadFile(filepath.Join(p.SkillDir, "SKILL.md"))
+	if !strings.HasPrefix(string(md), "---\nname: jira\n---\n\n# Jira\n\n## This sandbox\n") ||
+		!strings.Contains(string(md), "**`"+p.BinPath()+"`**") || !strings.Contains(string(md), p.ConfigFile) ||
+		!strings.Contains(string(md), "JIRA_CREDENTIAL_JIRA_PROD") || !strings.Contains(string(md), "Read-only") || !strings.HasSuffix(string(md), "Body.\n") {
+		t.Fatalf("SKILL.md:\n%s", md)
 	}
 	if st, _ := os.Stat(filepath.Join(p.SkillDir, "scripts", "check.sh")); st.Mode().Perm() != 0o755 {
 		t.Fatal("script not executable")
@@ -250,7 +256,7 @@ func TestSkillKeepsLocalEditsUnlessForced(t *testing.T) {
 	if _, err := p.WriteSkill(skill); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(p.SkillDir, "SKILL.md")); string(b) != "v1" {
+	if b, _ := os.ReadFile(filepath.Join(p.SkillDir, "SKILL.md")); !bytes.Equal(b, md) {
 		t.Fatal("--force did not replace it")
 	}
 }

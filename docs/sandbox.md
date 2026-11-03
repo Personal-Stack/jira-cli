@@ -14,7 +14,6 @@ Run it without flags in a terminal and it asks:
 - **Project:** the folder the agent works in.
 - **Jira base URL:** checked for reachability as you enter it.
 - **Agent:** a built-in agent such as `opencode`, or your agent kit's reference (`registry/repo:tag`).
-- **Sandbox image:** empty for the agent's default.
 - **Sandbox name:** a new project gets `<agent>-<folder>-jira`.
 - **Read-only:** default yes.
 
@@ -34,7 +33,6 @@ jira setup-sbx --project ~/Projects/my-work --base-url https://jira.company.inte
 | Flag | Use |
 |---|---|
 | `--agent` | A built-in agent or an agent kit reference |
-| `--image` | Sandbox image instead of the agent's default |
 | `--name` | Sandbox name |
 | `--secret` | sbx secret holding the PAT (default `jira`) |
 | `--allow-writes` | Let the agent write to Jira (default: read-only) |
@@ -70,11 +68,20 @@ and nothing is written before everything has passed:
 
 | What | Where |
 |---|---|
-| Kit: the Linux `jira` at `/usr/bin/jira`, egress to your Jira host, the credential, a `bashrc` hook | `<project>/.sbx/jira-cli/` (binary gitignored) |
-| Environment: agent, kit, image, name, settings mount, `JIRA_*` variables, credential binding | `<project>/sbxenv.yaml` |
-| The agent skill | `<project>/.opencode/skills/jira/` |
+| Kit: the Linux `jira` (`bin/jira`), egress to your Jira host, the credential, a `bashrc` hook | `<project>/.sbx/jira-cli/` (binary gitignored) |
+| Environment: agent, kit, name, settings mount, `JIRA_*` variables, credential binding | `<project>/sbxenv.yaml` |
+| The agent skill, with a "This sandbox" section naming the binary's path | `<project>/.opencode/skills/jira/` |
 | `config.yaml` and `bashrc`: created once, then yours to edit | `~/.config/jira-cli-sbx/` (mounted read-only at the same path) |
 | Your answers, for the next run | `~/.config/jira-cli-sbx/setup.yaml` |
+
+**The binary.** The project is mounted in the sandbox at the same path, so
+the agent runs `<project>/.sbx/jira-cli/bin/jira`. The skill and the agent
+instructions say so, and the agent doesn't search `PATH`. (The kit also
+installs it as `/usr/bin/jira`, but not every setup applies that layer.)
+
+**No custom sandbox image.** `sandboxOptions.template` made the sandbox fail
+to start ("failed to run sandbox container"), and `sbx env plan` does not
+catch that. The agent's own image is used.
 
 **The token.** Inside the sandbox, `JIRA_CREDENTIAL_<REF>` holds only a
 sentinel. The sbx proxy sets `Authorization: Bearer <PAT>` on requests to

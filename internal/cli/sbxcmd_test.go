@@ -130,7 +130,7 @@ func TestSetupSbxFlags(t *testing.T) {
 			t.Errorf("sbxenv.yaml lacks %q:\n%s", want, env)
 		}
 	}
-	for _, f := range []string{".opencode/skills/jira/SKILL.md", ".sbx/jira-cli/bin/jira-" + runtime.GOARCH} {
+	for _, f := range []string{".opencode/skills/jira/SKILL.md", ".sbx/jira-cli/bin/jira"} {
 		if _, err := os.Stat(filepath.Join(project, f)); err != nil {
 			t.Fatalf("missing %s", f)
 		}
@@ -181,7 +181,6 @@ func TestSetupSbxInteractiveValidatesEachAnswerAndTakesSbxAgentName(t *testing.T
 		"https://jira.example.com",          //
 		"reg.example.com/a b:1",             // invalid kit reference: asked again
 		"reg.example.com/team/opencode:2.1", // the kit (sbx knows it as devex-opencode)
-		"",                                  // image: none
 		"",                                  // sandbox name: the default
 		"",                                  // read-only: yes
 		"",                                  // proceed
@@ -225,7 +224,7 @@ func TestSetupSbxNewProjectInheritsAgentFromLastSetup(t *testing.T) {
 	}
 	fs := &fakeSbx{secrets: "jira apiKey\n", kitName: "devex-opencode"}
 	code, _, _ := runSbx(t, fs, "", "--project", first, "--base-url", "https://jira.example.com",
-		"--agent", "reg.example.com/team/opencode:2.1", "--image", "reg.example.com/img:1")
+		"--agent", "reg.example.com/team/opencode:2.1")
 	if code != 0 {
 		t.Fatalf("first: exit %d", code)
 	}
@@ -237,8 +236,7 @@ func TestSetupSbxNewProjectInheritsAgentFromLastSetup(t *testing.T) {
 		t.Fatalf("second: exit %d", code)
 	}
 	env, _ := os.ReadFile(filepath.Join(second, "sbxenv.yaml"))
-	for _, want := range []string{"agent: devex-opencode", "  - reg.example.com/team/opencode:2.1", "template: reg.example.com/img:1",
-		"name: devex-opencode-my-work-jira"} {
+	for _, want := range []string{"agent: devex-opencode", "  - reg.example.com/team/opencode:2.1", "name: devex-opencode-my-work-jira"} {
 		if !strings.Contains(string(env), want) {
 			t.Errorf("second project lacks %q:\n%s", want, env)
 		}
@@ -282,7 +280,7 @@ func TestSetupSbxMissingSecret(t *testing.T) {
 	empty(t, project)
 	// Guided: sbx stores it (it prompts), before the files are written.
 	fs = &fakeSbx{secrets: "NAME  TYPE\n"}
-	code, _, _ = runSbx(t, fs, answers(project, "https://jira.example.com", "", "", "", "", "", ""), "-i")
+	code, _, _ = runSbx(t, fs, answers(project, "https://jira.example.com", "", "", "", "", ""), "-i")
 	if code != 0 || !fs.setSecret {
 		t.Fatalf("exit %d, secret set %v", code, fs.setSecret)
 	}
@@ -306,7 +304,7 @@ func TestSetupSbxExistingSetupKeepsItsSandboxName(t *testing.T) {
 func TestSetupSbxDeclined(t *testing.T) {
 	isolateHome(t)
 	project := t.TempDir()
-	code, _, errOut := runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, answers(project, "https://jira.example.com", "", "", "", "", "n"), "-i")
+	code, _, errOut := runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, answers(project, "https://jira.example.com", "", "", "", "n"), "-i")
 	if code == 0 || !strings.Contains(errOut, "nothing was written") {
 		t.Fatalf("declining: exit %d\n%s", code, errOut)
 	}
@@ -340,7 +338,7 @@ func TestSetupSbxInContainer(t *testing.T) {
 	// (A fresh HOME: no saved defaults, so every question is asked.)
 	isolateHome(t)
 	project2 := t.TempDir()
-	code, _, errOut = runSbx(t, &fakeSbx{}, answers("https://jira.example.com", "", "", "", "", "", ""), "-i", "--project", project2)
+	code, _, errOut = runSbx(t, &fakeSbx{}, answers("https://jira.example.com", "", "", "", "", ""), "-i", "--project", project2)
 	if code != 0 || strings.Contains(errOut, "Project the agent works in") || !strings.Contains(errOut, "project    "+project2) {
 		t.Fatalf("exit %d:\n%s", code, errOut)
 	}
@@ -399,7 +397,7 @@ func TestSetupSbxPrintsNextSteps(t *testing.T) {
 	}
 	q := "'" + project + "'" // the path has a space: quoted for the shell
 	for _, want := range []string{"Next steps", "Start the sandbox jira-sbx", "$ cd " + q + " && sbx env run",
-		"$ cd " + q + " && sbx env exec -- bash -lc 'jira doctor'", "env:JIRA_CREDENTIAL_JIRA_PROD", "$ sbx ls", "$ sbx diagnose"} {
+		"$ cd " + q + " && sbx env exec -- '" + project + "/.sbx/jira-cli/bin/jira' doctor", "env:JIRA_CREDENTIAL_JIRA_PROD", "$ sbx ls", "$ sbx diagnose"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("next steps lack %q:\n%s", want, errOut)
 		}

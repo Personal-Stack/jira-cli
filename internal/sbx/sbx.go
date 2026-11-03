@@ -45,7 +45,6 @@ type Options struct {
 	// kit by, when it differs from the reference's last path segment.
 	Agent, AgentName string
 
-	Image  string // sandbox image (sandboxOptions.template); empty: the agent's
 	Name   string // sandbox name; empty: sbx's default
 	Secret string // sbx secret holding the PAT
 
@@ -65,6 +64,11 @@ type Plan struct {
 
 	KitDir, EnvFile, ConfigFile, BashrcFile, SkillDir string
 }
+
+// BinPath is the jira binary inside the sandbox. The project is mounted at
+// the same absolute path, so the kit's copy is there whether or not the
+// kit's image layer was applied.
+func (p *Plan) BinPath() string { return filepath.Join(p.KitDir, "bin", "jira") }
 
 // IsKitRef reports whether an agent answer is a kit reference, not a name.
 func IsKitRef(agent string) bool { return strings.ContainsAny(agent, "/:@") }
@@ -123,9 +127,6 @@ func NewPlan(o Options) (*Plan, error) {
 		p.AgentName = o.Agent
 	}
 	checks := []error{ValidName(p.AgentName), ValidSecretName(o.Secret), ValidName(p.CredRef)}
-	if o.Image != "" {
-		checks = append(checks, ValidRef(o.Image))
-	}
 	if o.Name != "" {
 		checks = append(checks, ValidName(o.Name))
 	}
@@ -165,15 +166,15 @@ func KitVersion(v string) string {
 	return "0.0.0"
 }
 
-// WriteKit writes the kit with the linux jira binary for arch.
-func (p *Plan) WriteKit(arch, binary, version string) error {
+// WriteKit writes the kit with the linux jira binary.
+func (p *Plan) WriteKit(binary, version string) error {
 	if err := os.RemoveAll(p.KitDir); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Join(p.KitDir, "bin"), 0o755); err != nil {
 		return err
 	}
-	if err := copyFile(binary, filepath.Join(p.KitDir, "bin", "jira-"+arch), 0o755); err != nil {
+	if err := copyFile(binary, p.BinPath(), 0o755); err != nil {
 		return err
 	}
 	kit, err := render(kitTmpl, struct {
@@ -234,64 +235,82 @@ func (p *Plan) WriteSettings() ([]Note, error) {
 	return notes, nil
 }
 
-// WriteSkill installs skill (the skill directory's contents) at SkillDir.
-// Local edits are kept unless Force.
+// WriteSkill installs skill (the skill directory's contents) at SkillDir,
+// with a "This sandbox" section in SKILL.md saying where the binary and the
+// configuration are. Local edits are kept unless Force.
 func (p *Plan) WriteSkill(skill fs.FS) (Note, error) {
-	if _, err := os.Stat(p.SkillDir); err == nil && !p.Force {
-		if same, err := sameTree(skill, p.SkillDir); err != nil || !same {
-			return Note{Warn: true, Text: p.SkillDir + " has local edits and was kept (--force replaces it)"}, err
-		}
+	files, err := p.skillFiles(skill)
+	if err != nil {
+		return Note{}, err
+	}
+	if _, err := os.Stat(p.SkillDir); err == nil && !p.Force && !sameTree(files, p.SkillDir) {
+		return Note{Warn: true, Text: p.SkillDir + " has local edits and was kept (--force replaces it)"}, nil
 	}
 	if err := os.RemoveAll(p.SkillDir); err != nil {
 		return Note{}, err
 	}
-	err := fs.WalkDir(skill, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+	for path, b := range files {
 		dst := filepath.Join(p.SkillDir, filepath.FromSlash(path))
-		if d.IsDir() {
-			return os.MkdirAll(dst, 0o755)
-		}
-		b, err := fs.ReadFile(skill, path)
-		if err != nil {
-			return err
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return Note{}, err
 		}
 		mode := os.FileMode(0o644)
 		if strings.HasSuffix(path, ".sh") {
 			mode = 0o755
 		}
-		return os.WriteFile(dst, b, mode)
-	})
-	return Note{Text: "skill " + p.SkillDir}, err
+		if err := os.WriteFile(dst, b, mode); err != nil {
+			return Note{}, err
+		}
+	}
+	return Note{Text: "skill " + p.SkillDir}, nil
 }
 
-// sameTree reports whether dir holds exactly the files of a.
-func sameTree(a fs.FS, dir string) (bool, error) {
-	want := map[string][]byte{}
-	if err := fs.WalkDir(a, ".", func(path string, d fs.DirEntry, err error) error {
+// skillFiles is the skill as installed: its files, with the sandbox section
+// inserted after SKILL.md's title.
+func (p *Plan) skillFiles(skill fs.FS) (map[string][]byte, error) {
+	files := map[string][]byte{}
+	err := fs.WalkDir(skill, ".", func(path string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
-			want[path], err = fs.ReadFile(a, path)
+			files[path], err = fs.ReadFile(skill, path)
 		}
 		return err
-	}); err != nil {
-		return false, err
+	})
+	if err != nil {
+		return nil, err
 	}
+	section, err := render(skillSectionTmpl, p)
+	if err != nil {
+		return nil, err
+	}
+	md := string(files["SKILL.md"])
+	if i := strings.Index(md, "\n# "); i >= 0 {
+		end := i + 1 + strings.Index(md[i+1:], "\n") + 1 // after the title line
+		md = md[:end] + "\n" + section + md[end:]
+	} else {
+		md += "\n" + section
+	}
+	files["SKILL.md"] = []byte(md)
+	return files, nil
+}
+
+// sameTree reports whether dir holds exactly files.
+func sameTree(files map[string][]byte, dir string) bool {
+	seen := 0
 	same := true
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
 		rel, _ := filepath.Rel(dir, path)
-		rel = filepath.ToSlash(rel)
 		got, err := os.ReadFile(path)
-		if w, ok := want[rel]; err != nil || !ok || !bytes.Equal(w, got) {
+		want, ok := files[filepath.ToSlash(rel)]
+		if err != nil || !ok || !bytes.Equal(want, got) {
 			same = false
 		}
-		delete(want, rel)
+		seen++
 		return nil
 	})
-	return same && len(want) == 0, err
+	return same && seen == len(files)
 }
 
 func writeFiles(dir string, files map[string]string) error {
