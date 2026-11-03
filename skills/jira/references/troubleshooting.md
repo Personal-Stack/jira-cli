@@ -9,7 +9,7 @@ failing layer:
 | `dns` | host cannot be resolved | VPN/internal DNS; check `base_url` |
 | `tcp` | port unreachable | firewall, wrong port, proxy needed |
 | `proxy_tcp` | proxy unreachable | `proxy.url` / `HTTPS_PROXY` |
-| `tls` | certificate unknown/expired/mismatched | set `tls.ca_bundle` to the corporate CA |
+| `tls` | certificate unknown/expired/mismatched | `jira certs fetch` saves the server's CA chain (shows SHA-256 fingerprints, asks to confirm) and prints the `ca_bundle` line; or set `tls.ca_bundle` to the corporate CA yourself. To test candidate CA files: `scripts/tls-diagnose.sh HOST file...` |
 | `http` | `/rest/api/2/serverInfo` (sent without credentials) fails or returns HTML | wrong base URL/context path, SSO gateway in front of the API. A 401/403 **from Jira** (has `X-AREQUESTID`) is `ok`: anonymous access is disabled, which is normal in production; the version is then checked in the `version` step with credentials |
 | `version` | authenticated `serverInfo` fails | only runs when anonymous access is disabled |
 | `credentials` | no credential found | `jira auth login` or `JIRA_CREDENTIAL_FILE` |

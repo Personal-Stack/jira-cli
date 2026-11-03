@@ -96,6 +96,10 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 - [x] macOS: confirmed in the Go 1.27 source that the CLI's trust pool uses the OS verifier first on macOS/Windows (Keychain / Windows store), so `ca_bundle` is unnecessary when IT installed the CA; tokens go to the Keychain via `/usr/bin/security -i` (stdin, not argv). Installer strips the quarantine flag after checksum verification and warns against `--docker` on macOS
 - [ ] `scripts/test-macos-keychain.sh` (Keychain trust + token storage) runs only on the macOS CI runner; **not executed yet** (no macOS here)
 
+### `jira certs fetch`
+- [x] Downloads a server's CA chain (no credentials; honours the instance's proxy and client certificate), completes missing issuers via AIA only when they cryptographically sign the certificate below, shows SHA-256 fingerprints, requires confirmation (`--yes`/`--dry-run`), saves CA certificates only (never the leaf) to `<config dir>/<host>-ca.pem`, and proves the file with a verified handshake
+- [x] Tests: AIA completion (leaf+intermediate and leaf-only servers), same-name impostor root rejected, confirmation/dry-run/decline, self-signed server; verified through the Docker wrapper against a production-like server (tls fail, then fetch, then tls ok)
+
 ### Phase 6 (partial)
 - [x] Multi-stage Dockerfile (distroless, nonroot, ~20 MB). Built and run locally: headless mode with mounted secret works; no secrets in layers
 - [x] GitHub Actions CI: spec-validate, verify-generated, vet/gofmt, race tests, govulncheck, build, smoke test, docker build/run
