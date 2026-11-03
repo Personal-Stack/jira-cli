@@ -1,0 +1,102 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # bash -eo pipefail: a failing command in a `| tee` pipeline fails the step.
+    shell: bash
+
+env:
+  ARTIFACTS: ci-artifacts
+  # Structured logs for every jira/jiragen invocation in this workflow.
+  JIRA_LOG_FORMAT: json
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Prepare artifact directory
+        run: mkdir -p "$ARTIFACTS"
+
+      - name: Validate specifications
+        run: go run ./cmd/jiragen validate -v 2>&1 | tee "$ARTIFACTS/jiragen-validate.log"
+
+      - name: Verify generated code is up to date
+        run: go run ./cmd/jiragen check 2>&1 | tee "$ARTIFACTS/jiragen-check.log"
+
+      - name: Vet and format
+        run: make vet 2>&1 | tee "$ARTIFACTS/vet.log"
+
+      - name: Tests (race detector, verbose, coverage)
+        run: |
+          go test -race -v -coverprofile="$ARTIFACTS/coverage.out" ./... 2>&1 | tee "$ARTIFACTS/go-test.log"
+          go tool cover -func="$ARTIFACTS/coverage.out" > "$ARTIFACTS/coverage.txt"
+          {
+            echo "### Tests"
+            echo "- passed: $(grep -c '^--- PASS' "$ARTIFACTS/go-test.log")"
+            echo "- failed: $(grep -c '^--- FAIL' "$ARTIFACTS/go-test.log" || true)"
+            echo "- coverage: $(tail -1 "$ARTIFACTS/coverage.txt" | awk '{print $NF}')"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summarise test failures
+        if: failure()
+        run: |
+          echo "### Failing tests" >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^(--- FAIL|FAIL)' "$ARTIFACTS/go-test.log" | sed 's/^/    /' >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Vulnerability scan
+        run: make security 2>&1 | tee "$ARTIFACTS/govulncheck.log"
+
+      - name: Build
+        run: make build
+
+      - name: Smoke test with structured logging and secret-leak scan
+        run: |
+          scripts/ci-smoke.sh bin/jira "$ARTIFACTS" 2>&1 | tee "$ARTIFACTS/smoke-summary.txt"
+          { echo "### Smoke test"; echo '```'; cat "$ARTIFACTS/smoke-summary.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Phase 4 read-only script against a fake Jira
+        run: scripts/test-phase4.sh bin/jira 2>&1 | tee "$ARTIFACTS/phase4-test.log"
+
+      - name: Upload logs and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs-test-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.ARTIFACTS }}
+          retention-days: 14
+          if-no-files-found: warn
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare artifact directory
+        run: mkdir -p "$ARTIFACTS"
+      - name: Build image
+        run: docker build --progress=plain -t jira-cli:ci . 2>&1 | tee "$ARTIFACTS/docker-build.log"
+      - name: Run without config or credentials (debug logs)
+        run: |
+          docker run --rm -e JIRA_LOG_LEVEL=debug -e JIRA_LOG_FORMAT=json jira-cli:ci spec status \
+            > "$ARTIFACTS/docker-spec-status.json" 2> "$ARTIFACTS/docker-run.log"
+          cat "$ARTIFACTS/docker-run.log"
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs-docker-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.ARTIFACTS }}
+          retention-days: 14
+          if-no-files-found: warn

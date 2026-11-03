@@ -1,0 +1,8 @@
+{
+  "fields": {
+    "project": { "key": "ABC" },
+    "issuetype": { "name": "Task" },
+    "summary": "Created from jira-cli",
+    "description": "Body supplied with: jira issue create --file examples/issue.json"
+  }
+}

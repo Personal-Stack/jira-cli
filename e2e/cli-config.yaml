@@ -1,0 +1,27 @@
+# CLI configuration used inside the e2e network. No secrets: the PAT is read
+# from /run/secrets/jira-e2e-pat (written by setup/setup_jira.py).
+version: 1
+default_instance: e2e
+instances:
+  e2e:
+    deployment: datacenter
+    base_url: https://jira-proxy:8443
+    specification: {profile: datacenter-10.3}
+    auth: {type: pat, username: admin, credential_ref: jira-e2e-pat}
+    tls: {ca_bundle: /certs/ca.pem}
+    timeouts: {connect: 10s, request: 120s}
+  e2e-readonly:
+    deployment: datacenter
+    base_url: https://jira-proxy:8443
+    auth: {type: pat, credential_ref: jira-e2e-pat}
+    tls: {ca_bundle: /certs/ca.pem}
+    read_only: true
+  e2e-badtoken:
+    deployment: datacenter
+    base_url: https://jira-proxy:8443
+    auth: {type: pat, credential_ref: jira-e2e-bad-pat}
+    tls: {ca_bundle: /certs/ca.pem}
+  e2e-no-ca:
+    deployment: datacenter
+    base_url: https://jira-proxy:8443
+    auth: {type: pat, credential_ref: jira-e2e-pat}

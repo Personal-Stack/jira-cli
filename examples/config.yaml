@@ -1,0 +1,57 @@
+# Example jira-cli configuration.
+# Location: --config, $JIRA_CONFIG, or ~/.config/jira-cli/config.yaml
+#
+# This file must never contain secrets. Credentials are referenced by name
+# (credential_ref) and resolved from: $JIRA_CREDENTIAL_FILE, the secrets
+# directory ($JIRA_CREDENTIALS_DIR, default /run/secrets/<ref>),
+# $JIRA_CREDENTIAL_<REF>, or the OS keyring (`jira auth login`).
+version: 1
+
+default_instance: company-production
+
+instances:
+  company-production:
+    deployment: datacenter
+    base_url: https://jira.company.internal      # context path allowed, e.g. https://host/jira
+    specification:
+      profile: datacenter-10.3                     # compiled-in profile (`jira spec list`)
+    auth:
+      type: pat                                    # Authorization: Bearer <PAT>
+      username: user@company.com                   # informational; PAT does not need it
+      credential_ref: jira-production
+    tls:
+      verify: true                                 # default; false is unsafe and warned about
+      ca_bundle: /etc/ssl/company-ca.pem           # appended to the system roots
+      # client_cert: /etc/jira-cli/client.pem      # mTLS (re-read when rotated)
+      # client_key: /etc/jira-cli/client-key.pem   # must be chmod 600
+      # min_version: "1.3"
+    # proxy:
+    #   url: http://proxy.company.internal:3128    # default: HTTPS_PROXY / NO_PROXY
+    timeouts:
+      connect: 10s
+      request: 60s
+    retry:
+      max_attempts: 3                              # idempotent requests and 429 only
+    # Refuse every non-read operation before any network call. Recommended
+    # while evaluating the CLI against production.
+    read_only: true
+
+  company-staging:
+    deployment: datacenter
+    base_url: https://jira-staging.company.internal
+    auth:
+      type: oauth
+      username: user@company.com
+      credential_ref: jira-staging                 # stores the OAuth token set
+      oauth:
+        # Jira DC OAuth 2.0 provider (Administration > Applications >
+        # Application links > Create link > External application > Incoming).
+        authorization_url: https://jira-staging.company.internal/rest/oauth2/latest/authorize
+        token_url: https://jira-staging.company.internal/rest/oauth2/latest/token
+        client_id: 0123456789abcdef
+        # client_secret_ref: jira-staging-oauth-client   # if the link issues a secret
+        redirect_uri: http://127.0.0.1:8765/callback       # must match the application link exactly
+        scopes: [READ]                                     # Jira DC scopes: READ, WRITE, ADMIN, SYSTEM_ADMIN
+        pkce: true
+    tls:
+      ca_bundle: /etc/ssl/company-ca.pem

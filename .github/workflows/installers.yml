@@ -1,0 +1,100 @@
+name: installers
+
+# Exercises scripts/install.sh (Linux, macOS) against real release archives
+# served from a local mirror. Windows (Git Bash) uses the same script; it has
+# no CI job: Windows runners cost 2x Linux minutes, and the Windows code path
+# (zip + .exe) is small. Test it locally with a uname shim, see PROGRESS.md.
+
+on:
+  pull_request:
+    paths:
+      - "scripts/install.*"
+      - "scripts/jira-docker.sh"
+      - "scripts/test-docker-wrapper.sh"
+      - "scripts/test-macos-keychain.sh"
+      - "internal/transport/**"
+      - "internal/credentials/**"
+      - "Dockerfile"
+      - "scripts/dist.sh"
+      - "scripts/test-install.sh"
+      - "cmd/**"
+      - ".github/workflows/installers.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TEST_VERSION: v0.0.0-installtest
+
+jobs:
+  dist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Lint shell scripts
+        run: shellcheck -s sh scripts/install.sh && shellcheck scripts/*.sh e2e/*.sh
+      - name: Build archives
+        run: scripts/dist.sh "$TEST_VERSION" dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+  unix:
+    needs: dist
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Installer tests (install.sh)
+        run: scripts/test-install.sh dist
+
+  macos-keychain:
+    # Native CLI on macOS: Keychain TLS trust (no ca_bundle) and Keychain tokens.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make build
+      - name: Keychain trust and token storage
+        run: scripts/test-macos-keychain.sh bin/jira
+
+  docker-wrapper:
+    needs: dist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Build image
+        run: docker build --build-arg VERSION="$TEST_VERSION" -t jira-cli:local .
+      - name: Wrapper tests (real container)
+        run: scripts/test-docker-wrapper.sh jira-cli:local
+      - name: Installer tests incl. --docker scenarios
+        run: TEST_DOCKER_IMAGE=jira-cli:local scripts/test-install.sh dist
+

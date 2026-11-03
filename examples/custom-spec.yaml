@@ -1,0 +1,41 @@
+# Example custom OpenAPI specification adding an endpoint that the official
+# specification does not cover (e.g. a ScriptRunner REST endpoint).
+#
+# To compile it in, add it to a profile in specs/manifest.yaml:
+#
+#   specs:
+#     - name: jira-software-datacenter      # base (official)
+#       ...
+#     - name: company-extensions
+#       source: custom
+#       path: specs/custom/company-extensions.yaml
+#       version: ""                         # filled by `make spec-update`
+#       sha256: ""
+#
+# then run `make spec-update generate`. Operations that collide with the base
+# specification (same method + path) fail generation until one of them is
+# excluded in an overlay; nothing is merged silently.
+openapi: 3.0.1
+info:
+  title: Company Jira extensions
+  version: "2.1"
+paths:
+  /scriptrunner/latest/custom/releaseNotes:
+    get:
+      operationId: getReleaseNotes
+      tags: [company]
+      summary: Release notes for a version (ScriptRunner endpoint)
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema: { type: string }
+        - name: format
+          in: query
+          schema: { type: string, enum: [json, markdown] }
+      responses:
+        "200":
+          description: Release notes
+          content:
+            application/json:
+              schema: { type: object }
