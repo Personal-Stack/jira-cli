@@ -24,6 +24,8 @@ import (
 // Seams for tests: running sbx and finding it.
 var (
 	sbxLookPath = exec.LookPath
+	// sbxHandOver ends jira by handing the terminal to `sbx args...` in dir.
+	sbxHandOver = execSbx
 	// sbxRun runs sbx in dir. attach connects the terminal (for prompts and
 	// `sbx env run`); otherwise the combined output is returned.
 	sbxRun = func(ctx context.Context, dir string, attach bool, args ...string) ([]byte, error) {
@@ -114,10 +116,38 @@ the plan and the sbxenv.yaml without writing anything. See docs/sandbox.md.`,
 	return c
 }
 
-// prompter asks questions on Err and reads answers from In.
+// prompter asks questions on Err and reads answers from In. Reading happens
+// in a goroutine so that Ctrl+C (a cancelled ctx) ends a prompt at once
+// instead of waiting for Enter.
 type prompter struct {
-	r *bufio.Reader
-	w io.Writer
+	ctx   context.Context
+	lines chan promptLine
+	w     io.Writer
+}
+
+type promptLine struct {
+	s   string
+	err error
+}
+
+func newPrompter(ctx context.Context, r io.Reader, w io.Writer) *prompter {
+	p := &prompter{ctx: ctx, lines: make(chan promptLine), w: w}
+	go func() {
+		defer close(p.lines) // later prompts see end of input instead of waiting
+		br := bufio.NewReader(r)
+		for {
+			s, err := br.ReadString('\n')
+			select {
+			case p.lines <- promptLine{s, err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	return p
 }
 
 // ask shows cur as the default: Enter keeps it, "-" clears it.
@@ -127,9 +157,16 @@ func (p *prompter) ask(q, cur string) (string, error) {
 	} else {
 		fmt.Fprintf(p.w, "%s: ", q)
 	}
-	line, err := p.r.ReadString('\n')
-	if err != nil && (err != io.EOF || line == "") {
-		return "", clierr.New(clierr.LayerUsage, "no_answer", "no answer (end of input)")
+	var line string
+	select {
+	case <-p.ctx.Done():
+		fmt.Fprintln(p.w)
+		return "", clierr.Interrupted()
+	case l, ok := <-p.lines:
+		if !ok || l.err != nil && (l.err != io.EOF || l.s == "") {
+			return "", clierr.New(clierr.LayerUsage, "no_answer", "no answer (end of input)")
+		}
+		line = l.s
 	}
 	switch v := strings.TrimSpace(line); v {
 	case "":
@@ -200,7 +237,7 @@ func (a *App) runSetupSbx(ctx context.Context, f *sbxFlags, interactive, agentSe
 	}
 
 	if interactive {
-		if err := a.askSetupSbx(f, agentSet); err != nil {
+		if err := a.askSetupSbx(ctx, f, agentSet); err != nil {
 			return err
 		}
 	}
@@ -309,7 +346,8 @@ func (a *App) runSetupSbx(ctx context.Context, f *sbxFlags, interactive, agentSe
 			if err := output.Write(a.Out, result, format); err != nil {
 				return err
 			}
-			if _, err := sbxRun(ctx, plan.Project, true, "env", "run"); err != nil {
+			logf("Starting the sandbox: sbx env run")
+			if err := sbxHandOver(plan.Project, "env", "run"); err != nil {
 				return clierr.Wrap(clierr.LayerUsage, "sbx_run_failed", "sbx env run failed", err)
 			}
 			return nil
@@ -353,9 +391,9 @@ func (a *App) ensureSbxSecret(ctx context.Context, service string, canPrompt boo
 	return nil
 }
 
-func (a *App) askSetupSbx(f *sbxFlags, agentSet bool) error {
+func (a *App) askSetupSbx(ctx context.Context, f *sbxFlags, agentSet bool) error {
 	o := &f.opts
-	p := &prompter{r: bufio.NewReader(a.In), w: a.Err}
+	p := newPrompter(ctx, a.In, a.Err)
 	var err error
 	ask := func(dst *string, q string) {
 		if err == nil {

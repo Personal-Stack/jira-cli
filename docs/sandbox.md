@@ -51,7 +51,11 @@ It shows a summary and asks for confirmation before writing anything. Then:
 1. It gets a Linux `jira` for the sandbox (see [The Linux binary](#the-linux-binary)).
 2. It writes the files.
 3. It runs `sbx secret set jira` if that secret doesn't exist yet (sbx prompts for the PAT).
-4. It runs `sbx env plan` and, if you said so, `sbx env run`.
+4. It runs `sbx env plan` and, if you said so, `sbx env run`. For that last
+   step jira hands the terminal to sbx, so Ctrl+C inside the agent is the
+   agent's, not jira's.
+
+Ctrl+C at any prompt stops the setup before anything is written (exit code 130).
 
 Re-running it for the same project offers the previous answers as defaults.
 In each prompt, Enter keeps the value shown in brackets and `-` clears an

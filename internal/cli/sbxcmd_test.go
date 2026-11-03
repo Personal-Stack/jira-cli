@@ -228,6 +228,32 @@ func TestSetupSbxInContainerDoesNotAskForPaths(t *testing.T) {
 	}
 }
 
+func TestSetupSbxRunHandsOverToSbx(t *testing.T) {
+	isolateHome(t)
+	project := t.TempDir()
+	var handed []string
+	old := sbxHandOver
+	t.Cleanup(func() { sbxHandOver = old })
+	sbxHandOver = func(dir string, args ...string) error {
+		handed = append([]string{dir}, args...)
+		return nil
+	}
+	code, _, _, calls := runSbx(t, true, "jira apiKey\n", "", "--project", project, "--base-url", "https://jira.example.com", "--run")
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	// `sbx env run` is handed the terminal (exec), not run as a child that
+	// jira's Ctrl+C handling would interrupt.
+	if strings.Join(handed, " ") != project+" env run" {
+		t.Fatalf("handed over: %v", handed)
+	}
+	for _, c := range calls {
+		if c.args == "env run" {
+			t.Fatal("env run must not run as a child process")
+		}
+	}
+}
+
 func TestSetupSbxRefusesForeignEnvFile(t *testing.T) {
 	isolateHome(t)
 	project := t.TempDir()

@@ -117,6 +117,10 @@ func (a *App) Execute(ctx context.Context, args []string) int {
 		return 0
 	}
 	e := clierr.As(err)
+	if ctx.Err() != nil && e.Layer != clierr.LayerInterrupted {
+		// Whatever failed after Ctrl+C failed because of it.
+		e = clierr.Wrap(clierr.LayerInterrupted, "interrupted", "interrupted", err)
+	}
 	if e.Layer == clierr.LayerInternal && isCobraUsage(err) {
 		e = clierr.New(clierr.LayerUsage, "invalid_usage", err.Error())
 	}

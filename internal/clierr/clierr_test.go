@@ -38,7 +38,7 @@ func TestClassify(t *testing.T) {
 		{wrap(os.ErrDeadlineExceeded), LayerTimeout, "timeout"},
 		{wrap(errors.New("tls: handshake failure")), LayerTLS, "tls_handshake_failed"},
 		{wrap(errors.New("EOF")), LayerTransport, "http_transport_error"},
-		{context.Canceled, LayerInternal, "error"},
+		{context.Canceled, LayerInterrupted, "interrupted"}, // Ctrl+C: exit 130, not an internal error
 	}
 	for _, c := range cases {
 		e := Classify(c.err)
@@ -53,7 +53,7 @@ func TestClassify(t *testing.T) {
 
 func TestExitCodesAndAs(t *testing.T) {
 	want := map[Layer]int{LayerUsage: 2, LayerConfig: 3, LayerCredentials: 3, LayerAuth: 4, LayerAuthorization: 5,
-		LayerDNS: 8, LayerProxy: 8, LayerTLS: 8, LayerSafety: 9, LayerInternal: 1}
+		LayerDNS: 8, LayerProxy: 8, LayerTLS: 8, LayerSafety: 9, LayerInternal: 1, LayerInterrupted: 130}
 	for l, code := range want {
 		if got := New(l, "x", "y").ExitCode(); got != code {
 			t.Errorf("%s: exit %d want %d", l, got, code)

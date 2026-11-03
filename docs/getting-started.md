@@ -268,6 +268,7 @@ jira commands describe issue create                 # parameters, body, risk
 - Writes: preview with `--dry-run`. Destructive and administrative commands need `--yes`. With `read_only: true` (or `JIRA_READ_ONLY=1`) every non-read command is refused before anything is sent.
 - Bodies: `--file issue.json` or `--stdin`. With the Docker wrapper, files must be in or below the current directory.
 - Tracing: `--log-level debug --log-format json --log-file trace.jsonl`. Tokens are always redacted; hostnames and JQL are not.
+- Stopping: Ctrl+C stops the command cleanly (exit code 130): requests are cancelled and prompts end at once. If it is still busy, it says so; press Ctrl+C again to exit immediately.
 
 ## 8. Production checklist
 

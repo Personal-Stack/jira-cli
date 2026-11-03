@@ -140,5 +140,6 @@ accordingly. A warning on stderr means `--max-pages` stopped early. See
 | 8 | network / DNS / TLS / proxy / timeout | run `jira doctor`; do not blindly retry writes |
 | 9 | refused by safety policy | read-only mode or confirmation required; ask the user |
 | 10 | rate limited (429) | wait (`details.retry_after`) and retry later |
+| 130 | interrupted (Ctrl+C) | the user stopped it; do not retry on your own |
 
 Troubleshooting: `references/troubleshooting.md`.
