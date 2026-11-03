@@ -114,7 +114,10 @@ kits:
 {{- if .AgentKit}}
   - {{.AgentKit}}
 {{- end}}
-  - ./.sbx/jira-cli
+{{- range .Kits}}
+  - {{.}}
+{{- end}}
+  - {{.KitRef}}
 workspace: .
 additionalWorkspaces:
   - path: {{.Settings}}

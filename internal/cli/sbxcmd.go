@@ -67,7 +67,7 @@ It stops at the first problem, and writes nothing before everything passed:
   4. the PAT: the sbx secret exists, or sbx stores it now (it prompts);
   5. files are written, and the next steps printed.
 
-Files: <project>/.sbx/jira-cli (kit), <project>/sbxenv.yaml,
+Files: <project>/temp/.sbx/jira-cli (kit; --kit-dir), <project>/sbxenv.yaml,
 <project>/.opencode/skills/jira, and <settings>/config.yaml and bashrc
 (created once, yours to edit). See docs/sandbox.md.`,
 		Example: `  jira setup-sbx
@@ -89,6 +89,8 @@ Files: <project>/.sbx/jira-cli (kit), <project>/sbxenv.yaml,
 	fl.StringVar(&f.o.Project, "project", "", "folder the agent works in; sbxenv.yaml goes here (default: current directory)")
 	fl.StringVar(&f.o.BaseURL, "base-url", "", "Jira base URL (default: from <settings>/config.yaml)")
 	fl.StringVar(&f.o.Agent, "agent", "opencode", "a built-in sbx agent, or an agent kit reference (registry/repo:tag)")
+	fl.StringVar(&f.o.KitPath, "kit-dir", sbx.DefaultKitPath, "folder for jira-cli's kit, relative to the project")
+	fl.StringArrayVar(&f.o.Kits, "kit", nil, "additional kit to compose (registry reference or ./path in the project; repeatable)")
 	fl.StringVar(&f.o.Name, "name", "", "sandbox name (default for a new project: <agent>-<folder>-jira)")
 	fl.StringVar(&f.o.Secret, "secret", "jira", "sbx secret that holds the PAT")
 	fl.BoolVar(&f.allowWrites, "allow-writes", false, "let the agent write to Jira (default: read-only)")
@@ -258,6 +260,15 @@ func (s *sbxSetup) applyDefaults() bool {
 			*v.dst = v.val
 		}
 	}
+	if !s.set("kit") && d.Kits != nil {
+		o.Kits = d.Kits
+	}
+	if d.Project {
+		o.PrevKitPath = d.KitPath // removed if the kit moves
+	}
+	if !s.set("kit-dir") && d.KitPath != "" {
+		o.KitPath = d.KitPath
+	}
 	if d.ReadOnly != nil && !s.set("allow-writes") {
 		o.ReadOnly = *d.ReadOnly
 	}
@@ -363,6 +374,7 @@ func (s *sbxSetup) ask(ctx context.Context) error {
 	if o.Agent != before {
 		o.AgentName = ""
 	}
+	s.askKits(q)
 	s.refreshName()
 	if q.err == nil {
 		ui.note("'-' uses sbx's own default, <agent>-<folder>, which 'sbx run' also gives a sandbox there.")
@@ -384,12 +396,55 @@ func (s *sbxSetup) ask(ctx context.Context) error {
 	return q.err
 }
 
+// askKits edits the additional kits given as references or ./paths; kits
+// written as {source: ...} mappings in sbxenv.yaml are kept as they are.
+func (s *sbxSetup) askKits(q *form) {
+	o := s.o()
+	var plain, mapped []string
+	for _, k := range o.Kits {
+		if strings.HasPrefix(k, "{") {
+			mapped = append(mapped, k)
+		} else {
+			plain = append(plain, k)
+		}
+	}
+	if q.err == nil && len(mapped) > 0 {
+		s.ui.note("kept as written in sbxenv.yaml: " + strings.Join(mapped, ", "))
+	}
+	list := strings.Join(plain, " ")
+	q.text(&list, "Additional kits (registry references or ./paths, space-separated; empty = none)", func(v string) error {
+		var errs []error
+		for _, k := range strings.Fields(v) {
+			errs = append(errs, sbx.ValidKit(k))
+		}
+		return errors.Join(errs...)
+	})
+	o.Kits = append(mapped, strings.Fields(list)...)
+}
+
+// relocateKits rewrites ./paths (relative to project) to be relative to dir,
+// so the scratch copy sbx checks finds the same local kits.
+func relocateKits(kits []string, project, dir string) []string {
+	out := make([]string, len(kits))
+	for i, k := range kits {
+		out[i] = k
+		if strings.HasPrefix(k, ".") {
+			if rel, err := filepath.Rel(dir, filepath.Join(project, k)); err == nil {
+				out[i] = "./" + filepath.ToSlash(rel)
+			}
+		}
+	}
+	return out
+}
+
 func (s *sbxSetup) summary() {
 	o, ui := s.o(), s.ui
 	ui.section("Summary")
 	ui.kv("project", o.Project)
 	ui.kv("jira", o.BaseURL)
 	ui.kv("agent", o.Agent+map[bool]string{true: ui.dim(" (sbx name: " + s.agentName() + ")")}[sbx.IsKitRef(o.Agent)])
+	ui.kv("kits", or(strings.Join(o.Kits, ", "), "none"))
+	ui.kv("kit folder", o.KitPath)
 	ui.kv("name", or(o.Name, "sbx default"))
 	ui.kv("read-only", map[bool]string{true: "yes", false: "no"}[o.ReadOnly])
 	ui.kv("token", fmt.Sprintf("sbx secret %q", o.Secret))
@@ -407,7 +462,10 @@ func (s *sbxSetup) validate(ctx context.Context, plan *sbx.Plan) error {
 	for attempt := 0; ; attempt++ {
 		scratch := *plan
 		dir := filepath.Join(s.tmp, fmt.Sprint("plan-", attempt))
-		scratch.KitDir, scratch.EnvFile = filepath.Join(dir, ".sbx", "jira-cli"), filepath.Join(dir, "sbxenv.yaml")
+		// Everything in the scratch folder: nothing of the project is touched.
+		scratch.Project, scratch.PrevKitPath = dir, ""
+		scratch.KitDir, scratch.EnvFile = filepath.Join(dir, filepath.FromSlash(plan.KitPath)), filepath.Join(dir, "sbxenv.yaml")
+		scratch.Kits = relocateKits(plan.Kits, plan.Project, dir)
 		if err := scratch.WriteKit(s.bin, s.a.Version); err != nil {
 			return err
 		}

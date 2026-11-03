@@ -145,7 +145,7 @@ func TestWriteKitAndEnvFile(t *testing.T) {
 	if hook := startup[0].(map[string]any)["command"].([]any)[2].(string); len(startup) != 1 || !strings.HasSuffix(strings.TrimSpace(hook), "|| true") {
 		t.Fatalf("startup hooks can fail the start: %v", startup)
 	}
-	if st, err := os.Stat(p.BinPath()); err != nil || st.Mode().Perm() != 0o755 || p.BinPath() != filepath.Join(p.Project, ".sbx", "jira-cli", "bin", "jira") {
+	if st, err := os.Stat(p.BinPath()); err != nil || st.Mode().Perm() != 0o755 || p.BinPath() != filepath.Join(p.Project, "temp", ".sbx", "jira-cli", "bin", "jira") {
 		t.Fatalf("binary: %v %v", st, err)
 	}
 	if df, _ := os.ReadFile(filepath.Join(p.KitDir, "jira-cli.dockerfile")); !strings.Contains(string(df), "COPY --chmod=0755 bin/jira /usr/bin/jira") {
@@ -164,7 +164,7 @@ func TestWriteKitAndEnvFile(t *testing.T) {
 	if !IsGenerated(eb) || yaml.Unmarshal(eb, &env) != nil {
 		t.Fatalf("env file:\n%s", eb)
 	}
-	if env.Name != "jira-sbx" || env.Agent != "devex-opencode" || strings.Join(env.Kits, ",") != o.Agent+",./.sbx/jira-cli" ||
+	if env.Name != "jira-sbx" || env.Agent != "devex-opencode" || strings.Join(env.Kits, ",") != o.Agent+",./temp/.sbx/jira-cli" ||
 		env.Additional[0]["path"] != p.Settings || env.Additional[0]["readOnly"] != true || len(env.Additional[0]) != 2 ||
 		env.Env["JIRA_CONFIG"] != p.ConfigFile || env.Env["JIRA_READ_ONLY"] != "1" || env.Options != nil ||
 		env.Bindings["jira"]["apiKey"]["domains"][0] != "jira.example.com" {

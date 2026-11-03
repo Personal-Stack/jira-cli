@@ -14,6 +14,7 @@ Run it without flags in a terminal and it asks:
 - **Project:** the folder the agent works in.
 - **Jira base URL:** checked for reachability as you enter it.
 - **Agent:** a built-in agent such as `opencode`, or your agent kit's reference (`registry/repo:tag`).
+- **Additional kits:** your own kits (registry references or `./paths` in the project).
 - **Sandbox name:** a new project gets `<agent>-<folder>-jira`.
 - **Read-only:** default yes.
 
@@ -33,6 +34,8 @@ jira setup-sbx --project ~/Projects/my-work --base-url https://jira.company.inte
 | Flag | Use |
 |---|---|
 | `--agent` | A built-in agent or an agent kit reference |
+| `--kit` | An additional kit (registry reference or `./path`); repeatable |
+| `--kit-dir` | Where jira-cli's kit goes in the project (default `temp/.sbx/jira-cli`) |
 | `--name` | Sandbox name |
 | `--secret` | sbx secret holding the PAT (default `jira`) |
 | `--allow-writes` | Let the agent write to Jira (default: read-only) |
@@ -68,14 +71,24 @@ and nothing is written before everything has passed:
 
 | What | Where |
 |---|---|
-| Kit: the Linux `jira` (`bin/jira`), egress to your Jira host, the credential, a `bashrc` hook | `<project>/.sbx/jira-cli/` (binary gitignored) |
+| Kit: the Linux `jira` (`bin/jira`), egress to your Jira host, the credential, a `bashrc` hook | `<project>/temp/.sbx/jira-cli/` (binary gitignored) |
 | Environment: agent, kit, name, settings mount, `JIRA_*` variables, credential binding | `<project>/sbxenv.yaml` |
 | The agent skill, with a "This sandbox" section naming the binary's path | `<project>/.opencode/skills/jira/` |
 | `config.yaml` and `bashrc`: created once, then yours to edit | `~/.config/jira-cli-sbx/` (mounted read-only at the same path) |
 | Your answers, for the next run | `~/.config/jira-cli-sbx/setup.yaml` |
 
+**Your kits.** Kits you add, with `--kit`, the question, or by hand in
+`sbxenv.yaml` (including `{source: ..., args: ...}` entries), are kept when
+setup-sbx runs again, and are remembered for new projects. sbx checks them
+together with everything else.
+
+**The kit folder.** jira-cli's kit lives in `temp/.sbx/jira-cli`, or wherever
+`--kit-dir` points, inside the project. If it moves, the copy setup-sbx
+generated at the old location is removed. The `.sbx/jira-cli` of earlier
+versions is removed too.
+
 **The binary.** The project is mounted in the sandbox at the same path, so
-the agent runs `<project>/.sbx/jira-cli/bin/jira`. The skill and the agent
+the agent runs `<project>/temp/.sbx/jira-cli/bin/jira`. The skill and the agent
 instructions say so, and the agent doesn't search `PATH`. (The kit also
 installs it as `/usr/bin/jira`, but not every setup applies that layer.)
 

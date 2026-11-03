@@ -10,7 +10,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Validators for single answers, so a wrong value is reported when it is
@@ -48,6 +51,44 @@ func ValidRef(v string) error {
 		return fmt.Errorf("%q is not an image or kit reference", v)
 	}
 	return nil
+}
+
+var (
+	localKitRe = regexp.MustCompile(`^\.\.?/[A-Za-z0-9._/-]+$`)
+	kitPathRe  = regexp.MustCompile(`^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
+)
+
+// ValidKitPath checks the kit's folder: relative and inside the project
+// (the sandbox only sees the project).
+func ValidKitPath(v string) error {
+	for _, seg := range strings.Split(v, "/") {
+		if seg == "." || seg == ".." {
+			return fmt.Errorf("%q: the kit folder must be inside the project (no '.' or '..')", v)
+		}
+	}
+	if !kitPathRe.MatchString(v) {
+		return fmt.Errorf("%q: use a path relative to the project, with letters, digits, '.', '_', '-' and '/'", v)
+	}
+	return nil
+}
+
+// ValidKit checks an additional kit: a registry reference, a ./local path,
+// or a {source: ...} mapping kept from sbxenv.yaml.
+func ValidKit(v string) error {
+	switch {
+	case strings.HasPrefix(v, "{"):
+		var m map[string]any
+		if yaml.Unmarshal([]byte(v), &m) != nil || m["source"] == nil {
+			return fmt.Errorf("%q: a kit mapping needs a source", v)
+		}
+		return nil
+	case strings.HasPrefix(v, "."):
+		if !localKitRe.MatchString(v) {
+			return fmt.Errorf("%q: use a ./path with letters, digits, '.', '_', '-' and '/'", v)
+		}
+		return nil
+	}
+	return ValidRef(v)
 }
 
 // ValidSettingsPath checks the settings folder path.

@@ -17,6 +17,8 @@ const DefaultsFile = "setup.yaml"
 // if it has one, else the last setup of any project (DefaultsFile).
 type Defaults struct {
 	Agent, AgentName, Secret string
+	Kits                     []string
+	KitPath                  string // where the jira-cli kit is (or goes)
 	ReadOnly, Skill          *bool
 
 	Name    string // the project's own sandbox name (only when Project)
@@ -27,12 +29,14 @@ type Defaults struct {
 // saved is DefaultsFile's format. AgentKit is how earlier versions stored a
 // kit (with Agent holding its name).
 type saved struct {
-	Agent     string `yaml:"agent,omitempty"`
-	AgentName string `yaml:"agent_name,omitempty"`
-	AgentKit  string `yaml:"agent_kit,omitempty"`
-	Secret    string `yaml:"secret,omitempty"` // also read by scripts/jira-docker.sh
-	ReadOnly  *bool  `yaml:"read_only,omitempty"`
-	Skill     *bool  `yaml:"skill,omitempty"`
+	Agent     string   `yaml:"agent,omitempty"`
+	AgentName string   `yaml:"agent_name,omitempty"`
+	AgentKit  string   `yaml:"agent_kit,omitempty"`
+	Kits      []string `yaml:"kits,omitempty"`
+	KitPath   string   `yaml:"kit_path,omitempty"`
+	Secret    string   `yaml:"secret,omitempty"` // also read by scripts/jira-docker.sh
+	ReadOnly  *bool    `yaml:"read_only,omitempty"`
+	Skill     *bool    `yaml:"skill,omitempty"`
 }
 
 // LoadDefaults reads the defaults for project.
@@ -44,7 +48,7 @@ func LoadDefaults(project, settings string) Defaults {
 		if s.AgentKit != "" {
 			s.Agent, s.AgentName = s.AgentKit, s.Agent
 		}
-		d = Defaults{Agent: s.Agent, AgentName: s.AgentName, Secret: s.Secret, ReadOnly: s.ReadOnly, Skill: s.Skill, From: "your last setup (" + path + ")"}
+		d = Defaults{Agent: s.Agent, AgentName: s.AgentName, Kits: s.Kits, KitPath: s.KitPath, Secret: s.Secret, ReadOnly: s.ReadOnly, Skill: s.Skill, From: "your last setup (" + path + ")"}
 	}
 	b, err := os.ReadFile(filepath.Join(project, "sbxenv.yaml"))
 	if err != nil || !IsGenerated(b) {
@@ -53,18 +57,50 @@ func LoadDefaults(project, settings string) Defaults {
 	var env struct {
 		Name  string            `yaml:"name"`
 		Agent string            `yaml:"agent"`
-		Kits  []any             `yaml:"kits"`
+		Kits  []yaml.Node       `yaml:"kits"`
 		Env   map[string]string `yaml:"env"`
 	}
 	if yaml.Unmarshal(b, &env) != nil {
 		return d
 	}
 	ro := env.Env["JIRA_READ_ONLY"] == "1"
-	d.Agent, d.AgentName, d.Name, d.ReadOnly = env.Agent, "", env.Name, &ro
-	for _, k := range env.Kits {
-		if ref, ok := k.(string); ok && !strings.HasPrefix(ref, ".") {
-			d.Agent, d.AgentName = ref, env.Agent
-			break
+	savedAgent := d.Agent
+	d.Agent, d.AgentName, d.Name, d.ReadOnly, d.Kits = env.Agent, "", env.Name, &ro, nil
+	// The agent kit: the one the last setup named, or (files of earlier
+	// versions) the first registry kit unless the agent is that name.
+	var refs []string
+	for _, n := range env.Kits {
+		k := n.Value
+		if n.Kind == yaml.MappingNode { // {source: ..., args: ...}: keep as written
+			n.Style = yaml.FlowStyle
+			out, _ := yaml.Marshal(&n)
+			k = strings.TrimSpace(string(out))
+		}
+		if isJiraKit(project, k) {
+			d.KitPath = strings.TrimPrefix(k, "./")
+		} else {
+			refs = append(refs, k)
+		}
+	}
+	agentKit := ""
+	for _, k := range refs {
+		if k == savedAgent && IsKitRef(k) {
+			agentKit = k
+		}
+	}
+	if agentKit == "" && savedAgent != env.Agent {
+		for _, k := range refs {
+			if !strings.HasPrefix(k, ".") && !strings.HasPrefix(k, "{") {
+				agentKit = k
+				break
+			}
+		}
+	}
+	for _, k := range refs {
+		if k == agentKit {
+			d.Agent, d.AgentName = k, env.Agent
+		} else {
+			d.Kits = append(d.Kits, k)
 		}
 	}
 	d.From, d.Project = "this project's previous setup", true
@@ -74,7 +110,10 @@ func LoadDefaults(project, settings string) Defaults {
 // SaveDefaults stores this plan's choices for the next project.
 func (p *Plan) SaveDefaults() error {
 	ro, skill := p.ReadOnly, p.Skill
-	s := saved{Agent: p.Agent, Secret: p.Secret, ReadOnly: &ro, Skill: &skill}
+	s := saved{Agent: p.Agent, Kits: p.Kits, KitPath: p.KitPath, Secret: p.Secret, ReadOnly: &ro, Skill: &skill}
+	if s.KitPath == DefaultKitPath {
+		s.KitPath = ""
+	}
 	if p.AgentKit != "" && p.AgentName != AgentFromKit(p.AgentKit) {
 		s.AgentName = p.AgentName
 	}

@@ -104,7 +104,7 @@ kill "$LISTENER" 2> /dev/null
 SBXSET="$HOME/.config/jira-cli-sbx"
 [ $rc = 0 ] && [ -f "$HOME/sbxproj/sbxenv.yaml" ] && [ -f "$HOME/sbxproj/.opencode/skills/jira/SKILL.md" ] && [ -f "$SBXSET/config.yaml" ] \
   && ok "setup-sbx writes the project files and settings through the container" || { ko "setup-sbx (exit $rc)"; cat "$WORK/o" "$WORK/e"; }
-[ -x "$HOME/sbxproj/.sbx/jira-cli/bin/jira" ] && grep -q '"binary_source": "self"' "$WORK/o" \
+[ -x "$HOME/sbxproj/temp/.sbx/jira-cli/bin/jira" ] && grep -q '"binary_source": "self"' "$WORK/o" \
   && ok "setup-sbx uses the container's own linux binary" || { ko "setup-sbx binary"; cat "$WORK/o"; }
 grep -q "path: $SBXSET" "$HOME/sbxproj/sbxenv.yaml" && grep -q "JIRA_CONFIG: $SBXSET/config.yaml" "$HOME/sbxproj/sbxenv.yaml" \
   && ok "setup-sbx writes host paths into sbxenv.yaml" || { ko "setup-sbx paths"; cat "$HOME/sbxproj/sbxenv.yaml"; }
