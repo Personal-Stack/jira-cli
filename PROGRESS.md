@@ -108,6 +108,15 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 - [x] Fixed earlier docs: `gh auth token` cannot pull from GHCR without `gh auth refresh -s read:packages`
 - [ ] Not run on GitHub yet: recommended first step is a manual dry run (Actions > release > Run workflow)
 
+### Docker Sandboxes (sbx)
+- [x] `jira setup-sbx` (`internal/sbx`, `internal/cli/sbxcmd.go`): writes a local sbx kit (`.sbx/jira-cli`: linux binary at `/usr/bin/jira`, egress rule, proxy-managed `credential@1`, best-effort bashrc hook), `sbxenv.yaml`, the skill as `.opencode/skills/jira` (embedded) and settings (`config.yaml`, `bashrc`, created once). The PAT is an sbx secret; the sandbox only sees a sentinel
+- [x] Fail fast, sbx as the authority: checks before questions (sbx, binary, secrets), each answer checked when given (incl. Jira reachability), `sbx env plan` on a scratch copy before writing with the agent kit name taken from sbx, secret settled before writing; a known setup is one confirmation (`setup.yaml`)
+- [x] Simplified: 15 flags (from 24): one `--agent` (name or kit reference); removed `--agent-kit`, `--ca-bundle`, `--kit-only`, `--instance-name`, `--credential-ref` (read from config.yaml), `--skip-secret` (in `--skip-checks`), binary source `image`, `--arch`, the profile.d hook; guided run 6 questions (from 13). `setup.yaml` files of earlier versions are still read
+- [x] Docker wrapper: asks for the project on the host, mounts it and the settings, runs the sbx steps on the host after the container (secret, plan, agent-name fix)
+- [x] Ctrl+C: first press cancels (exit 130), second exits; `--run` hands the terminal to `sbx env run`
+- [x] Tests: Go tests with a fake sbx (every early stop writes nothing), wrapper 25/25 with a fake host sbx; the kit validates against the sandbox-kit-spec v3 schemas. Earlier file layout confirmed on a real sbx by the user
+- [ ] This version not yet run against a real sbx
+
 ### Phase 6 (partial)
 - [x] Multi-stage Dockerfile (distroless, nonroot, ~20 MB). Built and run locally: headless mode with mounted secret works; no secrets in layers
 - [x] GitHub Actions CI: spec-validate, verify-generated, vet/gofmt, race tests, govulncheck, build, smoke test, docker build/run

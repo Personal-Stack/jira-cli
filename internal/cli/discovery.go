@@ -212,6 +212,7 @@ func (a *App) capabilitiesCmd() *cobra.Command {
 					"0": "success", "1": "internal error", "2": "usage error", "3": "configuration/credentials",
 					"4": "authentication (401)", "5": "authorization (403)", "6": "not found (404)", "7": "other Jira API error",
 					"8": "network/TLS/proxy/timeout", "9": "refused by safety policy", "10": "rate limited (429)",
+					"130": "interrupted (Ctrl+C)",
 				},
 			}, f)
 		},

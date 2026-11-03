@@ -101,6 +101,7 @@ docker run --rm \
 | Getting started (install, certificate from the browser, token, usage) | [docs/getting-started.md](docs/getting-started.md) |
 | Installation | [docs/installation.md](docs/installation.md) |
 | Docker wrapper (no Go/binary on the machine) | [docs/docker.md](docs/docker.md) |
+| Agents in Docker Sandboxes (sbx), token kept on the host: `jira setup-sbx` | [docs/sandbox.md](docs/sandbox.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
 | OpenAPI generation, overlays, spec updates | [docs/openapi-generation.md](docs/openapi-generation.md) |
 | Authentication (PAT, OAuth) | [docs/authentication.md](docs/authentication.md) |

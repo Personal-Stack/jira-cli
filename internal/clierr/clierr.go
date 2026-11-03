@@ -3,6 +3,7 @@
 package clierr
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -33,6 +34,8 @@ const (
 	LayerResponse      Layer = "response_parsing"
 	LayerSafety        Layer = "safety"
 	LayerInternal      Layer = "internal"
+	// LayerInterrupted: the user pressed Ctrl+C (or the process got SIGTERM).
+	LayerInterrupted Layer = "interrupted"
 )
 
 // Error is the structured error type printed by the CLI.
@@ -60,6 +63,14 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Err }
 
+// ExitInterrupted is the conventional exit code after SIGINT (128 + 2).
+const ExitInterrupted = 130
+
+// Interrupted is the error for a run stopped by Ctrl+C.
+func Interrupted() *Error {
+	return New(LayerInterrupted, "interrupted", "interrupted")
+}
+
 // ExitCode maps layers to stable process exit codes.
 func (e *Error) ExitCode() int {
 	switch e.Layer {
@@ -83,6 +94,8 @@ func (e *Error) ExitCode() int {
 		return 8
 	case LayerSafety:
 		return 9
+	case LayerInterrupted:
+		return ExitInterrupted
 	}
 	return 1
 }
@@ -126,6 +139,8 @@ func Classify(err error) *Error {
 	)
 	var proxyRefused interface{ ProxyStatus() int }
 	switch {
+	case errors.Is(err, context.Canceled):
+		return Wrap(LayerInterrupted, "interrupted", "interrupted", err)
 	case errors.As(err, &proxyRefused):
 		e := Wrap(LayerProxy, "proxy_connect_refused", "the proxy refused to open a tunnel to the Jira host", err)
 		e.HTTPStatus = proxyRefused.ProxyStatus()

@@ -7,6 +7,8 @@
 #     so paths in config.yaml (ca_bundle, client_cert) work unchanged;
 #   - the current directory mounted read-only at the same path, so
 #     `--file issue.json` works;
+#   - for `jira setup-sbx`: the project (current directory or --project) and
+#     the settings folder read-write, --binary-file read-only;
 #   - credentials stored as 0600 files in ~/.config/jira-cli/credentials
 #     (JIRA_CREDENTIAL_STORE=file), because containers have no OS keyring;
 #   - your uid/gid, so files it writes are yours;
@@ -77,6 +79,42 @@ for d in $LOG_DIRS; do [ -n "$d" ] && rw "$d"; done
 IFS=$OLDIFS
 if [ -n "${JIRA_CONFIG:-}" ]; then ro "$(dirname "$JIRA_CONFIG")"; fi
 if [ -n "${JIRA_CREDENTIAL_FILE:-}" ]; then ro "$JIRA_CREDENTIAL_FILE"; fi
+# `jira setup-sbx` writes into the project and the settings folder; sbx itself
+# runs on the host afterwards (the command prints those steps).
+if [ "${2:-}" = setup-sbx ]; then   # $1 is the image (set above)
+  # Guided run (`jira setup-sbx` alone, in a terminal): ask for the project
+  # here, on the host, because the container only sees mounted folders.
+  if [ $# -eq 2 ] && [ -t 0 ] && [ -t 2 ]; then
+    while :; do
+      printf 'Project the agent works in (mounted read/write) [%s]: ' "$PWD" >&2
+      IFS= read -r ans || exit 1
+      [ -n "$ans" ] || ans=$PWD
+      # shellcheck disable=SC2088 # a literal ~ typed by the user
+      case "$ans" in "~") ans=$HOME ;; "~/"*) ans="$HOME/${ans#"~/"}" ;; esac
+      [ -d "$ans" ] && break
+      echo "  not a directory: $ans" >&2
+    done
+    set -- "$@" -i --project "$(cd "$ans" && pwd)"
+  fi
+  sbx_project="$PWD" sbx_settings="$CFG_HOME/jira-cli-sbx" prev="" sbx_host=1
+  for a in "$@"; do
+    case "$a" in --dry-run|--skip-checks|-h|--help) sbx_host=0 ;; esac
+    case "$prev" in
+      --project) sbx_project="$a" ;;
+      --settings) sbx_settings="$a" ;;
+      --binary-file) ro "$a" ;;
+    esac
+    case "$a" in
+      --project=*) sbx_project="${a#--project=}" ;;
+      --settings=*) sbx_settings="${a#--settings=}" ;;
+      --binary-file=*) ro "${a#*=}" ;;
+    esac
+    prev="$a"
+  done
+  [ -d "$sbx_project" ] && rw "$sbx_project"
+  rw "$sbx_settings"
+  set -- -e JIRA_CLI_CONTAINER=1 "$@"
+fi
 WORKDIR=""
 if [ "${JIRA_DOCKER_MOUNT_CWD:-1}" != 0 ] && [ "$PWD" != / ]; then ro "$PWD"; WORKDIR="$PWD"; fi
 for m in ${JIRA_DOCKER_MOUNTS:-}; do ro "$m"; done
@@ -110,4 +148,29 @@ set -- -e HOME="$HOME" -e XDG_CONFIG_HOME="$CFG_HOME" \
 # A TTY merges stderr into stdout; only use one for interactive sessions.
 if [ -t 0 ] && [ -t 1 ]; then set -- -t "$@"; fi
 
+# setup-sbx: sbx is not in the container, so its checks run here afterwards:
+# the PAT secret, then `sbx env plan`.
+sbx_host_checks() {
+  command -v sbx > /dev/null 2>&1 || { echo "  ! sbx is not installed on this machine (https://docs.docker.com/ai/sandboxes/)" >&2; return 1; }
+  echo "" >&2
+  echo "▸ Checks on this machine" >&2
+  svc=$(sed -n 's/^secret: *//p' "$sbx_settings/setup.yaml" 2>/dev/null | head -n 1)
+  [ -n "$svc" ] || svc=jira
+  if sbx secret ls 2>/dev/null | awk '{print $1}' | grep -qx "$svc"; then
+    echo "  ✓ sbx secret $svc exists" >&2
+  else
+    echo "  Storing the Jira PAT as sbx secret $svc (sbx prompts for it; it stays on this machine)" >&2
+    sbx secret set "$svc" || return 1
+  fi
+  [ -f "$sbx_project/sbxenv.yaml" ] || return 0
+  if out=$(cd "$sbx_project" && sbx env plan 2>&1); then echo "  ✓ sbx accepts the environment" >&2; return 0; fi
+  echo "  ! sbx rejected the environment:" >&2
+  printf '%s\n' "$out" | sed 's/^/    /' >&2
+  return 1
+}
+if [ "${sbx_host:-0}" = 1 ]; then
+  docker run --rm -i --user "$(id -u):$(id -g)" "$@" || exit $?
+  sbx_host_checks || exit 3
+  exit 0
+fi
 exec docker run --rm -i --user "$(id -u):$(id -g)" "$@"

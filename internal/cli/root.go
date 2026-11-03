@@ -47,7 +47,7 @@ Start with:
 	pf.StringVarP(&a.outputFlag, "output", "o", string(output.JSON), "output format: json, yaml, table")
 	pf.BoolVarP(&a.verbose, "verbose", "v", false, "debug logging to stderr (never includes secrets)")
 	pf.BoolVarP(&a.quiet, "quiet", "q", false, "only log errors")
-	pf.BoolVar(&a.noColor, "no-color", false, "disable colored output (output is never colored; accepted for compatibility)")
+	pf.BoolVar(&a.noColor, "no-color", false, "disable colors (only setup-sbx colors its terminal output; also: NO_COLOR)")
 	pf.DurationVar(&a.timeout, "timeout", 0, "request timeout, e.g. 30s (default: instance timeouts.request or 60s)")
 	pf.BoolVar(&a.dryRun, "dry-run", false, "print the request that would be sent and exit without sending it")
 	pf.BoolVar(&a.readOnly, "read-only", false, "refuse every operation that is not classified as read (also: $"+EnvReadOnly+"=1)")
@@ -63,7 +63,7 @@ Start with:
 		return nil
 	}
 
-	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd(), a.certsCmd()} {
+	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd(), a.certsCmd(), a.setupSbxCmd()} {
 		c.GroupID = "core"
 		root.AddCommand(c)
 	}
@@ -117,6 +117,10 @@ func (a *App) Execute(ctx context.Context, args []string) int {
 		return 0
 	}
 	e := clierr.As(err)
+	if ctx.Err() != nil && e.Layer != clierr.LayerInterrupted {
+		// Whatever failed after Ctrl+C failed because of it.
+		e = clierr.Wrap(clierr.LayerInterrupted, "interrupted", "interrupted", err)
+	}
 	if e.Layer == clierr.LayerInternal && isCobraUsage(err) {
 		e = clierr.New(clierr.LayerUsage, "invalid_usage", err.Error())
 	}

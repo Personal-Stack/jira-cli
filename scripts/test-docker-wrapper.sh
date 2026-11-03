@@ -2,7 +2,7 @@
 # Tests scripts/jira-docker.sh against a real image in an isolated HOME.
 # Usage: scripts/test-docker-wrapper.sh [image]   (default jira-cli:local)
 # Assertions use `cond && ok || ko`; ok() always succeeds.
-# shellcheck disable=SC2015
+# shellcheck disable=SC2015,SC2030,SC2031  # subshells scope the fake docker on purpose
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 IMAGE=${1:-jira-cli:local}
@@ -75,6 +75,57 @@ grep -qx -- "JIRA_CREDENTIAL_JIRA_PROD" "$WORK/args" && grep -qx HTTPS_PROXY "$W
 ! grep -qF "$TOKEN" "$WORK/args" && ok "token not on the docker command line" || ko "token visible in docker argv"
 tail -4 "$WORK/args" | tr '\n' ' ' | grep -q "$IMAGE issue get ABC-1" && ok "CLI arguments passed unchanged after the image" || { ko "argv order"; cat "$WORK/args"; }
 grep -q -- "$HOME/project:$HOME/project:ro" "$WORK/args" && ok "current directory mounted read-only" || ko "cwd mount"
+
+# setup-sbx in the container: project and settings writable, binary = the
+# container's own (linux), host steps printed instead of running sbx.
+# A fake sbx on the host: no secret yet, and only the agent "devex-opencode".
+mkdir -p "$WORK/sbxbin"
+cat > "$WORK/sbxbin/sbx" <<'SH'
+#!/bin/sh
+case "$*" in
+  "secret ls") cat "$SBX_STATE/secrets" 2>/dev/null ;;
+  "secret set "*) echo "${3:-}" >> "$SBX_STATE/secrets" ;;
+  "env plan")
+    a=$(sed -n 's/^agent: //p' sbxenv.yaml)
+    [ "$a" = devex-opencode ] || { echo "error: unknown agent \"$a\""; exit 1; } ;;
+esac
+SH
+chmod +x "$WORK/sbxbin/sbx"; export SBX_STATE="$WORK/sbxstate"; mkdir -p "$SBX_STATE"
+# setup-sbx checks that Jira is reachable: a local listener stands in for it
+# (host network, so the container sees 127.0.0.1).
+python3 -c 'import socket,sys; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.listen(16); sys.stdout.flush(); [s.accept() for _ in iter(int,1)]' > "$WORK/port" &
+LISTENER=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$WORK/port" ] && break; sleep 0.2; done
+JIRA_URL="https://127.0.0.1:$(cat "$WORK/port")"
+mkdir -p "$HOME/sbxproj"
+(cd "$HOME/sbxproj" && PATH="$WORK/sbxbin:$PATH" JIRA_DOCKER_NETWORK=host "$BIN/jira" setup-sbx --base-url "$JIRA_URL" --agent devex-opencode --name sbx-test < /dev/null) > "$WORK/o" 2> "$WORK/e"; rc=$?
+kill "$LISTENER" 2> /dev/null
+SBXSET="$HOME/.config/jira-cli-sbx"
+[ $rc = 0 ] && [ -f "$HOME/sbxproj/sbxenv.yaml" ] && [ -f "$HOME/sbxproj/.opencode/skills/jira/SKILL.md" ] && [ -f "$SBXSET/config.yaml" ] \
+  && ok "setup-sbx writes the project files and settings through the container" || { ko "setup-sbx (exit $rc)"; cat "$WORK/o" "$WORK/e"; }
+[ -x "$HOME/sbxproj/tmp/.sbx/jira-cli/bin/jira" ] && grep -q '"binary_source": "self"' "$WORK/o" \
+  && ok "setup-sbx uses the container's own linux binary" || { ko "setup-sbx binary"; cat "$WORK/o"; }
+grep -q "path: $SBXSET" "$HOME/sbxproj/sbxenv.yaml" && grep -q "JIRA_CONFIG: $SBXSET/config.yaml" "$HOME/sbxproj/sbxenv.yaml" \
+  && ok "setup-sbx writes host paths into sbxenv.yaml" || { ko "setup-sbx paths"; cat "$HOME/sbxproj/sbxenv.yaml"; }
+[ "$(stat -c %u "$HOME/sbxproj/sbxenv.yaml")" = "$(id -u)" ] && [ "$(stat -c %u "$SBXSET/config.yaml")" = "$(id -u)" ] \
+  && ok "setup-sbx files are owned by the user" || ko "setup-sbx ownership"
+grep -q "cd $HOME/sbxproj && sbx env run" "$WORK/e" && grep -q "sbx accepts the environment" "$WORK/e" \
+  && [ "$(sed -n '/^kits:/,/^workspace:/p' "$HOME/sbxproj/sbxenv.yaml" | tr -d '\n')" = "kits:  - ./tmp/.sbx/jira-cli$(printf 'workspace: .')" ] \
+  && grep -qx jira "$SBX_STATE/secrets" \
+  && ok "setup-sbx: host checks after the container (secret stored, plan accepted, only jira-cli's kit)" || { ko "setup-sbx host checks"; cat "$WORK/e"; cat "$HOME/sbxproj/sbxenv.yaml"; }
+
+# Guided setup-sbx: the wrapper asks for the project on the host (the
+# container cannot see other folders), mounts it and passes it on.
+if command -v script > /dev/null 2>&1; then
+  mkdir -p "$HOME/other project"
+  ( export PATH="$WORK/fakebin:$PATH" ARGS_OUT="$WORK/args2"
+    cd "$HOME/project" && printf '%s\n' "$HOME/missing" "$HOME/other project" | script -qec "$BIN/jira setup-sbx" /dev/null ) > "$WORK/o" 2>&1
+  grep -q "not a directory: $HOME/missing" "$WORK/o" && grep -qx -- "--project" "$WORK/args2" && grep -qx -- "$HOME/other project" "$WORK/args2" \
+    && grep -qx -- "-i" "$WORK/args2" && grep -qx -- "$HOME/other project:$HOME/other project" "$WORK/args2" \
+    && ok "guided setup-sbx: project asked on the host, re-asked if missing, mounted read-write" || { ko "guided setup-sbx"; cat "$WORK/o" "$WORK/args2"; }
+else
+  echo "SKIP  guided setup-sbx (no 'script' command for a pseudo-terminal)"
+fi
 
 j auth logout > "$WORK/o" 2>&1 && [ ! -e "$f" ] && ok "auth logout removes the token file" || { ko "logout"; cat "$WORK/o"; }
 
