@@ -113,7 +113,7 @@ jobs:
         with:
           name: dist
           path: dist
-      - name: Serve archives from a local mirror
+      - name: Prepare a local mirror
         run: |
           # Absolute paths: Start-Process resolves relative paths against the
           # process working directory, which is not necessarily $PWD.
@@ -128,32 +128,12 @@ jobs:
             throw "could not write $latest"
           }
           Write-Host "LATEST = $([IO.File]::ReadAllText($latest)) ($latest)"
-          $log = Join-Path $env:RUNNER_TEMP 'mirror-http.log'
-          Start-Process python -ArgumentList '-m','http.server','8765','--bind','127.0.0.1','--directory',$mirror `
-            -WorkingDirectory $mirror -RedirectStandardError $log -WindowStyle Hidden
-          # Wait until the mirror really serves the expected version. Download
-          # to a file and read it as text, exactly like install.ps1 does:
-          # LATEST has no extension, so it is served as application/octet-stream
-          # and Invoke-WebRequest's .Content is then a byte[] on PowerShell 7.
-          $probe = Join-Path $env:RUNNER_TEMP 'LATEST.probe'
-          $ok = $false; $lastError = ''
-          for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
-            try {
-              Invoke-WebRequest -UseBasicParsing -Uri http://127.0.0.1:8765/LATEST -OutFile $probe
-              $got = [IO.File]::ReadAllText($probe).Trim()
-              $ok = ($got -eq $env:TEST_VERSION)
-              if (-not $ok) { $lastError = "served '$got', expected '$env:TEST_VERSION'"; Start-Sleep 1 }
-            } catch { $lastError = $_.Exception.Message; Start-Sleep 1 }
-          }
-          if (-not $ok) { Write-Host "last probe error: $lastError" }
-          if (-not $ok) {
-            Get-ChildItem -Recurse $mirror | Select-Object FullName | Format-Table -AutoSize | Out-String | Write-Host
-            if (Test-Path $log) { Get-Content $log | Write-Host }
-            throw "local mirror did not serve $mirror/LATEST"
-          }
-          Write-Host "mirror ready: $mirror"
       - name: Install (latest from mirror)
-        run: ./scripts/install.ps1 -BaseUrl http://127.0.0.1:8765
+        # The runner kills a step's child processes when the step ends, so the
+        # mirror is (re)started in every step that downloads from it.
+        run: |
+          ./scripts/testdata/start-mirror.ps1 -Root (Join-Path $PWD 'mirror') -Version $env:TEST_VERSION
+          ./scripts/install.ps1 -BaseUrl http://127.0.0.1:8765
       - name: Verify in a new process with the persisted user PATH
         run: |
           $userPath = [Environment]::GetEnvironmentVariable('Path','User')
@@ -164,6 +144,7 @@ jobs:
           Write-Host "OK: $out"
       - name: Re-install is idempotent (single PATH entry)
         run: |
+          ./scripts/testdata/start-mirror.ps1 -Root (Join-Path $PWD 'mirror') -Version $env:TEST_VERSION
           ./scripts/install.ps1 -BaseUrl http://127.0.0.1:8765 -Version $env:TEST_VERSION
           $dir = Join-Path $env:LOCALAPPDATA 'Programs\jira-cli\bin'
           $n = @([Environment]::GetEnvironmentVariable('Path','User').Split(';') | Where-Object { $_ -ieq $dir }).Count
@@ -179,6 +160,7 @@ jobs:
           [IO.File]::AppendAllText($dst, 'tampered')
           $sums = [IO.File]::ReadAllText((Join-Path $mirror "$env:TEST_VERSION/SHA256SUMS")) -replace [regex]::Escape($env:TEST_VERSION.TrimStart('v')), '9.9.9'
           [IO.File]::WriteAllText((Join-Path $v9 'SHA256SUMS'), $sums)
+          ./scripts/testdata/start-mirror.ps1 -Root (Join-Path $PWD 'mirror') -Version $env:TEST_VERSION
           $p = Start-Process ${{ matrix.shell }} -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/install.ps1','-BaseUrl','http://127.0.0.1:8765','-Version','v9.9.9','-InstallDir',"$env:RUNNER_TEMP\tamper" -Wait -PassThru -NoNewWindow
           if ($p.ExitCode -eq 0) { throw 'tampered archive was accepted' }
           if (Test-Path "$env:RUNNER_TEMP\tamper\jira.exe") { throw 'binary installed despite checksum mismatch' }
