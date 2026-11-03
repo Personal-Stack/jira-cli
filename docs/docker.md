@@ -49,6 +49,23 @@ jira doctor
 Uninstall with `sh install.sh --uninstall`. The image stays; remove it with
 `docker rmi`.
 
+## Updating
+
+The wrapper runs the image built from your clone, so CLI fixes arrive only
+when you rebuild it:
+
+```bash
+cd jira-cli && git pull && sh scripts/install.sh --docker
+```
+
+## Company CA certificate
+
+The container cannot see your OS certificate store or Keychain. Export the
+company root CA from your browser
+([getting-started.md, section 4](getting-started.md#4-company-certificate-only-if-needed)),
+put it in `~/.config/jira-cli/` (the only directory shared with the
+container), and reference it by absolute path in `tls.ca_bundle`.
+
 ## What the wrapper does
 
 | Concern | Behaviour |

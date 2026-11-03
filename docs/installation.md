@@ -1,5 +1,9 @@
 # Installation
 
+Step-by-step first setup (including exporting your company CA from the
+browser) is in [getting-started.md](getting-started.md). This page is the
+installer reference.
+
 The CLI is a single static binary named `jira`. Installers put it in a
 per-user directory (no admin rights) and add that directory to `PATH`.
 

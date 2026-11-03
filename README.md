@@ -18,6 +18,10 @@ authentication, TLS, retries and safety checks are implemented once, centrally.
 > [PROGRESS.md](PROGRESS.md) and [e2e/README.md](e2e/README.md). See
 > [PROGRESS.md](PROGRESS.md).
 
+**New here? Start with [docs/getting-started.md](docs/getting-started.md)**:
+install, company certificate (exported from your browser), token, `doctor`,
+first queries, production checklist.
+
 ## Install
 
 Linux / macOS (installs to `~/.local/bin` and adds it to `PATH`):
@@ -97,6 +101,7 @@ docker run --rm \
 
 | Topic | Document |
 |---|---|
+| Getting started (install, certificate from the browser, token, usage) | [docs/getting-started.md](docs/getting-started.md) |
 | Installation | [docs/installation.md](docs/installation.md) |
 | Docker wrapper (no Go/binary on the machine) | [docs/docker.md](docs/docker.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
