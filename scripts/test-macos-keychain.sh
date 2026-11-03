@@ -19,7 +19,8 @@ pass=0 fail=0
 ok() { echo "PASS  $*"; pass=$((pass + 1)); }
 ko() { echo "FAIL  $*"; fail=$((fail + 1)); }
 cleanup() {
-  [ -n "${SRV:-}" ] && kill "$SRV" 2>/dev/null
+  # wait: reap the server so bash does not print "Terminated: 15"
+  [ -n "${SRV:-}" ] && { kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null; }
   sudo security delete-certificate -c "$CA_NAME" /Library/Keychains/System.keychain >/dev/null 2>&1
   security delete-generic-password -s jira-cli -a "$REF" >/dev/null 2>&1
   rm -rf "$WORK"
@@ -63,7 +64,10 @@ case "$s" in ok*) ok "after trusting in Keychain: tls ok with NO ca_bundle" ;; *
 TOKEN="kc-test-token-$RANDOM$RANDOM"
 out=$(printf '%s' "$TOKEN" | "$BIN" auth login --no-verify 2>&1)
 echo "$out" | grep -q '"store": "keyring"' && ok "auth login stores in the Keychain" || { ko "auth login"; echo "$out"; }
-[ "$(security find-generic-password -s jira-cli -a "$REF" -w 2>/dev/null)" = "$TOKEN" ] && ok "Keychain item jira-cli/$REF holds the token" || ko "Keychain item missing or different"
+# go-keyring stores "go-keyring-base64:" + base64(secret) on macOS (keyring_darwin.go)
+# and decodes it on read; check the exact stored form.
+stored=$(security find-generic-password -s jira-cli -a "$REF" -w 2>/dev/null)
+[ "$stored" = "go-keyring-base64:$(printf '%s' "$TOKEN" | base64)" ] && ok "Keychain item jira-cli/$REF holds the token (go-keyring base64 encoding)" || ko "Keychain item missing or different (got ${#stored} chars)"
 "$BIN" auth status 2>&1 | grep -q '"source": "keyring"' && ok "auth status reads it from the Keychain" || ko "auth status source"
 "$BIN" auth logout > /dev/null 2>&1 && ! security find-generic-password -s jira-cli -a "$REF" >/dev/null 2>&1 && ok "auth logout removes the Keychain item" || ko "logout"
 
