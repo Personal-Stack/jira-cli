@@ -62,7 +62,7 @@ uninstall:
 
 ## Set up a Docker Sandbox (sbx) with jira-cli for an agent; asks for everything.
 sbx:
-	scripts/sbx-setup.sh --interactive
+	go run ./cmd/jira setup-sbx --interactive --source-dir .
 
 ## Installer tests in isolated HOMEs against a local mirror.
 test-install:

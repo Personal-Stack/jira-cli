@@ -6,13 +6,13 @@ machine**.
 
 ## How it works
 
-`scripts/sbx-setup.sh` generates a local sbx kit and an `sbxenv.yaml`:
+`jira setup-sbx` generates a local sbx kit and an `sbxenv.yaml`:
 
 | Piece | Where | What |
 |---|---|---|
-| Kit `jira-cli` (mixin) | `<project>/.sbx/jira-cli/` | `/usr/local/bin/jira` (linux amd64 + arm64; linked as `/usr/bin/jira` at startup, because some images leave `/usr/local/bin` off `PATH`), an egress rule for your Jira host, the credential, and a shell hook |
+| Kit `jira-cli` (mixin) | `<project>/.sbx/jira-cli/` | `/usr/local/bin/jira` (linux, for your machine's architecture; linked as `/usr/bin/jira` at startup, because some images leave `/usr/local/bin` off `PATH`), an egress rule for your Jira host, the credential, and a shell hook |
 | Environment | `<project>/sbxenv.yaml` | the agent, the kit, your settings mounted read-only (at the same path as on the host), `JIRA_CONFIG` / `JIRA_NO_KEYRING` / `JIRA_READ_ONLY`, and the credential binding |
-| Skill | `<project>/.opencode/skills/jira/` | the agent skill, as an OpenCode project skill (`--no-skill` to skip). Re-runs refresh it unless you edited it |
+| Skill | `<project>/.opencode/skills/jira/` | the agent skill (embedded in `jira`), as an OpenCode project skill (`--no-skill` to skip). Re-runs refresh it unless you edited it |
 | Settings | `~/.config/jira-cli-sbx/` (host) | `config.yaml` and `bashrc`. Created once and never overwritten, so edit them freely |
 | Token | sbx credential store (host) | `sbx secret set jira` |
 
@@ -24,13 +24,14 @@ This follows the kit spec's `credential@1` with `proxyManaged: true`.
 
 ## Set up
 
-From a clone of jira-cli, run the guided setup:
+With `jira` installed (any install method), run the guided setup:
 
 ```bash
-make sbx
+jira setup-sbx
 ```
 
-This is the same as `scripts/sbx-setup.sh` with no options. It asks for:
+From a clone, `make sbx` does the same with the code of the clone. Run
+without flags in a terminal, it asks for:
 
 | Question | Notes |
 |---|---|
@@ -47,7 +48,7 @@ This is the same as `scripts/sbx-setup.sh` with no options. It asks for:
 
 It shows a summary and asks for confirmation before writing anything. Then:
 
-1. It builds `jira` for linux/amd64 and linux/arm64.
+1. It gets a Linux `jira` for the sandbox (see [The Linux binary](#the-linux-binary)).
 2. It writes the files.
 3. It runs `sbx secret set jira` if that secret doesn't exist yet (sbx prompts for the PAT).
 4. It runs `sbx env plan` and, if you said so, `sbx env run`.
@@ -59,7 +60,7 @@ optional one.
 Without a terminal, or for scripting, pass options instead:
 
 ```bash
-scripts/sbx-setup.sh --project /Users/x/Projects/my-work --base-url https://jira.company.internal --agent devex-opencode --name jira-sbx
+jira setup-sbx --project /Users/x/Projects/my-work --base-url https://jira.company.internal --agent devex-opencode --name jira-sbx
 ```
 
 Check the result from the host:
@@ -80,10 +81,27 @@ Expect `credentials` to show `env:JIRA_CREDENTIAL_JIRA_PROD` and `authentication
 | `--name NAME` | Custom sandbox name (`name:` in `sbxenv.yaml`) |
 | `--ca-bundle FILE` | Company CA. Copied into the settings folder and referenced by its path there |
 | `--allow-writes` | Drop the read-only guard (default: `read_only: true` and `JIRA_READ_ONLY=1`) |
-| `--binary image` | Take the binary from `ghcr.io/personal-stack/jira-cli` (no Go needed) |
+| `--binary SOURCE` | Where the Linux binary comes from (see below) |
 | `--kit-only` | Your project already has an `sbxenv.yaml`: generate the kit and settings, then merge (below) |
 
-`scripts/sbx-setup.sh --help` lists all options.
+`jira setup-sbx --help` lists all options. The global `--dry-run` shows the
+plan and the `sbxenv.yaml` without writing anything.
+
+### The Linux binary
+
+The sandbox is a Linux VM with your machine's architecture, so it needs a
+Linux `jira`. A macOS `jira` can't run there. With `--binary auto` (the
+default), the first of these that works is used:
+
+| Source | When |
+|---|---|
+| `self` | `jira` itself is Linux on the same architecture |
+| `go` | You run it inside a jira-cli clone with Go installed (`--source-dir` to point at one) |
+| `release` | Your `jira` is a release (e.g. `v0.1.0`): downloads `jira-cli_<version>_linux_<arch>.tar.gz` from the GitHub release and checks it against the release's `SHA256SUMS` |
+| `image` | Docker can pull `ghcr.io/personal-stack/jira-cli:<version>` |
+
+`--binary-file FILE` uses a binary you provide. Every binary is checked to be
+a Linux executable for the right architecture before it is used.
 
 A private image registry needs pull credentials in `sbxenv.yaml`. For example:
 
@@ -99,8 +117,8 @@ registries:
 | You change | Then |
 |---|---|
 | `~/.config/jira-cli-sbx/config.yaml` or `bashrc` | Nothing. It is a live read-only mount; new shells and commands see it |
-| jira-cli code (this clone) | Re-run the script (rebuilds the binary and the kit), then recreate the sandbox: `sbx env rm && sbx env run` |
-| The skill | It is a normal project file in `.opencode/skills/jira`. Edit it there, or update it from the clone by re-running the script (`--force` if you edited it) |
+| jira-cli (new version, or code in a clone) | Re-run `jira setup-sbx` (or `make sbx` in the clone), then recreate the sandbox: `sbx env rm && sbx env run` |
+| The skill | It is a normal project file in `.opencode/skills/jira`. Edit it there, or refresh it by re-running `jira setup-sbx` (`--force` if you edited it) |
 | The token | `sbx secret set jira` |
 
 The settings are read-only inside the sandbox, so the agent can't change its
@@ -108,7 +126,7 @@ own configuration.
 
 ## Existing `sbxenv.yaml`
 
-The script refuses to overwrite an `sbxenv.yaml` it did not generate. Run it
+`jira setup-sbx` refuses to overwrite an `sbxenv.yaml` it did not generate. Run it
 with `--kit-only`, which writes the kit and the settings only, and merge these
 entries into your file:
 
