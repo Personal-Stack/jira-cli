@@ -115,6 +115,9 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 - [x] Confirmed by the user on a real sbx with a custom agent kit (shell-script version): CLI, token injection and skill work. Fixes from those runs are in: no `additionalWorkspaces.target`, explicit agent name for kits, skill under `.opencode/skills`, `/usr/bin/jira` link
 - [x] Through the Docker wrapper: `setup-sbx` mounts the project and settings folder read-write (`--ca-bundle`/`--binary-file` read-only), uses the container's own linux binary, writes host paths, prints the host `sbx` steps (`JIRA_CLI_CONTAINER=1`). 5 new wrapper checks, 24/24 passing as root and as an unprivileged user
 - [x] Guided run through the wrapper: the project is asked on the host (validated, mounted read-write, passed as `--project -i`); in the container the project, CA and settings-folder questions are not asked (flags instead). Tested with a pseudo-terminal: wrapper test (fake docker) and a full guided run through a real container into a folder with a space
+- [x] Defaults carried across projects (`<settings>/setup.yaml`: agent, kit, image, read-only, skill), so a kit's agent name is not lost in a new project folder; new projects get the sandbox name `<agent>-<folder>-jira` (sbx's default collides with `sbx run` sandboxes); existing setups keep their name
+- [x] Styled output (sections, ✓/!, summary, `sbx env plan` preview, numbered next steps with commands; colors only on a terminal, `NO_COLOR`/`--no-color`); the guided run prints no JSON unless `-o` is given
+- [x] Ctrl+C: first press cancels (prompts end at once, exit 130), second exits immediately; `--run` hands the terminal to `sbx env run`
 - [ ] `jira setup-sbx` itself not yet run against a real sbx (same output as the script, plus the binary sources)
 
 ### Phase 6 (partial)

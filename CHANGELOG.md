@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Ctrl+C: the first press stops the command cleanly (exit 130), the second exits immediately.
 - `jira setup-sbx` (guided, or with flags) and `docs/sandbox.md`: run an agent (OpenCode by default) in a Docker Sandbox with jira-cli, the agent skill and a read-only config. The Jira PAT is an sbx secret that the sandbox proxy injects, so it never enters the sandbox.
 - Release workflow: the image smoke test runs each platform by its own manifest digest (the v0.1.0 run failed on arm64).
 

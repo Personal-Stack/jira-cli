@@ -381,3 +381,28 @@ func TestBinaryFromReleaseVerifiesChecksum(t *testing.T) {
 		t.Fatalf("dev version: %v", err)
 	}
 }
+
+func TestDefaultNameAndRemembered(t *testing.T) {
+	for _, c := range [][3]string{
+		{"devex-opencode", "/Users/x/Projects/My Work", "devex-opencode-my-work-jira"},
+		{"opencode", "/tmp/jira-cli", "opencode-jira-cli-jira"},
+		{"Agent.X", "/", "agent-x-jira"},
+	} {
+		if got := DefaultName(c[0], c[1]); got != c[2] || !plainName.MatchString(got) {
+			t.Errorf("DefaultName(%q, %q) = %q, want %q", c[0], c[1], got, c[2])
+		}
+	}
+	o := testOptions(t)
+	o.Agent, o.AgentKit, o.ReadOnly, o.Skill = "devex-opencode", "reg.example.com/k:1", false, true
+	p, _ := NewPlan(o)
+	if err := os.MkdirAll(p.Settings, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SaveRemembered(); err != nil {
+		t.Fatal(err)
+	}
+	r, ok := LoadRemembered(p.Settings)
+	if !ok || r.Agent != "devex-opencode" || r.AgentKit != "reg.example.com/k:1" || r.ReadOnly == nil || *r.ReadOnly || r.Skill == nil || !*r.Skill {
+		t.Fatalf("remembered: %+v %v", r, ok)
+	}
+}

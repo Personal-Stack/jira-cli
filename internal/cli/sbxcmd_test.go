@@ -159,12 +159,69 @@ func TestSetupSbxInteractive(t *testing.T) {
 	// A second run offers the previous answers: Enter everywhere, '-' clears the name.
 	again := strings.Join([]string{project, "", "", "", "", "-", "", "", "", "", "", ""}, "\n") + "\n"
 	code, _, errOut, _ = runSbx(t, false, "", again, "-i")
-	if code != 0 || !strings.Contains(errOut, "defaults from the previous setup") {
+	if code != 0 || !strings.Contains(errOut, "Defaults from the previous setup of this project") {
 		t.Fatalf("exit %d:\n%s", code, errOut)
 	}
 	env, _ = os.ReadFile(filepath.Join(project, "sbxenv.yaml"))
 	if strings.Contains(string(env), "name:") || !strings.Contains(string(env), "agent: devex-opencode") {
 		t.Fatalf("second run:\n%s", env)
+	}
+}
+
+// The bug from real use: the agent kit's name was only remembered per
+// project, so every new project folder fell back to "opencode", which sbx
+// rejects for a kit ("agent ... does not match agent kit name ...").
+func TestSetupSbxNewProjectInheritsAgentFromLastSetup(t *testing.T) {
+	isolateHome(t)
+	first, second := t.TempDir(), filepath.Join(t.TempDir(), "My Work")
+	if err := os.Mkdir(second, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, _, _, _ := runSbx(t, false, "", "", "--project", first, "--base-url", "https://jira.example.com",
+		"--agent-kit", "reg.example.com/team/opencode:2.1", "--agent", "devex-opencode", "--template", "reg.example.com/img:1")
+	if code != 0 {
+		t.Fatalf("first: exit %d", code)
+	}
+	// Second project, no agent flags: everything comes from the last setup.
+	code, _, errOut, _ := runSbx(t, false, "", "", "--project", second)
+	if code != 0 {
+		t.Fatalf("second: exit %d", code)
+	}
+	env, _ := os.ReadFile(filepath.Join(second, "sbxenv.yaml"))
+	for _, want := range []string{"agent: devex-opencode", "  - reg.example.com/team/opencode:2.1", "template: reg.example.com/img:1",
+		"name: devex-opencode-my-work-jira"} {
+		if !strings.Contains(string(env), want) {
+			t.Errorf("second project lacks %q:\n%s", want, env)
+		}
+	}
+	if !strings.Contains(errOut, "Defaults from your last setup") {
+		t.Errorf("no notice:\n%s", errOut)
+	}
+
+	// Flags still win, and a new kit without --agent derives its own name.
+	third := t.TempDir()
+	code, _, _, _ = runSbx(t, false, "", "", "--project", third, "--agent-kit", "reg.example.com/other/claude-kit:1", "--name", "x")
+	if code != 0 {
+		t.Fatalf("third: exit %d", code)
+	}
+	env, _ = os.ReadFile(filepath.Join(third, "sbxenv.yaml"))
+	if !strings.Contains(string(env), "agent: claude-kit") || !strings.Contains(string(env), "name: x") || strings.Contains(string(env), "opencode:2.1") {
+		t.Fatalf("flags did not win:\n%s", env)
+	}
+}
+
+func TestSetupSbxExistingSetupKeepsItsSandboxName(t *testing.T) {
+	isolateHome(t)
+	project := t.TempDir()
+	// A setup made before names were defaulted: no name: (sbx's default).
+	if _, _, _, _ = runSbx(t, false, "", "", "--project", project, "--base-url", "https://jira.example.com", "--name", "tmp"); true {
+		b, _ := os.ReadFile(filepath.Join(project, "sbxenv.yaml"))
+		_ = os.WriteFile(filepath.Join(project, "sbxenv.yaml"), []byte(strings.Replace(string(b), "name: tmp\n", "", 1)), 0o644)
+	}
+	code, _, _, _ := runSbx(t, false, "", "", "--project", project)
+	env, _ := os.ReadFile(filepath.Join(project, "sbxenv.yaml"))
+	if code != 0 || strings.Contains(string(env), "name:") {
+		t.Fatalf("exit %d; the existing sandbox would be renamed:\n%s", code, env)
 	}
 }
 
@@ -201,7 +258,7 @@ func TestSetupSbxInContainerPrintsHostSteps(t *testing.T) {
 	if code != 0 || len(calls) != 0 {
 		t.Fatalf("exit %d calls %v", code, calls)
 	}
-	if !strings.Contains(errOut, "run these on the host") || !strings.Contains(errOut, "cd "+project+" && sbx env run") ||
+	if !strings.Contains(errOut, "run these on your machine") || !strings.Contains(errOut, "cd "+project+" && sbx env run") ||
 		!strings.Contains(out, "sbx secret set jira") {
 		t.Fatalf("stderr:\n%s\nstdout:\n%s", errOut, out)
 	}
@@ -219,7 +276,7 @@ func TestSetupSbxInContainerDoesNotAskForPaths(t *testing.T) {
 		t.Fatalf("exit %d:\n%s", code, errOut)
 	}
 	if strings.Contains(errOut, "Project the agent works in") || strings.Contains(errOut, "Company CA certificate file") ||
-		!strings.Contains(errOut, "Project: "+project) || !strings.Contains(errOut, "pass --ca-bundle FILE") ||
+		!strings.Contains(errOut, "project    "+project) || !strings.Contains(errOut, "pass --ca-bundle FILE") ||
 		!strings.Contains(errOut, "change it with --settings DIR") {
 		t.Fatalf("prompts:\n%s", errOut)
 	}
@@ -266,5 +323,62 @@ func TestSetupSbxRefusesForeignEnvFile(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(project, "sbxenv.yaml")); string(b) != "schemaVersion: \"1\"\n" {
 		t.Fatal("foreign file changed")
+	}
+}
+
+func TestSetupSbxPrintsNextSteps(t *testing.T) {
+	isolateHome(t)
+	project := filepath.Join(t.TempDir(), "my project")
+	if err := os.Mkdir(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut, _ := runSbx(t, true, "jira apiKey\n", "", "--project", project, "--base-url", "https://jira.example.com", "--name", "jira-sbx")
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	q := "'" + project + "'" // the path has a space: quoted for the shell
+	for _, want := range []string{"Next steps", "Start the sandbox jira-sbx", "$ cd " + q + " && sbx env run",
+		"$ cd " + q + " && sbx env exec -- bash -lc 'jira doctor'", "env:JIRA_CREDENTIAL_JIRA_PROD", "$ sbx ls", "$ sbx diagnose"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("next steps lack %q:\n%s", want, errOut)
+		}
+	}
+	if strings.Contains(errOut, "Store the Jira PAT") {
+		t.Error("the secret exists: no step to set it")
+	}
+	if strings.Contains(errOut, "\x1b[") {
+		t.Error("colors without a terminal")
+	}
+	var res map[string]any
+	if err := json.Unmarshal([]byte(out), &res); err != nil || len(res["next"].([]any)) != 5 {
+		t.Fatalf("next in the JSON result: %v %v", res["next"], err)
+	}
+}
+
+func TestSbxUIColorOnlyOnTerminal(t *testing.T) {
+	for _, c := range []struct {
+		terminal, noColorFlag bool
+		env                   string
+		want                  bool
+	}{{true, false, "", true}, {false, false, "", false}, {true, true, "", false}, {true, false, "1", false}} {
+		app := NewApp("test", nil, "")
+		app.IsTerminal = func() bool { return c.terminal }
+		app.noColor = c.noColorFlag
+		app.Getenv = func(k string) string {
+			if k == "NO_COLOR" {
+				return c.env
+			}
+			return ""
+		}
+		var b bytes.Buffer
+		app.Err = &b
+		ui := app.newSbxUI()
+		ui.ok("done")
+		if got := strings.Contains(b.String(), "\x1b["); got != c.want {
+			t.Errorf("%+v: colored=%v\n%q", c, got, b.String())
+		}
+		if !strings.Contains(b.String(), "✓") || !strings.Contains(b.String(), "done") {
+			t.Errorf("%+v: %q", c, b.String())
+		}
 	}
 }

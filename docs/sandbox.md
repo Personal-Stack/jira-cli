@@ -57,7 +57,24 @@ It shows a summary and asks for confirmation before writing anything. Then:
 
 Ctrl+C at any prompt stops the setup before anything is written (exit code 130).
 
-Re-running it for the same project offers the previous answers as defaults.
+Defaults carry over between projects. Your agent, agent kit, image, read-only
+and skill choices are saved in `~/.config/jira-cli-sbx/setup.yaml` and
+offered for the next project, so a kit's agent name is typed once. A project
+that was set up before keeps its own previous answers.
+
+**Sandbox names.** A new project's sandbox is called `<agent>-<project folder>-jira`.
+sbx's own default, `<agent>-<project folder>`, is the name `sbx run` gives a
+sandbox in that folder, and reusing it collides with that sandbox ("failed to
+run sandbox container"). A project set up before keeps its name.
+
+When it finishes, it prints the **next steps** with the exact commands:
+- store the PAT (if needed);
+- start the sandbox;
+- check `jira doctor` inside it;
+- what to ask the agent;
+- what to look at if the sandbox does not start.
+
+In a terminal the output is colored; `NO_COLOR` or `--no-color` turns that off.
 In each prompt, Enter keeps the value shown in brackets and `-` clears an
 optional one.
 
