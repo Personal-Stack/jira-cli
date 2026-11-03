@@ -16,10 +16,12 @@ func mustTemplate(name, text string) *template.Template {
 
 const dockerfile = `# syntax=docker/dockerfile:1
 # Overlay for the jira-cli sbx kit: a static binary and a profile hook.
+# /usr/bin is on PATH in every agent shell (custom images may leave out
+# /usr/local/bin); installing here needs nothing at sandbox start.
 # Built by sbx on create; the context is this directory.
 FROM scratch
 ARG TARGETARCH
-COPY --chmod=0755 bin/jira-${TARGETARCH} /usr/local/bin/jira
+COPY --chmod=0755 bin/jira-${TARGETARCH} /usr/bin/jira
 COPY --chmod=0644 profile.sh /etc/profile.d/jira-cli.sh
 `
 
@@ -69,25 +71,17 @@ capabilities:
   - type: com.docker.sandbox/lifecycle@1
     config:
       startup:
-        # /usr/local/bin is not on PATH in every agent shell (custom images set
-        # their own PATH); /usr/bin always is. Never replaces a different file.
-        - command:
-            - sh
-            - -c
-            - >-
-              if [ ! -e /usr/bin/jira ] || [ -L /usr/bin/jira ]; then ln -sfn /usr/local/bin/jira /usr/bin/jira; fi
-          user: "0"
-          description: Link /usr/bin/jira to /usr/local/bin/jira
         # Interactive bash shells source the editable host file (login shells
-        # get it from /etc/profile.d/jira-cli.sh). Idempotent.
+        # get it from /etc/profile.d/jira-cli.sh). Idempotent, and it never
+        # fails: a failing startup hook aborts the whole sandbox start.
         - command:
             - sh
             - -c
             - >-
-              grep -qsF '{{.BashrcFile}}' /etc/bash.bashrc ||
-              printf '\n# jira-cli sbx kit\n[ -r {{.BashrcFile}} ] && . {{.BashrcFile}}\n' >> /etc/bash.bashrc
+              { grep -qsF '{{.BashrcFile}}' /etc/bash.bashrc ||
+              printf '\n# jira-cli sbx kit\n[ -r {{.BashrcFile}} ] && . {{.BashrcFile}}\n' >> /etc/bash.bashrc; } 2>/dev/null || true
           user: "0"
-          description: Source {{.BashrcFile}} from interactive bash shells
+          description: Source {{.BashrcFile}} from interactive bash shells (best effort; never fails the start)
 
   - type: com.docker.sandbox/agent-context@1
     optional: true
@@ -95,8 +89,8 @@ capabilities:
       content: |
         ## Jira (jira-cli)
 
-        {{code "jira"}} is on PATH (/usr/bin/jira, a link to /usr/local/bin/jira; use the
-        full path if a shell cannot find it). Use the {{code "jira"}} skill
+        {{code "jira"}} is on PATH (/usr/bin/jira; use the full path if a shell cannot
+        find it). Use the {{code "jira"}} skill
         (.opencode/skills/jira): discover commands with {{code "jira commands list"}} and
         {{code "jira commands describe <group> <command>"}} instead of guessing them.
 

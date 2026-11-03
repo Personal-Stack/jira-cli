@@ -143,10 +143,15 @@ func TestWriteKitAndEnvFile(t *testing.T) {
 	if len(allow) != 1 || allow[0] != "jira.example.com:8443" {
 		t.Fatalf("allow: %v", allow)
 	}
+	// A failing startup hook aborts the sandbox start ("failed to run sandbox
+	// container"): the only hook is best effort, and nothing is linked at start.
 	startup := caps["com.docker.sandbox/lifecycle@1"]["startup"].([]any)
-	link := startup[0].(map[string]any)["command"].([]any)[2].(string)
-	if !strings.Contains(link, "ln -sfn /usr/local/bin/jira /usr/bin/jira") {
-		t.Fatalf("link hook: %s", link)
+	if len(startup) != 1 {
+		t.Fatalf("startup hooks: %v", startup)
+	}
+	hook := startup[0].(map[string]any)["command"].([]any)[2].(string)
+	if !strings.HasSuffix(strings.TrimSpace(hook), "|| true") || strings.Contains(hook, "ln -s") {
+		t.Fatalf("hook can fail the start: %s", hook)
 	}
 	if _, ok := caps["com.docker.sandbox/agent-skill@1"]; ok {
 		t.Fatal("the skill must not be bundled in the kit")
@@ -155,7 +160,7 @@ func TestWriteKitAndEnvFile(t *testing.T) {
 		t.Fatalf("binary: %v %v", st, err)
 	}
 	df, _ := os.ReadFile(filepath.Join(p.KitDir, "jira-cli.dockerfile"))
-	if !strings.Contains(string(df), "COPY --chmod=0755 bin/jira-${TARGETARCH} /usr/local/bin/jira") {
+	if !strings.Contains(string(df), "COPY --chmod=0755 bin/jira-${TARGETARCH} /usr/bin/jira") {
 		t.Fatalf("dockerfile:\n%s", df)
 	}
 

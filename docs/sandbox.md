@@ -10,7 +10,7 @@ machine**.
 
 | Piece | Where | What |
 |---|---|---|
-| Kit `jira-cli` (mixin) | `<project>/.sbx/jira-cli/` | `/usr/local/bin/jira` (linux, for your machine's architecture; linked as `/usr/bin/jira` at startup, because some images leave `/usr/local/bin` off `PATH`), an egress rule for your Jira host, the credential, and a shell hook |
+| Kit `jira-cli` (mixin) | `<project>/.sbx/jira-cli/` | `/usr/bin/jira` (linux, for your machine's architecture; `/usr/bin` because some images leave `/usr/local/bin` off `PATH`, and installing it in the kit's image layer means nothing has to run at sandbox start), an egress rule for your Jira host, the credential, and a shell hook |
 | Environment | `<project>/sbxenv.yaml` | the agent, the kit, your settings mounted read-only (at the same path as on the host), `JIRA_CONFIG` / `JIRA_NO_KEYRING` / `JIRA_READ_ONLY`, and the credential binding |
 | Skill | `<project>/.opencode/skills/jira/` | the agent skill (embedded in `jira`), as an OpenCode project skill (`--no-skill` to skip). Re-runs refresh it unless you edited it |
 | Settings | `~/.config/jira-cli-sbx/` (host) | `config.yaml` and `bashrc`. Created once and never overwritten, so edit them freely |
