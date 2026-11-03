@@ -131,11 +131,21 @@ jobs:
           $log = Join-Path $env:RUNNER_TEMP 'mirror-http.log'
           Start-Process python -ArgumentList '-m','http.server','8765','--bind','127.0.0.1','--directory',$mirror `
             -WorkingDirectory $mirror -RedirectStandardError $log -WindowStyle Hidden
-          # Wait until the mirror really serves the expected version.
-          $ok = $false
+          # Wait until the mirror really serves the expected version. Download
+          # to a file and read it as text, exactly like install.ps1 does:
+          # LATEST has no extension, so it is served as application/octet-stream
+          # and Invoke-WebRequest's .Content is then a byte[] on PowerShell 7.
+          $probe = Join-Path $env:RUNNER_TEMP 'LATEST.probe'
+          $ok = $false; $lastError = ''
           for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
-            try { $ok = ((Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/LATEST).Content.Trim() -eq $env:TEST_VERSION) } catch { Start-Sleep 1 }
+            try {
+              Invoke-WebRequest -UseBasicParsing -Uri http://127.0.0.1:8765/LATEST -OutFile $probe
+              $got = [IO.File]::ReadAllText($probe).Trim()
+              $ok = ($got -eq $env:TEST_VERSION)
+              if (-not $ok) { $lastError = "served '$got', expected '$env:TEST_VERSION'"; Start-Sleep 1 }
+            } catch { $lastError = $_.Exception.Message; Start-Sleep 1 }
           }
+          if (-not $ok) { Write-Host "last probe error: $lastError" }
           if (-not $ok) {
             Get-ChildItem -Recurse $mirror | Select-Object FullName | Format-Table -AutoSize | Out-String | Write-Host
             if (Test-Path $log) { Get-Content $log | Write-Host }
