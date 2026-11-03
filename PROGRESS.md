@@ -118,6 +118,7 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 - [x] Defaults carried across projects (`<settings>/setup.yaml`: agent, kit, image, read-only, skill), so a kit's agent name is not lost in a new project folder; new projects get the sandbox name `<agent>-<folder>-jira` (sbx's default collides with `sbx run` sandboxes); existing setups keep their name
 - [x] Styled output (sections, ✓/!, summary, `sbx env plan` preview, numbered next steps with commands; colors only on a terminal, `NO_COLOR`/`--no-color`); the guided run prints no JSON unless `-o` is given
 - [x] Ctrl+C: first press cancels (prompts end at once, exit 130), second exits immediately; `--run` hands the terminal to `sbx env run`
+- [x] Redesigned flow (fail fast, sbx as the authority): checks before questions (sbx installed/signed in, binary, secrets), per-answer validation incl. Jira reachability, `sbx env plan` on a scratch copy before writing with the agent kit name taken from sbx's error, secret settled before writing, one-confirmation path for known setups, secret name remembered; the wrapper runs the sbx steps on the host after the container (secret, plan, agent-name fix). Tested: Go tests with a fake sbx (fail-fast paths write nothing), wrapper 25/25 with a fake host sbx, and a native guided run calling a fake `sbx` executable
 - [ ] `jira setup-sbx` itself not yet run against a real sbx (same output as the script, plus the binary sources)
 
 ### Phase 6 (partial)

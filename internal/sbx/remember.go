@@ -20,6 +20,7 @@ type Remembered struct {
 	Agent    string `yaml:"agent,omitempty"`
 	AgentKit string `yaml:"agent_kit,omitempty"`
 	Template string `yaml:"image,omitempty"`
+	Service  string `yaml:"secret,omitempty"` // read by scripts/jira-docker.sh
 	ReadOnly *bool  `yaml:"read_only,omitempty"`
 	Skill    *bool  `yaml:"skill,omitempty"`
 }
@@ -37,7 +38,7 @@ func LoadRemembered(settings string) (Remembered, bool) {
 // SaveRemembered writes this plan's carry-over choices to <settings>/setup.yaml.
 func (p *Plan) SaveRemembered() error {
 	ro, skill := p.ReadOnly, p.Skill
-	b, err := yaml.Marshal(Remembered{Agent: p.Agent, AgentKit: p.AgentKit, Template: p.Template, ReadOnly: &ro, Skill: &skill})
+	b, err := yaml.Marshal(Remembered{Agent: p.Agent, AgentKit: p.AgentKit, Template: p.Template, Service: p.Service, ReadOnly: &ro, Skill: &skill})
 	if err != nil {
 		return err
 	}

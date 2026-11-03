@@ -75,7 +75,7 @@ func TestCtrlCAtPromptExits(t *testing.T) {
 	}
 	pr, pw, _ := os.Pipe() // stdin that never sends an answer
 	defer pw.Close()
-	cmd := exec.Command(bin, "setup-sbx", "-i", "--project", t.TempDir())
+	cmd := exec.Command(bin, "setup-sbx", "-i", "--skip-checks", "--project", t.TempDir())
 	cmd.Stdin = pr
 	var stderr syncBuf
 	cmd.Stderr = &stderr

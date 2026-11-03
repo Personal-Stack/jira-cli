@@ -20,11 +20,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"text/template"
 
@@ -148,27 +146,20 @@ func NewPlan(o Options) (*Plan, error) {
 			return nil, errors.New("the Jira base URL is required (no config.yaml with base_url yet)")
 		}
 	}
-	if !baseURLRe.MatchString(p.BaseURL) {
-		return nil, fmt.Errorf("the Jira base URL must be https://... without spaces, quotes or '#': %q", p.BaseURL)
-	}
-	u, err := url.Parse(p.BaseURL)
-	if err != nil || u.Scheme != "https" || u.Host == "" {
-		return nil, fmt.Errorf("the Jira base URL must be https://...: %q", p.BaseURL)
-	}
-	if u.User != nil {
-		return nil, errors.New("the Jira base URL must not contain credentials")
-	}
-	p.Host, p.Port = u.Hostname(), 443
-	if !hostRe.MatchString(p.Host) {
-		return nil, fmt.Errorf("cannot use host %q", p.Host)
-	}
-	if ps := u.Port(); ps != "" {
-		if p.Port, err = strconv.Atoi(ps); err != nil || p.Port < 1 || p.Port > 65535 {
-			return nil, fmt.Errorf("invalid port in %q", p.BaseURL)
-		}
+	var err error
+	if p.Host, p.Port, err = ParseBaseURL(p.BaseURL); err != nil {
+		return nil, err
 	}
 	p.CredEnv = credentials.EnvName(o.CredRef)
 	return p, nil
+}
+
+// BaseURLOrConfig is BaseURL, or the base_url of <Settings>/config.yaml.
+func (o Options) BaseURLOrConfig() string {
+	if o.BaseURL != "" {
+		return o.BaseURL
+	}
+	return BaseURLFromConfig(filepath.Join(o.Settings, "config.yaml"))
 }
 
 // BaseURLFromConfig returns the first base_url in a jira-cli config file, or "".

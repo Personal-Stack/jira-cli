@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -42,6 +43,7 @@ var (
 type sbxFlags struct {
 	opts                      sbx.Options
 	interactive, skipSecret   bool
+	skipChecks                bool
 	run, allowWrites, noSkill bool
 	binary, sourceDir, image  string
 	binaryFile, arch          string
@@ -61,9 +63,21 @@ machine: it is the sbx secret "jira", and inside the sandbox
 JIRA_CREDENTIAL_<REF> is only a sentinel that the sandbox proxy replaces with
 the real Authorization header on requests to your Jira host.
 
-Run without flags in a terminal, it asks for everything (project, Jira URL,
-agent, image, sandbox name, ...), shows a summary and asks before writing.
-Re-running it for the same project offers the previous answers.
+How it works, so that anything wrong is reported as soon as it is known and
+nothing is written before everything passed:
+  1. checks: sbx is installed and signed in, a linux jira binary is available,
+     which sbx secrets exist;
+  2. answers (prompts without flags in a terminal, or flags), each checked when
+     given (project exists, Jira reachable, names and references valid);
+     defaults come from this project's previous setup, else from your last
+     setup of any project, so a known setup is one confirmation;
+  3. sbx validates the complete environment ('sbx env plan' in a scratch
+     folder); when sbx knows the agent kit under another name, that name is
+     taken over;
+  4. the PAT: the sbx secret exists, or sbx stores it now (it prompts);
+  5. the files are written and the next steps printed.
+Through the Docker wrapper, steps 1, 3 and 4 that need sbx run on the host
+right after the container.
 
 It writes:
   <project>/.sbx/jira-cli/          a local sbx kit: linux jira binary, egress rule
@@ -73,9 +87,8 @@ It writes:
   <settings>/config.yaml, bashrc    created once, never overwritten; mounted
                                     read-only at the same path in the sandbox
 
-Then it stores the PAT with 'sbx secret set jira' if needed (sbx prompts for
-it) and runs 'sbx env plan' (and 'sbx env run' with --run). --dry-run shows
-the plan and the sbxenv.yaml without writing anything. See docs/sandbox.md.`,
+--run starts the sandbox at the end. --dry-run shows the plan and the
+sbxenv.yaml without writing anything. See docs/sandbox.md.`,
 		Example: `  jira setup-sbx
   jira setup-sbx --project ~/Projects/my-work --base-url https://jira.company.internal \
     --agent devex-opencode --name jira-sbx --template company.jfrog.io/team/opencode-sbx:1.2`,
@@ -114,6 +127,7 @@ the plan and the sbxenv.yaml without writing anything. See docs/sandbox.md.`,
 	fl.BoolVar(&f.opts.KitOnly, "kit-only", false, "write the kit, settings and skill, not sbxenv.yaml (merge it by hand)")
 	fl.BoolVar(&f.opts.Force, "force", false, "overwrite a foreign sbxenv.yaml and an edited skill")
 	fl.BoolVar(&f.skipSecret, "skip-secret", false, "do not check or create the sbx secret")
+	fl.BoolVar(&f.skipChecks, "skip-checks", false, "skip the checks (sbx installed, Jira reachable) and only write the files")
 	fl.BoolVar(&f.run, "run", false, "run 'sbx env run' at the end")
 	fl.BoolVarP(&f.interactive, "interactive", "i", false, "ask for every setting (default when run without flags in a terminal)")
 	return c
@@ -216,6 +230,28 @@ func absPath(p string) string {
 	return p
 }
 
+// sbxState is what the checks found out before any question is asked.
+type sbxState struct {
+	haveSbx   bool            // sbx usable from this process (not in the wrapper's container)
+	secrets   map[string]bool // sbx secrets that exist
+	bin, src  string          // the linux jira binary for the kit, and where it came from
+	planOut   string          // sbx env plan output of the validated environment
+	tmp       string
+	agentSbx  bool // the agent name was corrected from sbx's answer
+	canPrompt bool
+}
+
+// runSetupSbx works in this order, so that anything wrong is reported as
+// soon as it can be known and nothing is written before everything passed:
+//
+//  1. checks: sbx is installed, a linux jira binary is available, which sbx
+//     secrets exist;
+//  2. answers (prompts or flags), each validated when given; defaults from
+//     this project's previous setup, else from the last setup of any project;
+//  3. sbx validates the complete environment (sbx env plan in a scratch
+//     folder); an agent kit name sbx reports is taken over automatically;
+//  4. the PAT: the sbx secret exists, or sbx stores it now;
+//  5. files are written, then the next steps are printed.
 func (a *App) runSetupSbx(ctx context.Context, f *sbxFlags, interactive bool) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -235,15 +271,39 @@ func (a *App) runSetupSbx(ctx context.Context, f *sbxFlags, interactive bool) er
 	if f.binaryFile != "" {
 		f.binary = sbx.SourceFile
 	}
-
+	format, err := a.Format()
+	if err != nil {
+		return err
+	}
 	ui := a.newSbxUI()
+	ui.title("Docker Sandbox for jira-cli")
+
+	// Flags are complete up front: validate them before any work.
+	if !interactive {
+		a.applySbxDefaults(f, ui)
+		if _, err := sbx.NewPlan(*o); err != nil {
+			return clierr.Wrap(clierr.LayerUsage, "invalid_setup", err.Error(), nil)
+		}
+	}
+
+	// 1. Checks.
+	st, err := a.sbxChecks(ctx, f, ui, interactive)
+	if st.tmp != "" {
+		defer os.RemoveAll(st.tmp)
+	}
+	if err != nil {
+		return err
+	}
+
+	// 2. Answers.
 	if interactive {
-		if err := a.askSetupSbx(ctx, f, ui); err != nil {
+		if err := a.askSetupSbx(ctx, f, ui, st); err != nil {
 			return err
 		}
-	} else {
-		ui.title("Docker Sandbox for jira-cli")
-		a.applySbxDefaults(f, ui)
+	} else if !f.skipChecks {
+		if err := sbx.CheckReachable(ctx, o.BaseURLOrConfig()); err != nil {
+			return clierr.Wrap(clierr.LayerTCP, "jira_unreachable", err.Error(), nil)
+		}
 	}
 	plan, err := sbx.NewPlan(*o)
 	if err != nil {
@@ -252,35 +312,37 @@ func (a *App) runSetupSbx(ctx context.Context, f *sbxFlags, interactive bool) er
 	if err := plan.CheckEnvFile(); err != nil {
 		return clierr.Wrap(clierr.LayerUsage, "foreign_sbxenv", err.Error(), nil)
 	}
-	format, err := a.Format()
-	if err != nil {
-		return err
-	}
 	if a.dryRun {
 		env, _ := plan.EnvFileContent()
 		return output.Write(a.Out, map[string]any{
 			"dry_run": true, "project": plan.Project, "env_file": plan.EnvFile, "kit": plan.KitDir,
 			"settings": plan.Settings, "skill": plan.Skill, "jira_host": plan.Host, "secret": plan.Service,
-			"credential_env": plan.CredEnv, "sbxenv_yaml": env,
+			"agent": plan.Agent, "name": plan.Name, "credential_env": plan.CredEnv, "sbxenv_yaml": env,
 		}, format)
 	}
 
-	ui.section("Setting up " + plan.Project)
-	tmp, err := os.MkdirTemp("", "jira-setup-sbx-")
-	if err != nil {
-		return err
+	// 3. sbx validates the whole environment before anything is written.
+	if st.haveSbx && !plan.KitOnly {
+		ui.section("Validating with sbx")
+		if err := a.sbxValidate(ctx, plan, f, st, ui); err != nil {
+			return err
+		}
 	}
-	defer os.RemoveAll(tmp)
-	bin, source, err := sbx.GetBinary(ctx, sbx.BinaryRequest{
-		Source: f.binary, Arch: f.arch, Version: a.Version, Clone: f.sourceDir,
-		Image: f.image, File: absIfSet(f.binaryFile), Dir: tmp, Log: ui.note,
-	})
-	if err != nil {
-		return clierr.Wrap(clierr.LayerUsage, "no_linux_binary", err.Error(), nil).
-			WithHint("run it from a jira-cli clone with Go installed, use a released jira, or pass --binary-file / --binary image")
+
+	// 4. The PAT.
+	secretKnown := false
+	if st.haveSbx && !f.skipSecret {
+		if !st.secrets[plan.Service] {
+			if err := a.sbxSetSecret(ctx, plan.Service, st, ui); err != nil {
+				return err
+			}
+		}
+		secretKnown = true
 	}
-	ui.ok(fmt.Sprintf("jira for linux/%s %s", f.arch, ui.dim("(source: "+source+")")))
-	if err := plan.WriteKit(map[string]string{f.arch: bin}, a.Version); err != nil {
+
+	// 5. Write.
+	ui.section("Writing " + plan.Project)
+	if err := plan.WriteKit(map[string]string{f.arch: st.bin}, a.Version); err != nil {
 		return err
 	}
 	ui.ok("kit: " + plan.KitDir)
@@ -316,45 +378,27 @@ func (a *App) runSetupSbx(ctx context.Context, f *sbxFlags, interactive bool) er
 
 	result := map[string]any{
 		"project": plan.Project, "env_file": plan.EnvFile, "kit": plan.KitDir, "settings": plan.Settings,
-		"config": plan.ConfigFile, "agent": plan.Agent, "name": plan.Name, "binary_source": source,
+		"config": plan.ConfigFile, "agent": plan.Agent, "name": plan.Name, "binary_source": st.src,
 		"jira_host": plan.Host, "secret": plan.Service, "credential_env": plan.CredEnv, "notes": notes,
+		"validated": st.haveSbx && !plan.KitOnly,
 	}
-	_, lookErr := sbxLookPath("sbx")
-	haveSbx := lookErr == nil
-	secretKnown := false
-	if haveSbx && !f.skipSecret {
-		if err := a.ensureSbxSecret(ctx, plan.Service, interactive || a.IsTerminal(), ui); err != nil {
-			return err
-		}
-		secretKnown = true
-	}
-	if haveSbx && !plan.KitOnly {
-		ui.section("sbx env plan " + ui.dim("(a preview; nothing is created yet)"))
-		out, err := sbxRun(ctx, plan.Project, false, "env", "plan")
-		for _, l := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
-			ui.println("  " + l)
-		}
-		if err != nil {
-			return clierr.Wrap(clierr.LayerUsage, "sbx_plan_failed", "sbx env plan failed (see above)", err)
-		}
-	}
-	running := haveSbx && f.run && !plan.KitOnly
+	running := st.haveSbx && f.run && !plan.KitOnly
 	steps := sbxNextSteps(plan, secretKnown, running)
 	ui.section("Next steps")
 	switch {
 	case a.inContainer():
-		result["sbx"] = "jira ran in a container: run the next steps on the host"
-		ui.note("jira ran in a container, so run these on your machine:")
-	case !haveSbx:
+		result["sbx"] = "jira ran in a container: the wrapper checks the secret and runs sbx env plan on the host"
+		ui.note("jira ran in a container: the jira wrapper now checks the sbx secret and runs 'sbx env plan' on your machine.")
+	case !st.haveSbx:
 		result["sbx"] = "not found"
 		ui.note("sbx was not found: install Docker Sandboxes first (https://docs.docker.com/ai/sandboxes/).")
 	case running:
 		ui.note("Starting the sandbox now. Once it is up:")
 	}
 	var cmds []string
-	for i, st := range steps {
-		ui.println(fmt.Sprintf("  %s %s", ui.cyan(fmt.Sprintf("%d.", i+1)), st.what))
-		for _, c := range st.cmds {
+	for i, step := range steps {
+		ui.println(fmt.Sprintf("  %s %s", ui.cyan(fmt.Sprintf("%d.", i+1)), step.what))
+		for _, c := range step.cmds {
 			ui.println("       " + ui.cmd(c))
 			cmds = append(cmds, c)
 		}
@@ -373,6 +417,131 @@ func (a *App) runSetupSbx(ctx context.Context, f *sbxFlags, interactive bool) er
 			return clierr.Wrap(clierr.LayerUsage, "sbx_run_failed", "sbx env run failed", err)
 		}
 	}
+	return nil
+}
+
+// sbxChecks runs before any question: everything that can fail without
+// knowing the answers fails here, immediately.
+func (a *App) sbxChecks(ctx context.Context, f *sbxFlags, ui *sbxUI, interactive bool) (*sbxState, error) {
+	st := &sbxState{secrets: map[string]bool{}, canPrompt: interactive || a.IsTerminal()}
+	ui.section("Checks")
+	switch {
+	case a.inContainer():
+		ui.note("jira runs in the Docker wrapper's container: the sbx checks run on your machine afterwards.")
+	case f.skipChecks:
+		if _, err := sbxLookPath("sbx"); err == nil {
+			st.haveSbx = true
+		}
+		ui.warn("checks skipped (--skip-checks)")
+	default:
+		if _, err := sbxLookPath("sbx"); err != nil {
+			return st, clierr.New(clierr.LayerConfig, "sbx_not_found", "sbx (Docker Sandboxes) is not installed").
+				WithHint("install it (https://docs.docker.com/ai/sandboxes/), or pass --skip-checks to only write the files")
+		}
+		st.haveSbx = true
+		ui.ok("sbx is installed")
+	}
+	if st.haveSbx {
+		out, err := sbxRun(ctx, "", false, "secret", "ls")
+		if err != nil {
+			return st, clierr.Wrap(clierr.LayerConfig, "sbx_failed", "sbx secret ls failed: "+strings.TrimSpace(string(out)), err).
+				WithHint("is sbx signed in? run 'sbx login'")
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			if fl := strings.Fields(line); len(fl) > 0 && sbx.ValidSecretName(fl[0]) == nil {
+				st.secrets[fl[0]] = true
+			}
+		}
+		names := make([]string, 0, len(st.secrets))
+		for n := range st.secrets {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		if len(names) == 0 {
+			ui.ok("sbx secrets: none yet")
+		} else {
+			ui.ok("sbx secrets: " + strings.Join(names, ", "))
+		}
+	}
+	if a.dryRun {
+		return st, nil
+	}
+	tmp, err := os.MkdirTemp("", "jira-setup-sbx-")
+	if err != nil {
+		return st, err
+	}
+	st.tmp = tmp
+	st.bin, st.src, err = sbx.GetBinary(ctx, sbx.BinaryRequest{
+		Source: f.binary, Arch: f.arch, Version: a.Version, Clone: f.sourceDir,
+		Image: f.image, File: absIfSet(f.binaryFile), Dir: tmp, Log: ui.note,
+	})
+	if err != nil {
+		return st, clierr.Wrap(clierr.LayerUsage, "no_linux_binary", err.Error(), nil).
+			WithHint("run it from a jira-cli clone with Go installed, use a released jira, or pass --binary-file / --binary image")
+	}
+	ui.ok(fmt.Sprintf("jira for linux/%s %s", f.arch, ui.dim("(source: "+st.src+")")))
+	return st, nil
+}
+
+// sbxValidate lets sbx check the complete environment in a scratch folder
+// before the project is touched. When sbx names the agent kit differently,
+// its name is taken over and the check repeated once.
+func (a *App) sbxValidate(ctx context.Context, plan *sbx.Plan, f *sbxFlags, st *sbxState, ui *sbxUI) error {
+	if err := os.MkdirAll(plan.Settings, 0o755); err != nil { // the env mounts it
+		return err
+	}
+	for attempt := 0; ; attempt++ {
+		dir := filepath.Join(st.tmp, fmt.Sprintf("plan-%d", attempt))
+		scratch := *plan
+		scratch.Project, scratch.KitDir, scratch.EnvFile = dir, filepath.Join(dir, ".sbx", "jira-cli"), filepath.Join(dir, "sbxenv.yaml")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		if err := scratch.WriteKit(map[string]string{f.arch: st.bin}, a.Version); err != nil {
+			return err
+		}
+		if err := scratch.WriteEnvFile(); err != nil {
+			return err
+		}
+		out, err := sbxRun(ctx, dir, false, "env", "plan")
+		if err == nil {
+			st.planOut = string(out)
+			ui.ok("sbx accepts the environment (agent " + plan.Agent + map[bool]string{true: ", sandbox " + plan.Name, false: ""}[plan.Name != ""] + ")")
+			return nil
+		}
+		if name, ok := sbx.AgentNameFromSbx(out); ok && name != plan.Agent && attempt == 0 {
+			ui.warn(fmt.Sprintf("sbx names the agent kit %q, not %q: using %q", name, plan.Agent, name))
+			plan.Agent, f.opts.Agent, st.agentSbx = name, name, true
+			if f.nameDefaulted {
+				plan.Name = sbx.DefaultName(name, plan.Project)
+				f.opts.Name = plan.Name
+			}
+			continue
+		}
+		ui.warn("sbx rejected the environment; nothing was written. sbx said:")
+		for _, l := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+			ui.println("    " + l)
+		}
+		first := strings.TrimSpace(strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)[0])
+		return clierr.Wrap(clierr.LayerConfig, "sbx_rejected", "sbx rejected the environment: "+first, err).
+			WithHint("fix the answer it refers to and run jira setup-sbx again; your answers are offered as defaults")
+	}
+}
+
+// sbxSetSecret stores the PAT with sbx (sbx prompts for it, so it never
+// passes through jira-cli).
+func (a *App) sbxSetSecret(ctx context.Context, service string, st *sbxState, ui *sbxUI) error {
+	if !st.canPrompt {
+		return clierr.New(clierr.LayerCredentials, "sbx_secret_missing", "the sbx secret "+service+" does not exist").
+			WithHint("run 'sbx secret set " + service + "' in a terminal (it prompts for the PAT), then run this again")
+	}
+	ui.section("Jira personal access token")
+	ui.note(fmt.Sprintf("Storing it as sbx secret %q: sbx prompts for it, and it stays on this machine.", service))
+	if _, err := sbxRun(ctx, "", true, "secret", "set", service); err != nil {
+		return clierr.Wrap(clierr.LayerCredentials, "sbx_secret_failed", "sbx secret set "+service+" failed", err).
+			WithHint("run it yourself (see 'sbx secret --help'), then run this again")
+	}
+	ui.ok(fmt.Sprintf("sbx secret %q stored", service))
 	return nil
 }
 
@@ -425,7 +594,7 @@ func shellQuote(s string) string {
 // setup if there is one, otherwise from the last setup of any project
 // (<settings>/setup.yaml), so an agent kit's name carries over to new
 // projects. A new project gets its own sandbox name (DefaultName).
-func (a *App) applySbxDefaults(f *sbxFlags, ui *sbxUI) {
+func (a *App) applySbxDefaults(f *sbxFlags, ui *sbxUI) (known bool) {
 	o, set := &f.opts, f.changed
 	use := func(flag string, dst *string, v string) {
 		if !set(flag) && v != "" {
@@ -465,6 +634,9 @@ func (a *App) applySbxDefaults(f *sbxFlags, ui *sbxUI) {
 			f.nameDefaulted = true
 		}
 	}
+	if r, ok := sbx.LoadRemembered(o.Settings); ok && r.Service != "" && !set("secret") {
+		o.Service = r.Service // the secret name is per user, not per project
+	}
 	if set("agent-kit") && !set("agent") {
 		o.Agent = sbx.AgentFromKit(o.AgentKit)
 	}
@@ -476,6 +648,7 @@ func (a *App) applySbxDefaults(f *sbxFlags, ui *sbxUI) {
 			map[bool]string{true: ", kit " + o.AgentKit, false: ""}[o.AgentKit != ""],
 			map[bool]string{true: ", image " + o.Template, false: ""}[o.Template != ""]))
 	}
+	return len(from) > 0
 }
 
 // inContainer reports whether jira runs in the Docker wrapper's container,
@@ -489,39 +662,33 @@ func absIfSet(p string) string {
 	return absPath(p)
 }
 
-// ensureSbxSecret creates the sbx secret if it is missing; sbx itself
-// prompts for the value, so the PAT never passes through jira-cli.
-func (a *App) ensureSbxSecret(ctx context.Context, service string, canPrompt bool, ui *sbxUI) error {
-	out, err := sbxRun(ctx, "", false, "secret", "ls")
-	if err == nil {
-		for _, line := range strings.Split(string(out), "\n") {
-			if f := strings.Fields(line); len(f) > 0 && f[0] == service {
-				ui.ok(fmt.Sprintf("sbx secret %q exists %s", service, ui.dim("(replace it with: sbx secret set "+service+")")))
-				return nil
-			}
-		}
-	}
-	if !canPrompt {
-		return clierr.New(clierr.LayerCredentials, "sbx_secret_missing", "the sbx secret "+service+" does not exist").
-			WithHint("run 'sbx secret set " + service + "' in a terminal (it prompts for the PAT), then re-run with --skip-secret")
-	}
-	ui.section("Jira personal access token")
-	ui.note(fmt.Sprintf("Storing it as sbx secret %q: sbx prompts for it, and it stays on this machine.", service))
-	if _, err := sbxRun(ctx, "", true, "secret", "set", service); err != nil {
-		return clierr.Wrap(clierr.LayerCredentials, "sbx_secret_failed", "sbx secret set "+service+" failed", err).
-			WithHint("run it yourself (see 'sbx secret --help'), then re-run with --skip-secret")
-	}
-	ui.ok(fmt.Sprintf("sbx secret %q stored", service))
-	return nil
-}
-
-func (a *App) askSetupSbx(ctx context.Context, f *sbxFlags, ui *sbxUI) error {
+func (a *App) askSetupSbx(ctx context.Context, f *sbxFlags, ui *sbxUI, st *sbxState) error {
 	o := &f.opts
 	p := newPrompter(ctx, a.In, ui)
 	var err error
-	ask := func(dst *string, q string) {
-		if err == nil {
-			*dst, err = p.ask(q, *dst)
+	// askValid re-asks until validate accepts the answer (nil: any answer).
+	askValid := func(dst *string, q string, validate func(string) error) {
+		for err == nil {
+			var v string
+			if v, err = p.ask(q, *dst); err != nil {
+				return
+			}
+			if validate != nil {
+				if verr := validate(v); verr != nil {
+					ui.warn(verr.Error())
+					continue
+				}
+			}
+			*dst = v
+			return
+		}
+	}
+	optional := func(check func(string) error) func(string) error {
+		return func(v string) error {
+			if v == "" {
+				return nil
+			}
+			return check(v)
 		}
 	}
 	yn := func(dst *bool, q string) {
@@ -529,84 +696,131 @@ func (a *App) askSetupSbx(ctx context.Context, f *sbxFlags, ui *sbxUI) error {
 			*dst, err = p.yn(q, *dst)
 		}
 	}
-	ui.title("Docker Sandbox for jira-cli")
 	ui.note("Enter keeps the value in [brackets], '-' clears an optional one, Ctrl+C quits (nothing is written before you confirm).")
+
+	// Project: must exist; a foreign sbxenv.yaml is decided right away.
 	ui.section("Project")
-	// In the wrapper's container only mounted folders exist: the wrapper asks
-	// for the project on the host and passes --project.
-	askProject := !(a.inContainer() && f.projectSet)
-	if !askProject {
-		ui.kv("project", absPath(o.Project))
+	if a.inContainer() && f.projectSet {
+		// The wrapper asked for it on the host (only mounted folders exist here).
+		ui.kv("project", o.Project)
+	} else {
+		askValid(&o.Project, "Project the agent works in (mounted read/write)", func(v string) error {
+			v = absPath(v)
+			if st, e := os.Stat(v); e != nil || !st.IsDir() {
+				if a.inContainer() {
+					return errors.New("not a directory: " + v + " (jira runs in a container and only sees mounted folders: cd to the project and re-run)")
+				}
+				return errors.New("not a directory: " + v)
+			}
+			return nil
+		})
+		o.Project = absPath(o.Project)
 	}
-	for askProject {
-		ask(&o.Project, "Project the agent works in (mounted read/write)")
+	if err != nil {
+		return err
+	}
+	envFile := filepath.Join(o.Project, "sbxenv.yaml")
+	if b, e := os.ReadFile(envFile); e == nil && !sbx.IsGenerated(b) && !o.Force && !o.KitOnly {
+		ui.warn(envFile + " exists and was not generated by jira-cli.")
+		choice := "k"
+		askValid(&choice, "k = keep it and only write the kit, settings and skill (you merge), o = overwrite, a = abort", func(v string) error {
+			if v != "k" && v != "o" && v != "a" {
+				return errors.New("answer k, o or a")
+			}
+			return nil
+		})
 		if err != nil {
 			return err
 		}
-		o.Project = absPath(o.Project)
-		if st, e := os.Stat(o.Project); e == nil && st.IsDir() {
-			break
-		}
-		ui.warn("not a directory: " + o.Project)
-		if a.inContainer() {
-			ui.note("jira runs in a container and only sees the current directory: cd to the project and re-run")
+		switch choice {
+		case "o":
+			o.Force = true
+		case "a":
+			return clierr.New(clierr.LayerSafety, "confirmation_declined", "aborted; nothing was written")
+		default:
+			o.KitOnly = true
 		}
 	}
-	a.applySbxDefaults(f, ui)
-	ui.section("Jira")
+	known := a.applySbxDefaults(f, ui)
 	if o.BaseURL == "" {
 		o.BaseURL = sbx.BaseURLFromConfig(filepath.Join(o.Settings, "config.yaml"))
 	}
-	for {
-		ask(&o.BaseURL, "Jira base URL (https://, with the context path if any)")
+	checkURL := func(v string) error {
+		if _, _, e := sbx.ParseBaseURL(v); e != nil {
+			return e
+		}
+		if f.skipChecks {
+			return nil
+		}
+		return sbx.CheckReachable(ctx, v)
+	}
+
+	// Known setup: confirm it in one step instead of answering everything again.
+	if known && o.BaseURL != "" && checkURL(o.BaseURL) == nil {
+		a.sbxSummary(ui, o)
+		same := true
+		yn(&same, "Use these settings")
 		if err != nil {
 			return err
 		}
-		if strings.HasPrefix(o.BaseURL, "https://") && len(o.BaseURL) > len("https://") {
-			break
+		if same {
+			yn(&f.run, "Start the sandbox when done (sbx env run)")
+			return err
 		}
-		ui.warn("must start with https://")
 	}
+
+	ui.section("Jira")
+	askValid(&o.BaseURL, "Jira base URL (https://, with the context path if any)", checkURL)
+	if err == nil && !f.skipChecks {
+		ui.ok("reachable: " + o.BaseURL)
+	}
+
 	ui.section("Agent and sandbox")
-	ui.note("A built-in sbx agent (e.g. opencode), or an agent kit (registry reference).")
+	ui.note("A built-in sbx agent (e.g. opencode), or an agent kit (registry reference). If sbx knows the")
+	ui.note("agent kit under another name, that name is taken over automatically when sbx checks the setup.")
 	kitBefore := o.AgentKit
-	ask(&o.AgentKit, "Agent kit reference (empty = built-in agent)")
+	askValid(&o.AgentKit, "Agent kit reference (empty = built-in agent)", optional(sbx.ValidRef))
 	if err == nil && o.AgentKit != "" && o.AgentKit != kitBefore && !f.changed("agent") {
 		o.Agent = sbx.AgentFromKit(o.AgentKit)
 	}
-	ask(&o.Agent, "Agent name (for a kit: the name sbx reports in 'agent kit name \"...\"')")
-	ask(&o.Template, "Sandbox image (empty = the agent's default image)")
+	askValid(&o.Agent, "Agent name", sbx.ValidName)
+	askValid(&o.Template, "Sandbox image (empty = the agent's default image)", optional(sbx.ValidRef))
 	if f.nameDefaulted {
 		o.Name = sbx.DefaultName(o.Agent, o.Project) // follow the agent chosen above
 	}
 	if err == nil {
-		ui.note("Sandbox name: '-' uses sbx's own default, <agent>-<project folder>, which is also the name")
-		ui.note("of a sandbox you start with 'sbx run' in that folder.")
+		ui.note("'-' uses sbx's own default, <agent>-<project folder>: also the name 'sbx run' gives a sandbox there.")
 	}
-	ask(&o.Name, "Sandbox name")
-	if err == nil {
-		ui.section("Options")
-	}
+	askValid(&o.Name, "Sandbox name", optional(sbx.ValidName))
+
+	ui.section("Options")
 	if a.inContainer() {
 		if o.CABundle == "" && err == nil {
 			ui.note("Company CA: none (in the container, pass --ca-bundle FILE so the wrapper can mount it)")
 		}
 	} else {
-		ask(&o.CABundle, "Company CA certificate file (empty = none; usually not needed)")
+		askValid(&o.CABundle, "Company CA certificate file (empty = none; usually not needed)", optional(func(v string) error { return sbx.ValidFile(absPath(v)) }))
 	}
 	yn(&o.ReadOnly, "Read-only (the agent cannot change anything in Jira)")
 	yn(&o.Skill, "Copy the jira skill into <project>/.opencode/skills/jira")
 	adv := false
-	yn(&adv, "Change advanced settings (sbx secret name, credential ref, settings folder, binary source)")
+	yn(&adv, "Change advanced settings (sbx secret name, credential ref, settings folder)")
 	if adv {
-		ask(&o.Service, "sbx secret name for the PAT")
-		ask(&o.CredRef, "credential_ref in config.yaml")
+		if err == nil && len(st.secrets) > 0 {
+			names := make([]string, 0, len(st.secrets))
+			for n := range st.secrets {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			ui.note("existing sbx secrets: " + strings.Join(names, ", "))
+		}
+		askValid(&o.Service, "sbx secret name for the PAT", sbx.ValidSecretName)
+		askValid(&o.CredRef, "credential_ref in config.yaml", sbx.ValidName)
 		if a.inContainer() {
 			ui.note("Settings folder: " + o.Settings + " (in the container, change it with --settings DIR)")
 		} else {
-			ask(&o.Settings, "Settings folder on this machine (config.yaml, bashrc)")
+			askValid(&o.Settings, "Settings folder on this machine (config.yaml, bashrc)", func(v string) error { return sbx.ValidSettingsPath(absPath(v)) })
 		}
-		ask(&f.binary, "Linux binary source: auto, self, go, release, image")
 	}
 	if err != nil {
 		return err
@@ -615,23 +829,23 @@ func (a *App) askSetupSbx(ctx context.Context, f *sbxFlags, ui *sbxUI) error {
 	if o.CABundle != "" {
 		o.CABundle = absPath(o.CABundle)
 	}
-	envFile := filepath.Join(o.Project, "sbxenv.yaml")
-	if b, e := os.ReadFile(envFile); e == nil && !sbx.IsGenerated(b) && !o.Force && !o.KitOnly {
-		ui.warn(envFile + " exists and was not generated by jira-cli.")
-		choice := "k"
-		ask(&choice, "k = keep it and only write the kit, settings and skill (you merge), o = overwrite, a = abort")
+	a.sbxSummary(ui, o)
+	if !a.yes {
+		ok := true
+		yn(&ok, "Proceed")
 		if err != nil {
 			return err
 		}
-		switch strings.ToLower(choice) {
-		case "o":
-			o.Force = true
-		case "a":
-			return errors.New("aborted")
-		default:
-			o.KitOnly = true
+		if !ok {
+			return clierr.New(clierr.LayerSafety, "confirmation_declined", "aborted; nothing was written")
 		}
 	}
+	yn(&f.run, "Start the sandbox when done (sbx env run)")
+	return err
+}
+
+// sbxSummary prints the choices.
+func (a *App) sbxSummary(ui *sbxUI, o *sbx.Options) {
 	or := func(v, def string) string {
 		if v == "" {
 			return def
@@ -648,18 +862,6 @@ func (a *App) askSetupSbx(ctx context.Context, f *sbxFlags, ui *sbxUI) error {
 	ui.kv("CA", or(o.CABundle, "none"))
 	ui.kv("read-only", yesno[o.ReadOnly])
 	ui.kv("skill", map[bool]string{true: ".opencode/skills/jira", false: "no"}[o.Skill])
-	ui.kv("token", fmt.Sprintf("sbx secret %q", o.Service)+ui.dim(" (sbx asks for it if it does not exist yet)"))
+	ui.kv("token", fmt.Sprintf("sbx secret %q", o.Service))
 	ui.println("")
-	if !a.yes {
-		ok := true
-		yn(&ok, "Proceed")
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return clierr.New(clierr.LayerSafety, "confirmation_declined", "aborted; nothing was written")
-		}
-	}
-	yn(&f.run, "Start the sandbox when done (sbx env run)")
-	return err
 }

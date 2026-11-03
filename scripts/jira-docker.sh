@@ -96,8 +96,9 @@ if [ "${2:-}" = setup-sbx ]; then   # $1 is the image (set above)
     done
     set -- "$@" -i --project "$(cd "$ans" && pwd)"
   fi
-  sbx_project="$PWD" sbx_settings="$CFG_HOME/jira-cli-sbx" prev=""
+  sbx_project="$PWD" sbx_settings="$CFG_HOME/jira-cli-sbx" prev="" sbx_host=1
   for a in "$@"; do
+    case "$a" in --dry-run|--skip-checks|--kit-only|-h|--help) sbx_host=0 ;; esac
     case "$prev" in
       --project) sbx_project="$a" ;;
       --settings) sbx_settings="$a" ;;
@@ -147,4 +148,38 @@ set -- -e HOME="$HOME" -e XDG_CONFIG_HOME="$CFG_HOME" \
 # A TTY merges stderr into stdout; only use one for interactive sessions.
 if [ -t 0 ] && [ -t 1 ]; then set -- -t "$@"; fi
 
+# setup-sbx: sbx is not in the container, so its checks run here afterwards:
+# the PAT secret, then `sbx env plan`; an agent kit name sbx reports is
+# written into sbxenv.yaml and the saved defaults.
+sbx_host_checks() {
+  command -v sbx > /dev/null 2>&1 || { echo "  ! sbx is not installed on this machine (https://docs.docker.com/ai/sandboxes/)" >&2; return 1; }
+  echo "" >&2
+  echo "▸ Checks on this machine" >&2
+  svc=$(sed -n 's/^secret: *//p' "$sbx_settings/setup.yaml" 2>/dev/null | head -n 1)
+  [ -n "$svc" ] || svc=jira
+  if sbx secret ls 2>/dev/null | awk '{print $1}' | grep -qx "$svc"; then
+    echo "  ✓ sbx secret $svc exists" >&2
+  else
+    echo "  Storing the Jira PAT as sbx secret $svc (sbx prompts for it; it stays on this machine)" >&2
+    sbx secret set "$svc" || return 1
+  fi
+  [ -f "$sbx_project/sbxenv.yaml" ] || return 0
+  if out=$(cd "$sbx_project" && sbx env plan 2>&1); then echo "  ✓ sbx accepts the environment" >&2; return 0; fi
+  name=$(printf '%s\n' "$out" | sed -n 's/.*agent kit name "\([A-Za-z0-9._-]*\)".*/\1/p' | head -n 1)
+  if [ -n "$name" ]; then
+    echo "  ! sbx names the agent kit \"$name\": using it" >&2
+    for f in "$sbx_project/sbxenv.yaml" "$sbx_settings/setup.yaml"; do
+      if [ -f "$f" ]; then sed "s/^agent: .*/agent: $name/" "$f" > "$f.tmp" && mv "$f.tmp" "$f"; fi
+    done
+    if out=$(cd "$sbx_project" && sbx env plan 2>&1); then echo "  ✓ sbx accepts the environment" >&2; return 0; fi
+  fi
+  echo "  ! sbx rejected the environment:" >&2
+  printf '%s\n' "$out" | sed 's/^/    /' >&2
+  return 1
+}
+if [ "${sbx_host:-0}" = 1 ]; then
+  docker run --rm -i --user "$(id -u):$(id -g)" "$@" || exit $?
+  sbx_host_checks || exit 3
+  exit 0
+fi
 exec docker run --rm -i --user "$(id -u):$(id -g)" "$@"

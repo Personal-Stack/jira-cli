@@ -78,8 +78,29 @@ grep -q -- "$HOME/project:$HOME/project:ro" "$WORK/args" && ok "current director
 
 # setup-sbx in the container: project and settings writable, binary = the
 # container's own (linux), host steps printed instead of running sbx.
+# A fake sbx on the host: no secret yet, and it knows the agent kit as
+# "devex-opencode" (any other agent name is rejected as sbx does).
+mkdir -p "$WORK/sbxbin"
+cat > "$WORK/sbxbin/sbx" <<'SH'
+#!/bin/sh
+case "$*" in
+  "secret ls") cat "$SBX_STATE/secrets" 2>/dev/null ;;
+  "secret set "*) echo "${3:-}" >> "$SBX_STATE/secrets" ;;
+  "env plan")
+    a=$(sed -n 's/^agent: //p' sbxenv.yaml)
+    [ "$a" = devex-opencode ] || { echo "error: agent \"$a\" does not match agent kit name \"devex-opencode\" (set agent: devex-opencode in sbxenv.yaml)"; exit 1; } ;;
+esac
+SH
+chmod +x "$WORK/sbxbin/sbx"; export SBX_STATE="$WORK/sbxstate"; mkdir -p "$SBX_STATE"
+# setup-sbx checks that Jira is reachable: a local listener stands in for it
+# (host network, so the container sees 127.0.0.1).
+python3 -c 'import socket,sys; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.listen(16); sys.stdout.flush(); [s.accept() for _ in iter(int,1)]' > "$WORK/port" &
+LISTENER=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$WORK/port" ] && break; sleep 0.2; done
+JIRA_URL="https://127.0.0.1:$(cat "$WORK/port")"
 mkdir -p "$HOME/sbxproj"
-(cd "$HOME/sbxproj" && "$BIN/jira" setup-sbx --base-url https://jira.example.com --agent devex-opencode --name sbx-test < /dev/null) > "$WORK/o" 2> "$WORK/e"; rc=$?
+(cd "$HOME/sbxproj" && PATH="$WORK/sbxbin:$PATH" JIRA_DOCKER_NETWORK=host "$BIN/jira" setup-sbx --base-url "$JIRA_URL" --agent-kit reg.example.com/devex/opencode:1 --name sbx-test < /dev/null) > "$WORK/o" 2> "$WORK/e"; rc=$?
+kill "$LISTENER" 2> /dev/null
 SBXSET="$HOME/.config/jira-cli-sbx"
 [ $rc = 0 ] && [ -f "$HOME/sbxproj/sbxenv.yaml" ] && [ -f "$HOME/sbxproj/.opencode/skills/jira/SKILL.md" ] && [ -f "$SBXSET/config.yaml" ] \
   && ok "setup-sbx writes the project files and settings through the container" || { ko "setup-sbx (exit $rc)"; cat "$WORK/o" "$WORK/e"; }
@@ -89,8 +110,10 @@ grep -q "path: $SBXSET" "$HOME/sbxproj/sbxenv.yaml" && grep -q "JIRA_CONFIG: $SB
   && ok "setup-sbx writes host paths into sbxenv.yaml" || { ko "setup-sbx paths"; cat "$HOME/sbxproj/sbxenv.yaml"; }
 [ "$(stat -c %u "$HOME/sbxproj/sbxenv.yaml")" = "$(id -u)" ] && [ "$(stat -c %u "$SBXSET/config.yaml")" = "$(id -u)" ] \
   && ok "setup-sbx files are owned by the user" || ko "setup-sbx ownership"
-grep -q "run these on the host" "$WORK/e" && grep -q "cd $HOME/sbxproj && sbx env run" "$WORK/e" \
-  && ok "setup-sbx prints the host steps (no sbx in the container)" || { ko "setup-sbx host steps"; cat "$WORK/e"; }
+grep -q "cd $HOME/sbxproj && sbx env run" "$WORK/e" && grep -q 'sbx names the agent kit "devex-opencode": using it' "$WORK/e" \
+  && grep -q "sbx accepts the environment" "$WORK/e" && grep -qx "agent: devex-opencode" "$HOME/sbxproj/sbxenv.yaml" \
+  && grep -qx "agent: devex-opencode" "$SBXSET/setup.yaml" && grep -qx jira "$SBX_STATE/secrets" \
+  && ok "setup-sbx: host checks after the container (secret stored, agent name taken from sbx, plan accepted)" || { ko "setup-sbx host checks"; cat "$WORK/e"; cat "$HOME/sbxproj/sbxenv.yaml"; }
 
 # Guided setup-sbx: the wrapper asks for the project on the host (the
 # container cannot see other folders), mounts it and passes it on.

@@ -22,6 +22,33 @@ replaces the `Authorization` header with `Bearer <your PAT>` on requests to
 your Jira host. The agent can't read the real token, even with `env` or `cat`.
 This follows the kit spec's `credential@1` with `proxyManaged: true`.
 
+## How the setup makes sure it works
+
+sbx is the authority on what works (agent kit names, secrets, the
+environment format), so `jira setup-sbx` asks sbx instead of you wherever it
+can. It also stops at the first problem, before anything is written:
+
+1. **Checks, before any question.** It checks three things: that sbx is
+   installed and answers (signed in), that a Linux `jira` for the kit is
+   available, and which sbx secrets exist.
+2. **Answers, each checked when given.** The project must exist (and an
+   `sbxenv.yaml` that isn't ours is decided right there). The Jira host must
+   resolve and accept a connection. Names, references and the CA file are
+   valid. A wrong answer is asked again.
+3. **sbx validates the whole environment** with `sbx env plan` on a scratch
+   copy, before your project is touched. If sbx knows your agent kit under
+   another name (`agent kit name "..."`), that name is used automatically and
+   saved for next time. Any other sbx error is shown as is, and nothing is written.
+4. **The PAT:** the sbx secret exists, or sbx stores it now (sbx prompts for it).
+5. **Only then** are the files written, followed by the next steps.
+
+You don't type everything again: answers are saved and offered next time.
+A project you set up before, or a new project after any earlier setup, shows
+the settings and asks once: *Use these settings?*
+
+`--skip-checks` skips steps 1 and 3 and the reachability check, and only
+writes the files (e.g. without sbx installed).
+
 ## Set up
 
 With `jira` installed (any install method), run the guided setup:
