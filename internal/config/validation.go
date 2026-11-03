@@ -2,7 +2,6 @@ package config
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/url"
@@ -128,8 +127,8 @@ func (in *Instance) CheckFiles() error {
 		b, err := os.ReadFile(in.TLS.CABundle)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("tls.ca_bundle: %w", err))
-		} else if !x509.NewCertPool().AppendCertsFromPEM(b) {
-			errs = append(errs, fmt.Errorf("tls.ca_bundle: %s contains no PEM certificates", in.TLS.CABundle))
+		} else if _, _, err := ParseCABundle(b, in.TLS.CABundle); err != nil {
+			errs = append(errs, fmt.Errorf("tls.ca_bundle: %w", err))
 		}
 	}
 	if in.TLS.ClientCert != "" {

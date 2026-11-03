@@ -27,8 +27,12 @@ func TLSConfig(c config.TLS) (*tls.Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("tls.ca_bundle: %w", err)
 		}
-		if !pool.AppendCertsFromPEM(b) {
-			return nil, fmt.Errorf("tls.ca_bundle: %s contains no PEM certificates", c.CABundle)
+		certs, _, err := config.ParseCABundle(b, c.CABundle)
+		if err != nil {
+			return nil, fmt.Errorf("tls.ca_bundle: %w", err)
+		}
+		for _, cert := range certs {
+			pool.AddCert(cert)
 		}
 	}
 	tc.RootCAs = pool

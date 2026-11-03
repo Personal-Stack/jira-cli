@@ -90,6 +90,12 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 - [x] Measured: ~710 ms start-up per command vs milliseconds native; reaching a host-loopback Jira needs `JIRA_DOCKER_NETWORK=host`
 - [ ] Not tested on macOS/Windows Docker Desktop
 
+### TLS trust and certificate formats
+- [x] `tls.ca_bundle` accepts PEM or DER (`.cer`/`.cert`/`.crt`, one or more certificates); PKCS#7 and private keys are rejected with a conversion hint (9 format cases + a real TLS test with a binary `.cert`)
+- [x] `scripts/tls-diagnose.sh`: shows the server's chain and tests candidate CA files (PEM/DER/PKCS#7 auto-detected) exactly like the CLI (verdicts matched the CLI in 6/6 cases: lookalike root, full chain, leaf-only chain). Fixed a bash 3.2 (macOS) `set -u` empty-array bug, reproduced on bash 3.2.57
+- [x] macOS: confirmed in the Go 1.27 source that the CLI's trust pool uses the OS verifier first on macOS/Windows (Keychain / Windows store), so `ca_bundle` is unnecessary when IT installed the CA; tokens go to the Keychain via `/usr/bin/security -i` (stdin, not argv). Installer strips the quarantine flag after checksum verification and warns against `--docker` on macOS
+- [ ] `scripts/test-macos-keychain.sh` (Keychain trust + token storage) runs only on the macOS CI runner; **not executed yet** (no macOS here)
+
 ### Phase 6 (partial)
 - [x] Multi-stage Dockerfile (distroless, nonroot, ~20 MB). Built and run locally: headless mode with mounted secret works; no secrets in layers
 - [x] GitHub Actions CI: spec-validate, verify-generated, vet/gofmt, race tests, govulncheck, build, smoke test, docker build/run

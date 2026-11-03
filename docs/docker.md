@@ -5,6 +5,10 @@
 `docker run --rm` of the CLI image, so the only requirement on the machine
 is Docker.
 
+> **macOS users:** prefer the native binary (`sh install.sh` without
+> `--docker`). It uses the Keychain for TLS trust and tokens; this wrapper
+> cannot (see docs/installation.md, "macOS").
+
 ## Install
 
 From a clone (builds `jira-cli:local`; Go runs inside the build container):

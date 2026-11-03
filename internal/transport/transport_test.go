@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"crypto/tls"
+	"encoding/pem"
 	"errors"
 	"io"
 	"net/http"
@@ -206,5 +207,19 @@ func TestProxyConnectRefusedIsClassified(t *testing.T) {
 	e := clierr.Classify(err)
 	if e.Layer != clierr.LayerProxy || e.Code != "proxy_connect_refused" || e.HTTPStatus != 403 {
 		t.Fatalf("got %+v (%v)", e, err)
+	}
+}
+
+func TestCABundleDER(t *testing.T) {
+	p := testpki.New(t)
+	srv := tlsServer(t, p, false, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok") }))
+	blk, _ := pem.Decode(p.CAPEM)
+	ca := testpki.WriteFile(t, t.TempDir(), "company-root.cert", blk.Bytes) // binary DER, .cert extension
+	c, err := New(instance(srv.URL, config.TLS{CABundle: ca}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp, err := get(t, c, srv.URL); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("DER ca_bundle: %v", err)
 	}
 }

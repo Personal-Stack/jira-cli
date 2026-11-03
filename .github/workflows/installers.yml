@@ -10,6 +10,9 @@ on:
       - "scripts/install.*"
       - "scripts/jira-docker.sh"
       - "scripts/test-docker-wrapper.sh"
+      - "scripts/test-macos-keychain.sh"
+      - "internal/transport/**"
+      - "internal/credentials/**"
       - "Dockerfile"
       - "scripts/dist.sh"
       - "scripts/test-install.sh"
@@ -62,6 +65,18 @@ jobs:
           path: dist
       - name: Installer tests (install.sh)
         run: scripts/test-install.sh dist
+
+  macos-keychain:
+    # Native CLI on macOS: Keychain TLS trust (no ca_bundle) and Keychain tokens.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make build
+      - name: Keychain trust and token storage
+        run: scripts/test-macos-keychain.sh bin/jira
 
   docker-wrapper:
     needs: dist

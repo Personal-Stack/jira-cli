@@ -9,7 +9,7 @@ All Jira traffic goes through one `*http.Client` built by
 |---|---|---|
 | verification | **on** | `tls.verify: false` must be explicit; every invocation logs a warning and `doctor` reports `warn` |
 | minimum version | TLS 1.2 | `tls.min_version: "1.3"` |
-| roots | system pool + `tls.ca_bundle` | bundle must contain at least one PEM certificate |
+| roots | system trust + `tls.ca_bundle` | on macOS/Windows the OS verifier is used first (Keychain / Windows certificate store, incl. company CAs installed by IT), then `ca_bundle` as extra roots; on Linux the system bundle plus `ca_bundle`. `ca_bundle` may be PEM or DER (`.cer`/`.cert`), one or more certificates; PKCS#7 and private keys are rejected with a conversion hint |
 | mTLS | off | `tls.client_cert` + `tls.client_key` (key must be `0600`); reloaded when either file's mtime changes |
 | SNI override | host of `base_url` | `tls.server_name` |
 

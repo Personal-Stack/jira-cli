@@ -275,6 +275,9 @@ fetch_release() {
 BIN_SRC=""
 REPO_ROOT=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
 if [ "$DOCKER" = 1 ]; then
+  if [ "$os" = darwin ]; then
+    warn "on macOS the native binary uses the Keychain for both TLS trust (company CAs installed by IT) and tokens; the Docker image cannot see the Keychain, so you will need tls.ca_bundle and a 0600 token file. Prefer installing without --docker."
+  fi
   command -v docker >/dev/null 2>&1 || die "--docker needs Docker (https://docs.docker.com/get-docker/)"
   docker info >/dev/null 2>&1 || die "cannot reach the Docker daemon (is it running? is your user in the 'docker' group?)"
   case "$IMAGE" in *[!A-Za-z0-9._/:@-]*) die "invalid --image '$IMAGE'" ;; esac
@@ -339,6 +342,12 @@ mkdir -p "$INSTALL_DIR" 2>/dev/null || die "cannot create $INSTALL_DIR (use --di
 cp "$BIN_SRC" "$INSTALL_DIR/.$BIN_NAME.tmp.$$"
 chmod 755 "$INSTALL_DIR/.$BIN_NAME.tmp.$$"
 mv -f "$INSTALL_DIR/.$BIN_NAME.tmp.$$" "$TARGET"   # atomic replace
+# macOS: browser downloads carry com.apple.quarantine, which tar copies to the
+# extracted binary; Gatekeeper then refuses to run the unsigned binary. The
+# archive's SHA-256 was verified above, so the flag is removed.
+if [ "$os" = darwin ] && [ "$DOCKER" = 0 ] && command -v xattr >/dev/null 2>&1; then
+  xattr -d com.apple.quarantine "$TARGET" 2>/dev/null || true
+fi
 installed=$("$TARGET" --version 2>/dev/null) || die "installed binary does not run: $TARGET"
 if [ "$DOCKER" = 1 ]; then
   say "Installed $installed (Docker image $IMAGE) -> $TARGET"
