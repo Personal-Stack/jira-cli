@@ -37,6 +37,8 @@ SERVICE="jira"
 SETTINGS="${XDG_CONFIG_HOME:-$HOME/.config}/jira-cli-sbx"
 AGENT="opencode"
 AGENT_SET=0
+SKILLS_PATH="/home/agent/.config/opencode/skills"
+NO_SKILL=0
 AGENT_KIT=""
 TEMPLATE=""
 CA_BUNDLE=""
@@ -63,6 +65,9 @@ Options:
                        ("agent kit name ..."). Default: opencode, or derived from --agent-kit
   --agent-kit REF      compose this agent kit instead of a built-in agent (e.g. sbx/opencode:<tag>);
                        if sbx rejects the derived name, pass --agent with the name it reports
+  --skills-path DIR    where the agent reads skills; declared by this kit because not every agent kit
+                       does (default: /home/agent/.config/opencode/skills)
+  --no-skill           do not bundle the jira skill
   --template IMAGE     sandbox image to use instead of the agent's default (your configured image)
   --ca-bundle FILE     company CA (PEM or DER) for config.yaml; copied into <settings>
   --allow-writes       do not set read_only / JIRA_READ_ONLY (default: read-only)
@@ -86,6 +91,8 @@ while [ $# -gt 0 ]; do
     --service) SERVICE="${2:?--service needs a value}"; shift ;;
     --settings) SETTINGS="${2:?--settings needs a value}"; shift ;;
     --agent) AGENT="${2:?--agent needs a value}"; AGENT_SET=1; shift ;;
+    --skills-path) SKILLS_PATH="${2:?--skills-path needs a value}"; shift ;;
+    --no-skill) NO_SKILL=1 ;;
     --agent-kit) AGENT_KIT="${2:?--agent-kit needs a value}"; shift ;;
     --template) TEMPLATE="${2:?--template needs a value}"; shift ;;
     --ca-bundle) CA_BUNDLE="${2:?--ca-bundle needs a value}"; shift ;;
@@ -125,6 +132,11 @@ if [ -n "$AGENT_KIT" ] && [ "$AGENT_SET" = 0 ]; then
   h="${AGENT_KIT%%@*}"; h="${h##*/}"; AGENT="${h%%:*}"
 fi
 case "$AGENT" in *[!A-Za-z0-9._-]*|"") die "invalid agent '$AGENT'" ;; esac
+case "$SKILLS_PATH" in
+  /*/*) ;;
+  *) die "--skills-path must be an absolute directory, e.g. /home/agent/.config/opencode/skills" ;;
+esac
+case "$SKILLS_PATH" in *[!A-Za-z0-9._/-]*|*/|*//*|*/./*|*/../*) die "--skills-path must be a plain canonical path: $SKILLS_PATH" ;; esac
 
 CONFIG="$SETTINGS/config.yaml"
 if [ -z "$BASE_URL" ]; then
@@ -231,6 +243,22 @@ COPY skill/jira /usr/share/jira-cli/skills/jira
 COPY --chmod=0644 profile.sh /etc/profile.d/jira-cli.sh
 EOF
 
+if [ "$NO_SKILL" = 1 ]; then
+  SKILL_CAPS=""
+else
+  # agent-skills@1: where the agent reads skills. Declared here because agent
+  # kits that do not declare it make sbx refuse bundled skills ("declares no
+  # com.docker.sandbox/agent-skills@1 destination"). Paths union across kits.
+  SKILL_CAPS="  - type: com.docker.sandbox/agent-skills@1
+    config:
+      path: $SKILLS_PATH
+
+  - type: com.docker.sandbox/agent-skill@1
+    config:
+      path: /usr/share/jira-cli/skills/jira
+"
+fi
+
 if [ "$READ_ONLY" = 1 ]; then
   mode_text="Read-only: every command that is not a read is refused before anything is sent (exit code 9). Do not try to work around it; ask the user."
 else
@@ -274,10 +302,7 @@ capabilities:
         inject:
           - {domain: $JIRA_HOST, header: Authorization, format: "Bearer %s"}
 
-  - type: com.docker.sandbox/agent-skill@1
-    config:
-      path: /usr/share/jira-cli/skills/jira
-
+$SKILL_CAPS
   # Interactive bash shells source the editable host file as well
   # (login shells get it from /etc/profile.d/jira-cli.sh). Idempotent.
   - type: com.docker.sandbox/lifecycle@1
