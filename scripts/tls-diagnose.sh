@@ -38,6 +38,8 @@ need=$(openssl x509 -in "$last" -noout -issuer -nameopt oneline | sed 's/^issuer
 echo; echo "== Needed: a CA certificate with subject \"$need\""
 [ $# -gt 0 ] || exit 0
 echo; echo "== Candidates"
+# q NAME: single-quote a file name for copy-paste-safe commands (spaces, ').
+q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 # to_pem FILE OUT: writes PEM certificates to OUT and prints the detected format.
 to_pem() {
   if grep -qa -- "-----BEGIN CERTIFICATE-----" "$1"; then cp "$1" "$2"; echo pem
@@ -47,13 +49,16 @@ to_pem() {
   else : > "$2"; echo unknown; fi
 }
 for cand in "$@"; do
-  [ -r "$cand" ] || { echo "$cand: cannot read file"; continue; }
+  if [ ! -r "$cand" ]; then
+    echo "$cand: file not found (if the file name contains spaces, put it in quotes: \"My CA 4.pem\")"
+    continue
+  fi
   fmt=$(to_pem "$cand" "$work/cand.pem")
   case $fmt in
     pem) echo "$cand: format PEM (usable as ca_bundle as-is)" ;;
-    der) echo "$cand: format DER/binary (the CLI accepts it as-is; PEM copy: openssl x509 -inform der -in $cand -out ca.pem)" ;;
-    pkcs7-pem) echo "$cand: format PKCS#7 bundle; convert for the CLI: openssl pkcs7 -print_certs -in $cand -out ca.pem" ;;
-    pkcs7-der) echo "$cand: format PKCS#7 bundle (binary); convert for the CLI: openssl pkcs7 -inform der -print_certs -in $cand -out ca.pem" ;;
+    der) echo "$cand: format DER/binary (the CLI accepts it as-is; PEM copy: openssl x509 -inform der -in $(q "$cand") -out ca.pem)" ;;
+    pkcs7-pem) echo "$cand: format PKCS#7 bundle; convert for the CLI: openssl pkcs7 -print_certs -in $(q "$cand") -out ca.pem" ;;
+    pkcs7-der) echo "$cand: format PKCS#7 bundle (binary); convert for the CLI: openssl pkcs7 -inform der -print_certs -in $(q "$cand") -out ca.pem" ;;
     *) echo "$cand: not a certificate (neither PEM, DER nor PKCS#7)"; continue ;;
   esac
   # split multi-cert files so each certificate is reported separately
