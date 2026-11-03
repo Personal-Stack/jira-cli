@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-11-02. Branch: `claude/tender-bohr-rsigl2`.
+Last updated: 2026-11-03. Release: v0.1.0 (Apache-2.0).
 
 ## TL;DR
 

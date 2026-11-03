@@ -70,7 +70,7 @@ Update by re-running the installer with the new `--version`.
 Needs Docker and a clone of the repository; Go runs inside the image build.
 
 ```bash
-git clone -b claude/tender-bohr-rsigl2 https://github.com/Personal-Stack/jira-cli.git
+git clone https://github.com/Personal-Stack/jira-cli.git
 ```
 
 ```bash

@@ -14,7 +14,7 @@ is Docker.
 From a clone (builds `jira-cli:local`; Go runs inside the build container):
 
 ```bash
-git clone -b claude/tender-bohr-rsigl2 https://github.com/Personal-Stack/jira-cli.git
+git clone https://github.com/Personal-Stack/jira-cli.git
 ```
 
 ```bash

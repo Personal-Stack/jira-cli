@@ -8,6 +8,7 @@ OUT=${2:-dist}
 PLATFORMS=${PLATFORMS:-"linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"}
 cd "$(dirname "$0")/.."
 rm -rf "$OUT" && mkdir -p "$OUT"
+scripts/third-party-licenses.sh "$OUT/THIRD_PARTY_LICENSES"
 for p in $PLATFORMS; do
   os=${p%/*} arch=${p#*/}
   name="jira-cli_${VERSION#v}_${os}_${arch}"
@@ -16,8 +17,7 @@ for p in $PLATFORMS; do
   exe=jira; [ "$os" = windows ] && exe=jira.exe
   CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
     -ldflags "-s -w -X main.version=$VERSION" -o "$stage/$exe" ./cmd/jira
-  cp README.md "$stage/"
-  [ -f LICENSE ] && cp LICENSE "$stage/"
+  cp README.md LICENSE NOTICE "$OUT/THIRD_PARTY_LICENSES" "$stage/"
   if [ "$os" = windows ]; then
     (cd "$OUT" && zip -qr "$name.zip" "$name")
   else
@@ -29,5 +29,6 @@ for p in $PLATFORMS; do
   echo "built $name"
 done
 cp scripts/jira-docker.sh "$OUT/jira-docker.sh"   # Docker wrapper (install.sh --docker)
+rm -f "$OUT/THIRD_PARTY_LICENSES"
 (cd "$OUT" && sha256sum jira-cli_* jira-docker.sh > SHA256SUMS)
 echo "checksums: $OUT/SHA256SUMS"

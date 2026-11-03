@@ -116,3 +116,13 @@ docker run --rm \
 | Logging, tracing, CI artifacts | [docs/logging.md](docs/logging.md) |
 | Troubleshooting | [skills/jira/references/troubleshooting.md](skills/jira/references/troubleshooting.md) |
 | Progress, open items | [PROGRESS.md](PROGRESS.md) |
+
+## License
+
+Apache License 2.0, see [LICENSE](LICENSE). Copyright 2026 Bogdan Bogdanov.
+
+The Atlassian Jira REST API specification in `specs/official/` (and the
+command documentation derived from it in `generated/`) belongs to Atlassian
+and is not covered by this license; see [NOTICE](NOTICE). Release archives
+and the container image include the licenses of all bundled third-party code
+(`THIRD_PARTY_LICENSES`).

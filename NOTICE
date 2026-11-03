@@ -1,0 +1,22 @@
+jira-cli
+Copyright 2026 Bogdan Bogdanov
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party material
+--------------------
+
+1. Atlassian Jira Software Data Center REST API specification
+   specs/official/jira-datacenter-10.3.26.json is published by Atlassian and
+   remains subject to Atlassian's terms; it is NOT licensed under the Apache
+   License by this project. Command summaries, descriptions and parameter
+   documentation in generated/ are derived from it. "Atlassian" and "Jira"
+   are trademarks of Atlassian. This project is not affiliated with or
+   endorsed by Atlassian.
+
+2. Go modules and the Go standard library compiled into the jira binary are
+   licensed by their respective authors (Apache-2.0, BSD and MIT licenses).
+   Their license texts are in THIRD_PARTY_LICENSES, which is shipped with
+   every release archive and in the container image at
+   /usr/share/doc/jira-cli/THIRD_PARTY_LICENSES. Regenerate it with
+   scripts/third-party-licenses.sh.
