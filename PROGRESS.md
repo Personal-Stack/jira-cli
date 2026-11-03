@@ -111,6 +111,8 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 ### Docker Sandboxes (sbx)
 - [x] `scripts/sbx-setup.sh`: generates a local sbx kit (linux amd64/arm64 binary, agent skill, egress rule, proxy-managed `credential@1`, bash hook), `sbxenv.yaml` (read-only settings mount at `/etc/jira-cli`, env, binding) and settings (`config.yaml`, `bashrc`, created once). The PAT is an sbx secret; the sandbox only sees a sentinel. Options for a custom image (`--template`), agent kit, CA, `--kit-only`. Docs: `docs/sandbox.md`
 - [x] Verified here: the kit validates against the sandbox-kit-spec v3 JSON schemas (with negative tests); the overlay builds for amd64/arm64 with the right files and modes; the binary picks up the sentinel as `env:JIRA_CREDENTIAL_JIRA_PROD`, the generated config validates, the read-only guard exits 9; re-run keeps settings; refusals (foreign sbxenv.yaml, http, credentials in URL, settings inside the project)
+- [x] Confirmed by the user on a real sbx with a custom agent kit: the CLI and token injection work. Fixes from that run: no `additionalWorkspaces.target` (older sbx), explicit `--agent` for kits, skill as an OpenCode project skill (`.opencode/skills/jira`), `/usr/bin/jira` link because the agent's shell lacked `/usr/local/bin` on PATH
+- [x] Interactive setup (`make sbx`, or the script without options): asks for project, URL, agent kit/name, image, custom sandbox name, CA, read-only, skill, advanced; previous answers as defaults; tested with scripted answers (invalid input re-asked, `-` clears, re-run defaults)
 - [ ] Not run with a real `sbx` (none here): proxy header injection, `bash.bashrc` hook, built-in `opencode` agent name, `sandboxOptions.template`
 
 ### Phase 6 (partial)

@@ -10,7 +10,7 @@ machine**.
 
 | Piece | Where | What |
 |---|---|---|
-| Kit `jira-cli` (mixin) | `<project>/.sbx/jira-cli/` | `/usr/local/bin/jira` (linux amd64 + arm64), an egress rule for your Jira host, the credential, and a shell hook |
+| Kit `jira-cli` (mixin) | `<project>/.sbx/jira-cli/` | `/usr/local/bin/jira` (linux amd64 + arm64; linked as `/usr/bin/jira` at startup, because some images leave `/usr/local/bin` off `PATH`), an egress rule for your Jira host, the credential, and a shell hook |
 | Environment | `<project>/sbxenv.yaml` | the agent, the kit, your settings mounted read-only (at the same path as on the host), `JIRA_CONFIG` / `JIRA_NO_KEYRING` / `JIRA_READ_ONLY`, and the credential binding |
 | Skill | `<project>/.opencode/skills/jira/` | the agent skill, as an OpenCode project skill (`--no-skill` to skip). Re-runs refresh it unless you edited it |
 | Settings | `~/.config/jira-cli-sbx/` (host) | `config.yaml` and `bashrc`. Created once and never overwritten, so edit them freely |
@@ -24,27 +24,45 @@ This follows the kit spec's `credential@1` with `proxyManaged: true`.
 
 ## Set up
 
-From a clone of jira-cli. It builds with Go if available, or otherwise extracts
-the binary from the published image:
+From a clone of jira-cli, run the guided setup:
 
 ```bash
-scripts/sbx-setup.sh --project /Users/x/Projects/my-work --base-url https://jira.company.internal
+make sbx
 ```
 
-The script does the following:
+This is the same as `scripts/sbx-setup.sh` with no options. It asks for:
 
-1. Builds `jira` for linux/amd64 and linux/arm64 into the kit.
-2. Writes the kit, `sbxenv.yaml`, and (first run only) `config.yaml` and `bashrc`.
-3. Runs `sbx secret set jira` if that secret does not exist yet. sbx prompts for the PAT.
-4. Runs `sbx env plan`, which previews the setup and creates nothing.
+| Question | Notes |
+|---|---|
+| Project | The folder the agent works in. Mounted read/write; `sbxenv.yaml` goes there |
+| Jira base URL | `https://`, with the context path if any. Remembered in `config.yaml` |
+| Agent kit reference | Empty for a built-in agent, e.g. `opencode` |
+| Agent name | For a kit, the name sbx reports (`agent kit name "..."`) |
+| Sandbox image | Your configured image, e.g. from JFrog. Empty for the agent's default |
+| Custom sandbox name | Empty for sbx's default, `<agent>-<project folder>` |
+| Company CA file | Usually empty |
+| Read-only | Default yes |
+| Copy the skill | Into `<project>/.opencode/skills/jira`; default yes |
+| Advanced | sbx secret name, credential ref, settings folder, binary source |
 
-Then start the sandbox:
+It shows a summary and asks for confirmation before writing anything. Then:
+
+1. It builds `jira` for linux/amd64 and linux/arm64.
+2. It writes the files.
+3. It runs `sbx secret set jira` if that secret doesn't exist yet (sbx prompts for the PAT).
+4. It runs `sbx env plan` and, if you said so, `sbx env run`.
+
+Re-running it for the same project offers the previous answers as defaults.
+In each prompt, Enter keeps the value shown in brackets and `-` clears an
+optional one.
+
+Without a terminal, or for scripting, pass options instead:
 
 ```bash
-cd /Users/x/Projects/my-work && sbx env run
+scripts/sbx-setup.sh --project /Users/x/Projects/my-work --base-url https://jira.company.internal --agent devex-opencode --name jira-sbx
 ```
 
-Check it from the host:
+Check the result from the host:
 
 ```bash
 sbx env exec -- bash -lc 'jira doctor'
@@ -59,6 +77,7 @@ Expect `credentials` to show `env:JIRA_CREDENTIAL_JIRA_PROD` and `authentication
 | `--template IMAGE` | Your already configured image (e.g. from JFrog) instead of the agent's default (`sandboxOptions.template`) |
 | `--agent-kit REF` | Compose a published agent kit (e.g. `sbx/opencode:<tag>`) instead of the built-in `opencode` |
 | `--agent NAME` | The agent kit's name. If sbx says `agent "opencode" does not match agent kit name "X"`, re-run with `--agent X` |
+| `--name NAME` | Custom sandbox name (`name:` in `sbxenv.yaml`) |
 | `--ca-bundle FILE` | Company CA. Copied into the settings folder and referenced by its path there |
 | `--allow-writes` | Drop the read-only guard (default: `read_only: true` and `JIRA_READ_ONLY=1`) |
 | `--binary image` | Take the binary from `ghcr.io/personal-stack/jira-cli` (no Go needed) |

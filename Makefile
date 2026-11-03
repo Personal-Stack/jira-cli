@@ -3,7 +3,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 BIN     := bin/jira
 
-.PHONY: all spec-validate spec-update security smoke e2e e2e-boot dist install uninstall test-install generate verify-generated test test-race vet lint build docker clean
+.PHONY: all spec-validate spec-update security smoke e2e e2e-boot dist install uninstall test-install sbx generate verify-generated test test-race vet lint build docker clean
 
 all: verify-generated vet test build
 
@@ -59,6 +59,10 @@ install:
 
 uninstall:
 	scripts/install.sh --uninstall $(if $(PREFIX),--dir $(PREFIX)/bin,)
+
+## Set up a Docker Sandbox (sbx) with jira-cli for an agent; asks for everything.
+sbx:
+	scripts/sbx-setup.sh --interactive
 
 ## Installer tests in isolated HOMEs against a local mirror.
 test-install:
