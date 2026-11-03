@@ -113,6 +113,7 @@ Spec defects fixed by overlay: 8 duplicate operationIds, 2 conflicting path-temp
 - [x] Linux binary for the sandbox: `self` (linux), `go` (clone), `release` (GitHub release of this version, SHA-256 verified; tested against the real v0.1.0 arm64 asset), `image`, or `--binary-file`; every binary is checked to be ELF for the right architecture
 - [x] Tests: generator (validation, kit/env content parsed as YAML, settings kept, skill edits kept, release checksum and tamper rejection, ELF check), command (flags, interactive with re-asks and previous answers, declined writes nothing, `--dry-run` writes nothing, foreign `sbxenv.yaml` refused, missing secret without a terminal) with sbx stubbed; generated kit validates against the sandbox-kit-spec v3 schemas and its overlay builds
 - [x] Confirmed by the user on a real sbx with a custom agent kit (shell-script version): CLI, token injection and skill work. Fixes from those runs are in: no `additionalWorkspaces.target`, explicit agent name for kits, skill under `.opencode/skills`, `/usr/bin/jira` link
+- [x] Through the Docker wrapper: `setup-sbx` mounts the project and settings folder read-write (`--ca-bundle`/`--binary-file` read-only), uses the container's own linux binary, writes host paths, prints the host `sbx` steps (`JIRA_CLI_CONTAINER=1`). 5 new wrapper checks, 24/24 passing as root and as an unprivileged user
 - [ ] `jira setup-sbx` itself not yet run against a real sbx (same output as the script, plus the binary sources)
 
 ### Phase 6 (partial)

@@ -76,6 +76,22 @@ grep -qx -- "JIRA_CREDENTIAL_JIRA_PROD" "$WORK/args" && grep -qx HTTPS_PROXY "$W
 tail -4 "$WORK/args" | tr '\n' ' ' | grep -q "$IMAGE issue get ABC-1" && ok "CLI arguments passed unchanged after the image" || { ko "argv order"; cat "$WORK/args"; }
 grep -q -- "$HOME/project:$HOME/project:ro" "$WORK/args" && ok "current directory mounted read-only" || ko "cwd mount"
 
+# setup-sbx in the container: project and settings writable, binary = the
+# container's own (linux), host steps printed instead of running sbx.
+mkdir -p "$HOME/sbxproj"
+(cd "$HOME/sbxproj" && "$BIN/jira" setup-sbx --base-url https://jira.example.com --agent devex-opencode --name sbx-test < /dev/null) > "$WORK/o" 2> "$WORK/e"; rc=$?
+SBXSET="$HOME/.config/jira-cli-sbx"
+[ $rc = 0 ] && [ -f "$HOME/sbxproj/sbxenv.yaml" ] && [ -f "$HOME/sbxproj/.opencode/skills/jira/SKILL.md" ] && [ -f "$SBXSET/config.yaml" ] \
+  && ok "setup-sbx writes the project files and settings through the container" || { ko "setup-sbx (exit $rc)"; cat "$WORK/o" "$WORK/e"; }
+ls "$HOME/sbxproj/.sbx/jira-cli/bin/"jira-* > /dev/null 2>&1 && grep -q '"binary_source": "self"' "$WORK/o" \
+  && ok "setup-sbx uses the container's own linux binary" || { ko "setup-sbx binary"; cat "$WORK/o"; }
+grep -q "path: $SBXSET" "$HOME/sbxproj/sbxenv.yaml" && grep -q "JIRA_CONFIG: $SBXSET/config.yaml" "$HOME/sbxproj/sbxenv.yaml" \
+  && ok "setup-sbx writes host paths into sbxenv.yaml" || { ko "setup-sbx paths"; cat "$HOME/sbxproj/sbxenv.yaml"; }
+[ "$(stat -c %u "$HOME/sbxproj/sbxenv.yaml")" = "$(id -u)" ] && [ "$(stat -c %u "$SBXSET/config.yaml")" = "$(id -u)" ] \
+  && ok "setup-sbx files are owned by the user" || ko "setup-sbx ownership"
+grep -q "run these on the host" "$WORK/e" && grep -q "cd $HOME/sbxproj && sbx env run" "$WORK/e" \
+  && ok "setup-sbx prints the host steps (no sbx in the container)" || { ko "setup-sbx host steps"; cat "$WORK/e"; }
+
 j auth logout > "$WORK/o" 2>&1 && [ ! -e "$f" ] && ok "auth logout removes the token file" || { ko "logout"; cat "$WORK/o"; }
 
 if grep -rqF "$TOKEN" "$HOME/project" "$WORK/o" "$WORK/e" 2>/dev/null; then ko "token found in outputs/logs"; else ok "token absent from outputs and logs"; fi

@@ -193,6 +193,20 @@ func TestSetupSbxDryRunWritesNothing(t *testing.T) {
 	}
 }
 
+func TestSetupSbxInContainerPrintsHostSteps(t *testing.T) {
+	isolateHome(t)
+	project := t.TempDir()
+	t.Setenv("JIRA_CLI_CONTAINER", "1")
+	code, out, errOut, calls := runSbx(t, false, "", "", "--project", project, "--base-url", "https://jira.example.com")
+	if code != 0 || len(calls) != 0 {
+		t.Fatalf("exit %d calls %v", code, calls)
+	}
+	if !strings.Contains(errOut, "run these on the host") || !strings.Contains(errOut, "cd "+project+" && sbx env run") ||
+		!strings.Contains(out, "sbx secret set jira") {
+		t.Fatalf("stderr:\n%s\nstdout:\n%s", errOut, out)
+	}
+}
+
 func TestSetupSbxRefusesForeignEnvFile(t *testing.T) {
 	isolateHome(t)
 	project := t.TempDir()

@@ -274,7 +274,17 @@ func (a *App) runSetupSbx(ctx context.Context, f *sbxFlags, interactive, agentSe
 		"jira_host": plan.Host, "secret": plan.Service, "credential_env": plan.CredEnv, "notes": notes,
 	}
 	if _, err := sbxLookPath("sbx"); err != nil {
-		result["sbx"] = "not found: install Docker Sandboxes (https://docs.docker.com/ai/sandboxes/), then run 'sbx secret set " + plan.Service + "' and 'sbx env run' in " + plan.Project
+		next := []string{"sbx secret ls   # if " + plan.Service + " is missing: sbx secret set " + plan.Service, "cd " + plan.Project + " && sbx env run"}
+		if a.inContainer() {
+			result["sbx"] = "jira ran in a container: run the next steps on the host"
+			logf("\nDone. jira ran in a container, so run these on the host:")
+			for _, n := range next {
+				logf("  " + n)
+			}
+		} else {
+			result["sbx"] = "not found: install Docker Sandboxes (https://docs.docker.com/ai/sandboxes/), then run the next steps"
+		}
+		result["next"] = next
 		return output.Write(a.Out, result, format)
 	}
 	if !f.skipSecret {
@@ -305,6 +315,10 @@ func (a *App) runSetupSbx(ctx context.Context, f *sbxFlags, interactive, agentSe
 	}
 	return output.Write(a.Out, result, format)
 }
+
+// inContainer reports whether jira runs in the Docker wrapper's container,
+// where sbx is not available and only mounted host paths exist.
+func (a *App) inContainer() bool { return a.Getenv("JIRA_CLI_CONTAINER") == "1" }
 
 func absIfSet(p string) string {
 	if p == "" {
@@ -363,6 +377,9 @@ func (a *App) askSetupSbx(f *sbxFlags, agentSet bool) error {
 			break
 		}
 		fmt.Fprintln(a.Err, "  not a directory: "+o.Project)
+		if a.inContainer() {
+			fmt.Fprintln(a.Err, "  (jira runs in a container and only sees the current directory: cd to the project and re-run)")
+		}
 	}
 	if prev, ok := sbx.ReadPrevious(filepath.Join(o.Project, "sbxenv.yaml")); ok {
 		if !agentSet && prev.Agent != "" {

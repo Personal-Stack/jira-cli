@@ -71,6 +71,36 @@ sbx env exec -- bash -lc 'jira doctor'
 
 Expect `credentials` to show `env:JIRA_CREDENTIAL_JIRA_PROD` and `authentication` to be `ok`.
 
+### With the Docker wrapper (`install.sh --docker`)
+
+`jira setup-sbx` works through the wrapper too. The container only sees what
+the wrapper mounts, so:
+
+1. **Run it from the project folder.** The wrapper mounts the current folder
+   (or `--project`) and the settings folder read-write for `setup-sbx`. In the
+   prompts, keep the suggested project: other folders don't exist in the container.
+2. **The binary comes from the container itself.** It is already Linux, on your
+   machine's architecture, so no Go or download is needed.
+3. **sbx is not in the container.** When it finishes, it prints the host
+   steps. Run them on your machine:
+
+```bash
+sbx secret ls
+```
+
+If `jira` is not listed, add it (sbx prompts for the PAT):
+
+```bash
+sbx secret set jira
+```
+
+```bash
+cd /Users/x/Projects/my-work && sbx env run
+```
+
+A wrapper and image from before this command don't have `setup-sbx`. Update
+both from a clone with `git pull && sh scripts/install.sh --docker`.
+
 ### Options you will likely need
 
 | Option | Use |

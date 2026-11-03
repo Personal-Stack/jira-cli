@@ -7,6 +7,8 @@
 #     so paths in config.yaml (ca_bundle, client_cert) work unchanged;
 #   - the current directory mounted read-only at the same path, so
 #     `--file issue.json` works;
+#   - for `jira setup-sbx`: the project (current directory or --project) and
+#     the settings folder read-write, --ca-bundle / --binary-file read-only;
 #   - credentials stored as 0600 files in ~/.config/jira-cli/credentials
 #     (JIRA_CREDENTIAL_STORE=file), because containers have no OS keyring;
 #   - your uid/gid, so files it writes are yours;
@@ -77,6 +79,27 @@ for d in $LOG_DIRS; do [ -n "$d" ] && rw "$d"; done
 IFS=$OLDIFS
 if [ -n "${JIRA_CONFIG:-}" ]; then ro "$(dirname "$JIRA_CONFIG")"; fi
 if [ -n "${JIRA_CREDENTIAL_FILE:-}" ]; then ro "$JIRA_CREDENTIAL_FILE"; fi
+# `jira setup-sbx` writes into the project and the settings folder; sbx itself
+# runs on the host afterwards (the command prints those steps).
+if [ "${2:-}" = setup-sbx ]; then   # $1 is the image (set above)
+  sbx_project="$PWD" sbx_settings="$CFG_HOME/jira-cli-sbx" prev=""
+  for a in "$@"; do
+    case "$prev" in
+      --project) sbx_project="$a" ;;
+      --settings) sbx_settings="$a" ;;
+      --ca-bundle|--binary-file) ro "$a" ;;
+    esac
+    case "$a" in
+      --project=*) sbx_project="${a#--project=}" ;;
+      --settings=*) sbx_settings="${a#--settings=}" ;;
+      --ca-bundle=*|--binary-file=*) ro "${a#*=}" ;;
+    esac
+    prev="$a"
+  done
+  [ -d "$sbx_project" ] && rw "$sbx_project"
+  rw "$sbx_settings"
+  set -- -e JIRA_CLI_CONTAINER=1 "$@"
+fi
 WORKDIR=""
 if [ "${JIRA_DOCKER_MOUNT_CWD:-1}" != 0 ] && [ "$PWD" != / ]; then ro "$PWD"; WORKDIR="$PWD"; fi
 for m in ${JIRA_DOCKER_MOUNTS:-}; do ro "$m"; done

@@ -169,3 +169,9 @@ container), and reference it by absolute path in `tls.ca_bundle`.
 | Against real Jira 10.3 (e2e container): default network fails at TCP (`localhost` = container); with `JIRA_DOCKER_NETWORK=host` config/DNS/TCP/TLS pass with the CA from the host path | as expected |
 | Multi-arch image (`linux/amd64`, `linux/arm64`) via cross-compilation | built; both binaries checked |
 | macOS / Windows Docker Desktop | **not tested** |
+
+## Docker Sandboxes
+
+`jira setup-sbx` works through the wrapper: it mounts the project and the
+settings folder read-write and prints the `sbx` steps to run on the host. See
+[sandbox.md](sandbox.md#with-the-docker-wrapper-installsh---docker).
