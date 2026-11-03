@@ -121,7 +121,7 @@ an error. sbx asks again only if those change.
 | You change | Then |
 |---|---|
 | `~/.config/jira-cli-sbx/config.yaml` or `bashrc` | Nothing: it is a live mount |
-| The jira-cli version | Re-run `jira setup-sbx` (one confirmation), then `sbx env rm && sbx env run` |
+| The jira-cli version | Re-run `jira setup-sbx` (one confirmation), then `sbx env rm; sbx env run` (`env rm` says "not found" when there is no sandbox yet; that's fine) |
 | The skill | Edit `.opencode/skills/jira`; re-runs keep your edits (`--force` replaces them) |
 | The token | `sbx secret set jira` |
 
@@ -142,7 +142,12 @@ sbx diagnose
 ```
 
 A sandbox with the same name from an earlier `sbx run` collides with the
-environment; remove it with `sbx rm NAME`.
+environment; remove it with `sbx rm NAME`. `sbx ls` also shows sandboxes left
+under an old name (e.g. from before a re-run changed the name); remove those
+with `sbx rm NAME` as well.
+
+`sbx env rm` answering `sandbox '...' not found` only means this
+environment's sandbox does not exist (yet): nothing to remove.
 
 ## Verification status
 
