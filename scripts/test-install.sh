@@ -27,6 +27,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Host platform, mapped like install.sh does, so scenarios use the archive
+# this machine can run (CI passes archives for every platform).
+HOST_OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+case "$(uname -m)" in x86_64|amd64) HOST_ARCH=amd64 ;; aarch64|arm64) HOST_ARCH=arm64 ;; *) HOST_ARCH=$(uname -m) ;; esac
 DIST=${1:-}
 if [ -z "$DIST" ]; then
   DIST="$WORK/dist"
@@ -100,8 +104,27 @@ run --base-url "$BASE" --no-modify-path && [ "$(blocks "$HOME/.bashrc")" = 0 ] &
 
 echo "== offline archive"
 fresh_home bash
-ARCH=$(ls "$MIRROR/$VERSION"/jira-cli_*.tar.gz | head -n1)
+ARCH="$MIRROR/$VERSION/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}.tar.gz"
 run --archive "$ARCH" && grep -q "sha256 verified" "$WORK/out" && ok "archive install verified via adjacent SHA256SUMS" || { ko "archive"; cat "$WORK/out"; }
+
+echo "== archive for another platform"
+fresh_home bash
+run --archive "$ARCH" > /dev/null 2>&1   # a working installation to protect
+other_os=linux; [ "$HOST_OS" = linux ] && other_os=darwin
+OTHER="$WORK/jira-cli_${VERSION#v}_${other_os}_${HOST_ARCH}.tar.gz"
+cp "$ARCH" "$OTHER"   # name decides the platform check; content is irrelevant here
+if run --archive "$OTHER"; then ko "wrong-platform archive accepted"
+else grep -q "is built for ${other_os}/${HOST_ARCH}, but this machine is ${HOST_OS}/${HOST_ARCH}" "$WORK/out" && ok "wrong-platform archive refused with a clear message" || { ko "wrong message"; cat "$WORK/out"; }; fi
+"$HOME/.local/bin/jira" --version > /dev/null 2>&1 && ok "existing installation left working" || ko "existing installation damaged"
+# Right name, broken binary (e.g. corrupted download without SHA256SUMS):
+mkdir -p "$WORK/broken/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}" "$WORK/brokenpkg"
+printf 'not a program\n' > "$WORK/broken/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}/jira"; chmod +x "$WORK/broken/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}/jira"
+tar -czf "$WORK/brokenpkg/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}.tar.gz" -C "$WORK/broken" "jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}"
+if run --archive "$WORK/brokenpkg/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}.tar.gz"; then ko "non-running binary installed"
+else grep -q "does not run on this machine" "$WORK/out" && ok "non-running binary refused before replacing anything" || { ko "wrong message"; cat "$WORK/out"; }; fi
+"$HOME/.local/bin/jira" --version > /dev/null 2>&1 && ok "existing installation still working" || ko "existing installation replaced by a broken binary"
+staged=$(find "$HOME/.local/bin" -maxdepth 1 -name '.jira.tmp*' | head -n1)
+[ -z "$staged" ] && ok "no staged temp file left behind" || ko "staged temp file left behind: $staged"
 
 echo "== integrity and transport failures"
 fresh_home bash
@@ -109,7 +132,7 @@ cp -r "$MIRROR/$VERSION" "$MIRROR/v9.9.9"
 for f in "$MIRROR/v9.9.9"/jira-cli_*; do mv "$f" "${f/$VERSION/v9.9.9}" 2>/dev/null || true; done
 for f in "$MIRROR/v9.9.9"/jira-cli_*; do n=$(basename "$f"); mv "$f" "$MIRROR/v9.9.9/${n/${VERSION#v}/9.9.9}"; done
 sed "s/${VERSION#v}/9.9.9/" "$MIRROR/$VERSION/SHA256SUMS" > "$MIRROR/v9.9.9/SHA256SUMS"
-printf 'tampered' >> "$(ls "$MIRROR/v9.9.9"/jira-cli_*.tar.gz | head -n1)"
+for f in "$MIRROR/v9.9.9"/jira-cli_*; do printf 'tampered' >> "$f"; done   # every platform's archive
 if run --base-url "$BASE" --version v9.9.9; then ko "tampered archive accepted"; else grep -q "checksum mismatch" "$WORK/out" && ok "tampered archive rejected" || { ko "wrong failure"; cat "$WORK/out"; }; fi
 [ ! -e "$HOME/.local/bin/jira" ] && ok "nothing installed after checksum failure" || ko "binary installed despite mismatch"
 if run --base-url "http://example.com/mirror" --version "$VERSION"; then ko "plain http accepted"; else grep -q "refusing non-HTTPS" "$WORK/out" && ok "non-HTTPS mirror refused" || { ko "wrong failure"; cat "$WORK/out"; }; fi

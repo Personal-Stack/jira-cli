@@ -315,6 +315,13 @@ else
   if [ -n "$ARCHIVE" ]; then
     [ -f "$ARCHIVE" ] || die "archive not found: $ARCHIVE"
     asset=$(basename "$ARCHIVE")
+    # Refuse an archive built for another platform before touching anything.
+    case "$asset" in
+      jira-cli_*_"${os}_${arch}".tar.gz) ;;
+      jira-cli_*_*_*.tar.gz|jira-cli_*_*_*.zip)
+        want=$(printf '%s' "$asset" | sed -E 's/^jira-cli_.*_([a-z]+)_([a-z0-9]+)\.(tar\.gz|zip)$/\1\/\2/')
+        die "$asset is built for $want, but this machine is $os/$arch; download jira-cli_<version>_${os}_${arch}.tar.gz" ;;
+    esac
     cp "$ARCHIVE" "$TMP/$asset"
     sums="$(dirname "$ARCHIVE")/SHA256SUMS"
     if [ -f "$sums" ]; then verify "$TMP/$asset" "$sums"; else warn "no SHA256SUMS next to the archive; integrity not verified"; fi
@@ -339,16 +346,22 @@ fi
 
 mkdir -p "$INSTALL_DIR" 2>/dev/null || die "cannot create $INSTALL_DIR (use --dir or sudo)"
 [ -w "$INSTALL_DIR" ] || die "$INSTALL_DIR is not writable (use --dir or run with sudo)"
-cp "$BIN_SRC" "$INSTALL_DIR/.$BIN_NAME.tmp.$$"
-chmod 755 "$INSTALL_DIR/.$BIN_NAME.tmp.$$"
-mv -f "$INSTALL_DIR/.$BIN_NAME.tmp.$$" "$TARGET"   # atomic replace
+STAGED="$INSTALL_DIR/.$BIN_NAME.tmp.$$"
+cp "$BIN_SRC" "$STAGED"
+chmod 755 "$STAGED"
 # macOS: browser downloads carry com.apple.quarantine, which tar copies to the
 # extracted binary; Gatekeeper then refuses to run the unsigned binary. The
 # archive's SHA-256 was verified above, so the flag is removed.
 if [ "$os" = darwin ] && [ "$DOCKER" = 0 ] && command -v xattr >/dev/null 2>&1; then
-  xattr -d com.apple.quarantine "$TARGET" 2>/dev/null || true
+  xattr -d com.apple.quarantine "$STAGED" 2>/dev/null || true
 fi
-installed=$("$TARGET" --version 2>/dev/null) || die "installed binary does not run: $TARGET"
+# Run the new binary BEFORE replacing the installed one, so a broken or
+# wrong-platform binary never replaces a working installation.
+if ! installed=$("$STAGED" --version 2>/dev/null); then
+  rm -f "$STAGED"
+  die "the new binary does not run on this machine ($os/$arch); the existing installation (if any) was left unchanged"
+fi
+mv -f "$STAGED" "$TARGET"   # atomic replace
 if [ "$DOCKER" = 1 ]; then
   say "Installed $installed (Docker image $IMAGE) -> $TARGET"
   info "credentials: \${XDG_CONFIG_HOME:-~/.config}/jira-cli/credentials (0600 files; containers have no keyring)"
