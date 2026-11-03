@@ -393,10 +393,13 @@ func sbxNextSteps(p *sbx.Plan, secretKnown, running bool) []sbxStep {
 		steps = append(steps, sbxStep{"Merge the kit, the settings mount, the env and the binding into " + p.EnvFile + " (docs/sandbox.md), then start it:",
 			[]string{cd + "sbx env run"}})
 	} else if !running {
-		what := "Start the sandbox (the first start builds the kit):"
+		name := ""
 		if p.Name != "" {
-			what = "Start the sandbox " + p.Name + " (the first start builds the kit):"
+			name = " " + p.Name
 		}
+		what := "Start the sandbox" + name + ". The first start builds the kit, and sbx asks you to approve what the" +
+			" jira-cli kit needs (it records the approval and asks again only if that changes): egress to " +
+			p.Host + ", the sbx secret " + p.Service + " injected for that host, and a read-only mount of " + p.Settings + ":"
 		steps = append(steps, sbxStep{what, []string{cd + "sbx env run"}})
 	}
 	steps = append(steps,

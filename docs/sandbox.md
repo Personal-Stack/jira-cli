@@ -167,6 +167,21 @@ registries:
     secret: {command: "security find-generic-password -s jfrog -w"}
 ```
 
+## First start: approvals
+
+On the first `sbx env run`, sbx stops and asks you to approve the new
+permissions the environment requests. Messages such as "3 need approval" or
+"present, not recorded as applied, needs your approval" are that check, not
+an error. From the jira-cli kit:
+
+1. egress to your Jira host;
+2. the sbx secret (`jira`) injected as `Authorization: Bearer …` for that host;
+3. the read-only mount of the settings folder.
+
+Approve them. sbx records the approval and only asks again when the
+requested permissions change, for example another Jira host, another
+secret name, or a new project.
+
 ## Making changes
 
 | You change | Then |
