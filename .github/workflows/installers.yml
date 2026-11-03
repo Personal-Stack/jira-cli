@@ -120,7 +120,14 @@ jobs:
           $mirror = Join-Path $PWD 'mirror'
           New-Item -ItemType Directory -Force (Join-Path $mirror $env:TEST_VERSION) | Out-Null
           Copy-Item dist/* (Join-Path $mirror $env:TEST_VERSION)
-          Set-Content -NoNewline (Join-Path $mirror 'LATEST') $env:TEST_VERSION
+          # Write LATEST with .NET (no cmdlet parameter binding involved) and
+          # assert it immediately: a previous Set-Content left no file.
+          $latest = Join-Path $mirror 'LATEST'
+          [IO.File]::WriteAllText($latest, $env:TEST_VERSION)
+          if (-not (Test-Path -LiteralPath $latest) -or ([IO.File]::ReadAllText($latest) -ne $env:TEST_VERSION)) {
+            throw "could not write $latest"
+          }
+          Write-Host "LATEST = $([IO.File]::ReadAllText($latest)) ($latest)"
           $log = Join-Path $env:RUNNER_TEMP 'mirror-http.log'
           Start-Process python -ArgumentList '-m','http.server','8765','--bind','127.0.0.1','--directory',$mirror `
             -WorkingDirectory $mirror -RedirectStandardError $log -WindowStyle Hidden
@@ -153,12 +160,15 @@ jobs:
           if ($n -ne 1) { throw "PATH entry count: $n" }
       - name: Tampered archive is rejected
         run: |
-          New-Item -ItemType Directory -Force mirror/v9.9.9 | Out-Null
-          $src = Get-ChildItem mirror/$env:TEST_VERSION/*windows_amd64.zip
-          $dst = "mirror/v9.9.9/jira-cli_9.9.9_windows_amd64.zip"
-          Copy-Item $src $dst
-          Add-Content $dst 'tampered'
-          (Get-Content mirror/$env:TEST_VERSION/SHA256SUMS) -replace $env:TEST_VERSION.TrimStart('v'), '9.9.9' | Set-Content mirror/v9.9.9/SHA256SUMS
+          $mirror = Join-Path $PWD 'mirror'
+          $v9 = Join-Path $mirror 'v9.9.9'
+          New-Item -ItemType Directory -Force $v9 | Out-Null
+          $src = Get-ChildItem (Join-Path $mirror "$env:TEST_VERSION/*windows_amd64.zip")
+          $dst = Join-Path $v9 'jira-cli_9.9.9_windows_amd64.zip'
+          Copy-Item $src.FullName $dst
+          [IO.File]::AppendAllText($dst, 'tampered')
+          $sums = [IO.File]::ReadAllText((Join-Path $mirror "$env:TEST_VERSION/SHA256SUMS")) -replace [regex]::Escape($env:TEST_VERSION.TrimStart('v')), '9.9.9'
+          [IO.File]::WriteAllText((Join-Path $v9 'SHA256SUMS'), $sums)
           $p = Start-Process ${{ matrix.shell }} -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/install.ps1','-BaseUrl','http://127.0.0.1:8765','-Version','v9.9.9','-InstallDir',"$env:RUNNER_TEMP\tamper" -Wait -PassThru -NoNewWindow
           if ($p.ExitCode -eq 0) { throw 'tampered archive was accepted' }
           if (Test-Path "$env:RUNNER_TEMP\tamper\jira.exe") { throw 'binary installed despite checksum mismatch' }
