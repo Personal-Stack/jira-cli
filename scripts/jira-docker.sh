@@ -164,6 +164,15 @@ sbx_host_checks() {
   fi
   [ -f "$sbx_project/sbxenv.yaml" ] || return 0
   if out=$(cd "$sbx_project" && sbx env plan 2>&1); then echo "  ✓ sbx accepts the environment" >&2; return 0; fi
+  # An agent kit from ~/.sbxenv.yaml: sbx names the agent it requires.
+  name=$(printf '%s\n' "$out" | sed -n 's/.*agent kit name "\([A-Za-z0-9._-]*\)".*/\1/p' | head -n 1)
+  if [ -n "$name" ]; then
+    echo "  ! sbx: the agent kit in this environment is \"$name\": using it" >&2
+    for f in "$sbx_project/sbxenv.yaml" "$sbx_settings/setup.yaml"; do
+      if [ -f "$f" ]; then sed "s/^agent: .*/agent: $name/" "$f" > "$f.tmp" && mv "$f.tmp" "$f"; fi
+    done
+    if out=$(cd "$sbx_project" && sbx env plan 2>&1); then echo "  ✓ sbx accepts the environment" >&2; return 0; fi
+  fi
   echo "  ! sbx rejected the environment:" >&2
   printf '%s\n' "$out" | sed 's/^/    /' >&2
   return 1

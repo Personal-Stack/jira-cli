@@ -13,7 +13,7 @@
 - Stops at the first problem, and nothing is written before everything has passed:
   - checks first: sbx installed, a Linux binary, existing secrets;
   - each answer checked when given, including Jira reachability;
-  - `sbx env plan` on a scratch copy;
+  - `sbx env plan` on a scratch copy (when an agent kit from `~/.sbxenv.yaml` requires another agent name, sbx's name is used and saved);
   - the PAT secret settled (stored via sbx if needed).
 - Answers are saved; a known setup takes one confirmation. The Linux binary is this `jira`, a build from a clone, or the matching GitHub release (SHA-256 verified).
 - Docker wrapper:

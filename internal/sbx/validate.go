@@ -42,6 +42,18 @@ func ValidSecretName(v string) error {
 	return nil
 }
 
+var agentKitNameRe = regexp.MustCompile(`agent kit name "([^"]+)"`)
+
+// AgentNameFromSbx extracts the agent name sbx requires from its error
+// `agent "x" does not match agent kit name "y"`.
+func AgentNameFromSbx(out []byte) (string, bool) {
+	m := agentKitNameRe.FindSubmatch(out)
+	if m == nil || ValidAgent(string(m[1])) != nil {
+		return "", false
+	}
+	return string(m[1]), true
+}
+
 // ValidAgent checks the agent: an sbx agent's name, not an image or kit
 // reference (those would end up as kits in sbxenv.yaml).
 func ValidAgent(v string) error {

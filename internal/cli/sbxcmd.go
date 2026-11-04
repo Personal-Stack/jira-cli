@@ -381,24 +381,24 @@ func (s *sbxSetup) summary() {
 }
 
 // validate lets sbx check the complete environment in a scratch folder
-// before the project is touched.
+// before the project is touched. sbx merges ~/.sbxenv.yaml in, which may
+// bring an agent kit; when sbx names it, that name becomes the agent and
+// the check runs once more.
 func (s *sbxSetup) validate(ctx context.Context, plan *sbx.Plan) error {
 	s.ui.section("Checking with sbx")
 	if err := os.MkdirAll(plan.Settings, 0o755); err != nil { // the environment mounts it
 		return err
 	}
-	dir := filepath.Join(s.tmp, "plan")
-	// Everything in the scratch folder: nothing of the project is touched.
-	scratch := *plan
-	scratch.Project, scratch.PrevKitPath = dir, ""
-	scratch.KitDir, scratch.EnvFile = filepath.Join(dir, filepath.FromSlash(plan.KitPath)), filepath.Join(dir, "sbxenv.yaml")
-	if err := scratch.WriteKit(s.bin, s.a.Version); err != nil {
-		return err
+	out, err := s.plan(ctx, plan, "plan")
+	if name, ok := sbx.AgentNameFromSbx(out); err != nil && ok && name != plan.Agent {
+		s.ui.warn(fmt.Sprintf("sbx: the agent kit in this environment is %q (not %q): using it", name, plan.Agent))
+		plan.Agent, s.o().Agent = name, name
+		if s.nameDefaulted {
+			s.refreshName()
+			plan.Name = s.o().Name
+		}
+		out, err = s.plan(ctx, plan, "plan-2")
 	}
-	if err := scratch.WriteEnvFile(); err != nil {
-		return err
-	}
-	out, err := sbxRun(ctx, dir, false, "env", "plan")
 	if err == nil {
 		s.ui.ok("sbx accepts the environment (agent " + plan.Agent + ")")
 		return nil
@@ -410,6 +410,22 @@ func (s *sbxSetup) validate(ctx context.Context, plan *sbx.Plan) error {
 	first, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
 	return s.fail(clierr.LayerConfig, "sbx_rejected", errors.New("sbx rejected the environment: "+first),
 		"fix what it refers to (e.g. the agent's name) and run jira setup-sbx again; your answers are offered as defaults")
+}
+
+// plan writes plan's environment to the scratch folder sub and runs
+// `sbx env plan` there; nothing of the project is touched.
+func (s *sbxSetup) plan(ctx context.Context, plan *sbx.Plan, sub string) ([]byte, error) {
+	dir := filepath.Join(s.tmp, sub)
+	scratch := *plan
+	scratch.Project, scratch.PrevKitPath = dir, ""
+	scratch.KitDir, scratch.EnvFile = filepath.Join(dir, filepath.FromSlash(plan.KitPath)), filepath.Join(dir, "sbxenv.yaml")
+	if err := scratch.WriteKit(s.bin, s.a.Version); err != nil {
+		return nil, err
+	}
+	if err := scratch.WriteEnvFile(); err != nil {
+		return nil, err
+	}
+	return sbxRun(ctx, dir, false, "env", "plan")
 }
 
 // ensureSecret makes sure the PAT is an sbx secret; sbx prompts for it, so

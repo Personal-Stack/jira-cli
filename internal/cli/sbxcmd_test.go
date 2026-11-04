@@ -26,6 +26,7 @@ type fakeSbx struct {
 	missing   bool   // sbx not installed
 	secrets   string // `sbx secret ls` output
 	reject    string // env plan fails with this output
+	baseKit   string // an agent kit from ~/.sbxenv.yaml: env plan requires it as the agent
 	unreach   string // host the Jira reachability probe cannot reach
 	calls     []sbxCall
 	planDirs  []string
@@ -70,6 +71,10 @@ func runSbx(t *testing.T, fs *fakeSbx, stdin string, args ...string) (int, strin
 			if fs.reject != "" {
 				return []byte(fs.reject), errors.New("exit status 1")
 			}
+			env, _ := os.ReadFile(filepath.Join(dir, "sbxenv.yaml"))
+			if a := agentOf(string(env)); fs.baseKit != "" && a != fs.baseKit {
+				return []byte(`error: agent "` + a + `" does not match agent kit name "` + fs.baseKit + `" (set agent: "` + fs.baseKit + `" in sbxenv.yaml)` + "\n"), errors.New("exit status 1")
+			}
 			return []byte("plan ok\n"), nil
 		case "secret set jira":
 			fs.setSecret = true
@@ -89,6 +94,15 @@ func runSbx(t *testing.T, fs *fakeSbx, stdin string, args ...string) (int, strin
 		}
 	})
 	return code, out.String(), errb.String()
+}
+
+func agentOf(env string) string {
+	for _, l := range strings.Split(env, "\n") {
+		if a, ok := strings.CutPrefix(l, "agent: "); ok {
+			return a
+		}
+	}
+	return ""
 }
 
 func empty(t *testing.T, dir string) {
@@ -270,6 +284,27 @@ func TestSetupSbxDropsOldKitsAndMovesTheKit(t *testing.T) {
 	if code, _, errOut := runSbx(t, fs, "", "--project", project, "--agent", "company.jfrog.io/team/opencode-sbx:1.2"); code == 0 ||
 		!strings.Contains(errOut, "looks like an image or kit reference") {
 		t.Errorf("an image as --agent: exit %d", code)
+	}
+}
+
+// The case from real use: ~/.sbxenv.yaml brings the agent kit
+// "devex-opencode", so sbx rejects any other agent name. setup-sbx takes
+// the name sbx gives, saves it, and the next project starts with it.
+func TestSetupSbxTakesAgentNameFromSbx(t *testing.T) {
+	isolateHome(t)
+	project, next := t.TempDir(), t.TempDir()
+	fs := &fakeSbx{secrets: "jira apiKey\n", baseKit: "devex-opencode"}
+	code, _, errOut := runSbx(t, fs, "", "--project", project, "--base-url", "https://jira.example.com", "--agent", "opencode-xxxx")
+	if code != 0 || !strings.Contains(errOut, `the agent kit in this environment is "devex-opencode"`) || len(fs.planDirs) != 2 {
+		t.Fatalf("exit %d, plans %d:\n%s", code, len(fs.planDirs), errOut)
+	}
+	env, _ := os.ReadFile(filepath.Join(project, "sbxenv.yaml"))
+	if agentOf(string(env)) != "devex-opencode" || !strings.Contains(string(env), "name: devex-opencode-") {
+		t.Fatalf("sbxenv.yaml:\n%s", env)
+	}
+	fs.planDirs = nil
+	if code, _, _ := runSbx(t, fs, "", "--project", next); code != 0 || len(fs.planDirs) != 1 {
+		t.Fatalf("next project: exit %d, plans %d", code, len(fs.planDirs))
 	}
 }
 

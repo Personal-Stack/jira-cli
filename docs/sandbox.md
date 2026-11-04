@@ -60,7 +60,10 @@ and nothing is written before everything has passed:
    Jira host accepts a connection, and names and references are valid. A wrong
    answer is asked again.
 3. **sbx checks the complete environment** with `sbx env plan` on a scratch
-   copy, before your project is touched. An sbx error is shown as is.
+   copy, before your project is touched. sbx merges your `~/.sbxenv.yaml`
+   in, and that file may bring an agent kit. If sbx then reports that the agent must be the kit's name
+   (`agent kit name "..."`), that name is used, saved and checked again.
+   Any other sbx error is shown as is.
 4. **The PAT:** the sbx secret exists, or sbx stores it now. sbx prompts for
    it, so it never passes through jira-cli.
 5. **Only then** the files are written:
