@@ -35,19 +35,27 @@ first queries, production checklist.
 Linux / macOS (installs to `~/.local/bin` and adds it to `PATH`):
 
 ```bash
-gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber && sh /tmp/install.sh
+curl -fsSL https://github.com/Personal-Stack/jira-cli/releases/latest/download/install.sh | sh
 ```
+
+Then one guided command sets up the configuration, stores the token and checks
+the connection:
+
+```bash
+jiracli config setup
+```
+
+Upgrade later with `jiracli upgrade` (`jiracli upgrade --check` only looks).
 
 Windows: run the same `install.sh` from **Git Bash** (installs `jiracli.exe` to
 `~/.local/bin`; the PATH entry applies to Git Bash, see
 [docs/installation.md](docs/installation.md#windows-git-bash)).
 
 From a clone: `make install` (needs Go 1.27).
-Only Docker on the machine: `sh scripts/install.sh --docker` installs a `jiracli`
-wrapper that runs the CLI image ([docs/docker.md](docs/docker.md)).
-The repository is private, so downloads use the GitHub CLI or `GITHUB_TOKEN`;
-mirrors, offline archives and uninstall are covered in
-[docs/installation.md](docs/installation.md).
+Only Docker on the machine: `curl -fsSL …/install.sh | sh -s -- --docker`
+installs a `jiracli` wrapper that runs the CLI image ([docs/docker.md](docs/docker.md)).
+Mirrors, offline archives, reading the script before running it, and
+uninstall are covered in [docs/installation.md](docs/installation.md).
 
 ## Configure
 

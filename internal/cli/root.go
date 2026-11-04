@@ -67,7 +67,7 @@ Start with:
 		return nil
 	}
 
-	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd(), a.certsCmd(), a.setupSbxCmd()} {
+	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd(), a.certsCmd(), a.setupSbxCmd(), a.upgradeCmd()} {
 		c.GroupID = "core"
 		root.AddCommand(c)
 	}
@@ -132,6 +132,13 @@ func (a *App) Execute(ctx context.Context, args []string) int {
 		}
 		return e.ExitCode()
 	}
+	if e.Code == "credential_unavailable" && a.IsTerminal() && !a.dryRun && !isCredentialCommand(args) {
+		a.printError(e)
+		if a.offerLogin(ctx) {
+			return 0
+		}
+		return e.ExitCode()
+	}
 	if e.Layer == clierr.LayerInternal && isCobraUsage(err) {
 		e = clierr.New(clierr.LayerUsage, "invalid_usage", err.Error())
 	}
@@ -151,6 +158,17 @@ func isSetupCommand(args []string) bool {
 		}
 	}
 	return len(words) > 0 && (words[0] == "setup-sbx" || len(words) > 1 && words[0] == "config" && words[1] == "setup")
+}
+
+// isCredentialCommand reports whether args manage credentials themselves
+// (no offer to store a token then).
+func isCredentialCommand(args []string) bool {
+	for _, a := range args {
+		if a == "auth" {
+			return true
+		}
+	}
+	return false
 }
 
 func isCobraUsage(err error) bool {

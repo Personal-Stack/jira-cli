@@ -79,6 +79,14 @@ run --base-url "$BASE" --uninstall && ok "uninstall exits 0" || { ko "uninstall 
 [ ! -e "$HOME/.local/bin/jiracli" ] && ok "uninstall removes binary" || ko "binary left"
 cmp -s "$HOME/.bashrc" "$HOME/.bashrc.orig" && ok "uninstall restores .bashrc exactly" || { ko ".bashrc differs"; diff "$HOME/.bashrc.orig" "$HOME/.bashrc"; }
 
+echo "== piped (curl ... | sh -s -- ...)"
+fresh_home bash
+run_piped() { (cd "$(dirname "$INSTALL")" && env -u GITHUB_TOKEN PATH="$PATH:/nonexistent-gh" "$SH" -s -- "$@" < "$INSTALL" > "$WORK/out" 2>&1); }
+if run_piped --base-url "$BASE"; then ok "piped install"; else ko "piped install"; cat "$WORK/out"; fi
+[ -x "$HOME/.local/bin/jiracli" ] && ok "piped: binary installed" || ko "piped: binary missing"
+# Run from inside the clone, piped: the clone must not be used.
+if run_piped --from-source; then ko "piped --from-source used the current directory"; else grep -q "needs a clone" "$WORK/out" && ok "piped: the current directory is not taken for a clone" || { ko "piped --from-source message"; cat "$WORK/out"; }; fi
+
 echo "== upgrade from 'jira' (renamed in v0.3.0)"
 fresh_home bash
 data="$HOME/.local/share"; mkdir -p "$HOME/.local/bin" "$data/bash-completion/completions"

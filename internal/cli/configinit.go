@@ -188,11 +188,17 @@ func (a *App) runConfigInit(ctx context.Context, f *configInitFlags, guided bool
 	ui.section("Done")
 	ui.ok(map[bool]string{true: "updated", false: "added"}[existed] + " instance " + u.Name + " in " + path)
 	next := []string{"jiracli auth login" + map[bool]string{true: "", false: " --instance " + u.Name}[u.MakeDefault], "jiracli doctor" + map[bool]string{true: "", false: " --instance " + u.Name}[u.MakeDefault]}
-	ui.section("Next steps")
-	ui.println("  " + ui.cyan("1.") + " Store the token (a Personal Access Token from your Jira profile), unless it is already stored:")
-	ui.println("       " + ui.cmd(next[0]))
-	ui.println("  " + ui.cyan("2.") + " Check the connection, TLS and the token:")
-	ui.println("       " + ui.cmd(next[1]))
+	if guided {
+		if err := a.finishSetup(ctx, ui, u.Name); err != nil {
+			return err
+		}
+	} else {
+		ui.section("Next steps")
+		ui.println("  " + ui.cyan("1.") + " Store the token (a Personal Access Token from your Jira profile), unless it is already stored:")
+		ui.println("       " + ui.cmd(next[0]))
+		ui.println("  " + ui.cyan("2.") + " Check the connection, TLS and the token:")
+		ui.println("       " + ui.cmd(next[1]))
+	}
 	ui.println("")
 	if !guided || set("output") {
 		return output.Write(a.Out, map[string]any{"path": path, "instance": u.Name, "updated": existed, "default": u.MakeDefault, "next": next}, format)

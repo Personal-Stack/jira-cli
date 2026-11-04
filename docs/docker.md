@@ -21,12 +21,14 @@ git clone https://github.com/Personal-Stack/jira-cli.git
 sh jira-cli/scripts/install.sh --docker
 ```
 
-From a release (pulls `ghcr.io/personal-stack/jira-cli:<version>`; the
-registry is private, so log in first, see "Registry access" below):
+From a release (pulls `ghcr.io/personal-stack/jira-cli:<version>`, no clone):
 
 ```bash
-gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber && sh /tmp/install.sh --docker
+curl -fsSL https://github.com/Personal-Stack/jira-cli/releases/latest/download/install.sh | sh -s -- --docker
 ```
+
+Upgrade by running the same command again (`jiracli upgrade` does not apply
+to the wrapper, and says so).
 
 Then use it exactly like the native CLI:
 
@@ -45,21 +47,10 @@ jiracli doctor
 Uninstall with `sh install.sh --uninstall`. The image stays; remove it with
 `docker rmi`.
 
-## Registry access (private repository)
+## Image tags
 
 The image is published to `ghcr.io/personal-stack/jira-cli` by the release
-workflow for every version tag. It's private like the repository, so log in
-once. `gh`'s default token cannot read packages; add the scope first:
-
-```bash
-gh auth refresh -h github.com -s read:packages
-```
-
-```bash
-gh auth token | docker login ghcr.io -u <github-user> --password-stdin
-```
-
-(Alternatively, a classic personal access token with `read:packages`.)
+workflow for every version tag. It's public: no `docker login` is needed.
 
 | Tag | Meaning |
 |---|---|

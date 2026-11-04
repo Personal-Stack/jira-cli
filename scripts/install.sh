@@ -5,8 +5,11 @@
 # to PATH in your shell startup file. Every download is verified against the
 # release's SHA256SUMS.
 #
+#   curl -fsSL https://github.com/Personal-Stack/jira-cli/releases/latest/download/install.sh | sh
+#   curl -fsSL …/install.sh | sh -s -- --docker      (options after "sh -s --")
+#
 #   sh install.sh                        latest release
-#   sh install.sh --version v0.2.0       a specific release
+#   sh install.sh --version v0.3.0       a specific release
 #   sh install.sh --dir /usr/local/bin   system-wide (may need sudo)
 #   sh install.sh --from-source          build from this repository clone (needs Go)
 #   sh install.sh --archive FILE         offline install from a downloaded archive
@@ -43,7 +46,7 @@ usage() {
 Options:
   --version TAG        release tag to install (default: latest)
   --dir DIR            install directory (default: \$HOME/.local/bin; env JIRA_CLI_INSTALL_DIR)
-  --name NAME          binary name (default: jira; e.g. jira-dc if another 'jira' exists)
+  --name NAME          command name (default: jiracli)
   --no-modify-path     do not edit shell startup files
   --completions        install shell completions (bash, zsh, fish)
   --base-url URL       mirror with layout URL/<tag>/<asset> (env JIRA_CLI_BASE_URL)
@@ -282,7 +285,12 @@ fetch_release() {
 # ---------- obtain what to install ----------
 
 BIN_SRC=""
-REPO_ROOT=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
+# The clone this script is in. Piped (curl ... | sh), $0 is the shell, not
+# this file: then there is no clone, whatever the current directory is.
+REPO_ROOT=""
+case "$0" in
+  *install.sh) REPO_ROOT=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd) ;;
+esac
 if [ "$DOCKER" = 1 ]; then
   [ "$os" != windows ] || die "--docker is not supported from Git Bash (path and TTY translation break the wrapper); install the native binary, or run this installer inside WSL"
   if [ "$os" = darwin ]; then
@@ -315,6 +323,7 @@ if [ "$DOCKER" = 1 ]; then
   BIN_SRC="$TMP/jira-wrapper"
 elif [ "$FROM_SOURCE" = 1 ]; then
   [ -n "$SRC_DIR" ] || SRC_DIR="$REPO_ROOT"
+  [ -n "$SRC_DIR" ] || die "--from-source needs a clone: run install.sh from it, or pass --from-source DIR"
   [ -f "$SRC_DIR/go.mod" ] || die "$SRC_DIR is not a jira-cli checkout (no go.mod)"
   command -v go >/dev/null 2>&1 || die "Go is required for --from-source (https://go.dev/dl/); or use --docker"
   ver=$(cd "$SRC_DIR" && git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -434,6 +443,9 @@ fi
 
 say ""
 say "Next steps:"
-say "  $BIN_NAME config setup         # create or update ~/.config/jira-cli/config.yaml (guided)"
-say "  $BIN_NAME auth login           # store your personal access token in the OS keyring"
-say "  $BIN_NAME doctor               # check connectivity, TLS and authentication"
+say "  $BIN_NAME config setup         # guided: the configuration, then the token and a connection check"
+if [ "$DOCKER" = 1 ]; then
+  say "Upgrade later by running this installer again with --docker."
+else
+  say "Upgrade later with:  $BIN_NAME upgrade"
+fi

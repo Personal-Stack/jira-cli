@@ -16,6 +16,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/personal-stack/jira-cli/internal/release"
 	"gopkg.in/yaml.v3"
 )
 
@@ -342,9 +343,9 @@ func TestBinaryFromReleaseVerifiesChecksum(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	old := ReleaseBase
-	ReleaseBase = srv.URL
-	defer func() { ReleaseBase = old }()
+	old := release.Base
+	release.Base = srv.URL
+	defer func() { release.Base = old }()
 
 	req := BinaryRequest{Source: SourceRelease, Arch: runtime.GOARCH, Version: "v1.2.3", Dir: t.TempDir()}
 	if p, src, err := GetBinary(context.Background(), req); err != nil || src != SourceRelease {

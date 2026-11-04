@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Install, upgrade, setup
+- One stable install command, no GitHub CLI needed: `curl -fsSL https://github.com/Personal-Stack/jira-cli/releases/latest/download/install.sh | sh` (options after `sh -s --`). Piped, the script never mistakes the current directory for a clone.
+- New `jiracli upgrade`: downloads the latest release (or `--version`) for this platform, verifies it against `SHA256SUMS`, runs it once, then replaces the installed binary in place. `--check` only reports. It refuses inside the Docker wrapper and for development builds (unless `--version`), and leaves the binary untouched when anything fails. jiracli still never checks for updates on its own.
+- `jiracli config setup` (guided) now continues with the token and the connection: it offers to store the token (hidden, verified against Jira, asked again when refused) and to run `doctor`. Both are optional; end of input stops there without an error.
+- In a terminal, a command that finds no stored token offers to store it, like the existing offer for a missing configuration. `auth` commands report the problem instead.
+- `jiracli doctor` starts with an `installation` check (warnings only): this binary's path and version, another `jiracli` earlier on PATH, a missing PATH entry, and jira-cli's old `jira` command still on PATH.
+- `install.sh --help` no longer says the default name is `jira`.
+- The docs no longer describe the repository and the image as private: both are public, and `docker login` is not needed.
+
 ### Installer
 - Upgrading from v0.2.0 or earlier now removes the old `jira` command (the native binary or the Docker wrapper) and its shell completions from the install folder. Before this, `jira` kept running the old version next to the new `jiracli`. Only jira-cli's own `jira` is removed: it is recognised by its module path or the wrapper's header, and a `jira` from another project is kept. The PATH block stays, because `jiracli` uses it.
 - The next steps printed after installing start with `jiracli config setup`.

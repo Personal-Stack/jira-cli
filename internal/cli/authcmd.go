@@ -213,37 +213,46 @@ func (a *App) loginPAT(cmd *cobra.Command, in *config.Instance, noVerify bool) e
 	if err != nil {
 		return clierr.Wrap(clierr.LayerCredentials, "read_failed", "cannot read token from stdin", err)
 	}
+	result, err := a.storePAT(ctxOrBackground(cmd), in, tok, noVerify)
+	if err != nil {
+		return err
+	}
+	f, _ := a.Format()
+	return output.Write(a.Out, result, f)
+}
+
+// storePAT verifies the token against Jira (unless noVerify) and stores it.
+func (a *App) storePAT(ctx context.Context, in *config.Instance, tok credentials.Secret, noVerify bool) (map[string]any, error) {
 	if err := pat.Validate(tok); err != nil {
-		return clierr.Wrap(clierr.LayerCredentials, "invalid_token", "invalid token", err)
+		return nil, clierr.Wrap(clierr.LayerCredentials, "invalid_token", "invalid token", err)
 	}
 	result := map[string]any{"ok": true, "instance": in.Name, "credential_ref": in.Auth.CredentialRef, "verified": false}
 	if !noVerify {
 		p, err := a.ProfileFor(in)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		client, err := a.Client(in, p)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		client.Auth = pat.New(in.Auth.CredentialRef, in.Auth.Username, staticSecretStore{in.Auth.CredentialRef, tok})
-		me, err := whoami(ctxOrBackground(cmd), client)
+		me, err := whoami(ctx, client)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		result["verified"], result["user"] = true, me
 	}
 	w, err := a.Store(in).Writer()
 	if err != nil {
-		return clierr.Wrap(clierr.LayerCredentials, "no_keyring", err.Error(), nil)
+		return nil, clierr.Wrap(clierr.LayerCredentials, "no_keyring", err.Error(), nil)
 	}
 	if err := w.Set(in.Auth.CredentialRef, tok); err != nil {
-		return clierr.Wrap(clierr.LayerCredentials, "store_error", "cannot store token in "+w.Name(), err).
+		return nil, clierr.Wrap(clierr.LayerCredentials, "store_error", "cannot store token in "+w.Name(), err).
 			WithHint("without a keyring set " + credentials.EnvStore + "=file, or use JIRA_CREDENTIAL_FILE instead of `auth login`")
 	}
 	result["store"] = w.Name()
-	f, _ := a.Format()
-	return output.Write(a.Out, result, f)
+	return result, nil
 }
 
 func (a *App) loginOAuth(cmd *cobra.Command, in *config.Instance, manual bool) error {
