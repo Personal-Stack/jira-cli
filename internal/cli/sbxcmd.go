@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -74,7 +72,7 @@ Files: <project>/tmp/.sbx/jira-cli (kit; --kit-dir), <project>/sbxenv.yaml,
     --agent devex-opencode`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s := &sbxSetup{a: a, f: f, set: cmd.Flags().Changed, ui: a.newSbxUI(),
+			s := &sbxSetup{a: a, f: f, set: cmd.Flags().Changed, ui: a.newTermUI(),
 				guided: f.interactive || (cmd.Flags().NFlag() == 0 && a.IsTerminal())}
 			return s.run(cmd.Context())
 		},
@@ -108,7 +106,7 @@ type sbxSetup struct {
 	a      *App
 	f      *sbxFlags
 	set    func(flag string) bool
-	ui     *sbxUI
+	ui     *termUI
 	guided bool
 
 	haveSbx       bool            // sbx usable here (not in the wrapper's container)
@@ -559,115 +557,6 @@ func sbxNextSteps(p *sbx.Plan, secretStored, running bool) []sbxStep {
 		sbxStep{"If the sandbox does not start, look at the plan and at existing sandboxes (a sandbox with the same name: sbx rm NAME):",
 			[]string{cd + "sbx env plan", "sbx ls", "sbx diagnose"}},
 	)
-}
-
-// form asks questions until the first error (Ctrl+C, end of input), which
-// it keeps in err, so a sequence of questions needs one error check.
-type form struct {
-	p   *prompter
-	ui  *sbxUI
-	err error
-}
-
-// text asks until validate (nil: anything) accepts the answer.
-func (f *form) text(dst *string, q string, validate func(string) error) {
-	for f.err == nil {
-		v, err := f.p.ask(q, *dst)
-		if f.err = err; err != nil {
-			return
-		}
-		if validate != nil {
-			if verr := validate(v); verr != nil {
-				f.ui.warn(verr.Error())
-				continue
-			}
-		}
-		*dst = v
-		return
-	}
-}
-
-func (f *form) yesno(dst *bool, q string) {
-	if f.err == nil {
-		*dst, f.err = f.p.yn(q, *dst)
-	}
-}
-
-func optional(check func(string) error) func(string) error {
-	return func(v string) error {
-		if v == "" {
-			return nil
-		}
-		return check(v)
-	}
-}
-
-// prompter asks on stderr and reads answers in a goroutine, so Ctrl+C (a
-// cancelled ctx) ends a prompt at once instead of waiting for Enter.
-type prompter struct {
-	ctx   context.Context
-	lines chan string
-	ui    *sbxUI
-}
-
-func newPrompter(ctx context.Context, r io.Reader, ui *sbxUI) *prompter {
-	p := &prompter{ctx: ctx, lines: make(chan string), ui: ui}
-	go func() {
-		defer close(p.lines) // later prompts see the end of input
-		br := bufio.NewReader(r)
-		for {
-			line, err := br.ReadString('\n')
-			if line == "" && err != nil {
-				return
-			}
-			select {
-			case p.lines <- line:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	return p
-}
-
-// ask shows cur as the default: Enter keeps it, "-" clears it.
-func (p *prompter) ask(q, cur string) (string, error) {
-	fmt.Fprint(p.ui.w, p.ui.question(q, cur))
-	select {
-	case <-p.ctx.Done():
-		fmt.Fprintln(p.ui.w)
-		return "", clierr.Interrupted()
-	case line, ok := <-p.lines:
-		if !ok {
-			return "", clierr.New(clierr.LayerUsage, "no_answer", "no answer (end of input)")
-		}
-		switch v := strings.TrimSpace(line); v {
-		case "":
-			return cur, nil
-		case "-":
-			return "", nil
-		default:
-			return v, nil
-		}
-	}
-}
-
-func (p *prompter) yn(q string, cur bool) (bool, error) {
-	hint := map[bool]string{true: "Y/n", false: "y/N"}[cur]
-	for {
-		v, err := p.ask(q+" "+p.ui.dim("["+hint+"]"), "")
-		if err != nil {
-			return false, err
-		}
-		switch strings.ToLower(v) {
-		case "":
-			return cur, nil
-		case "y", "yes":
-			return true, nil
-		case "n", "no":
-			return false, nil
-		}
-	}
 }
 
 // inContainer reports whether jira runs in the Docker wrapper's container,

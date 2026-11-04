@@ -512,7 +512,7 @@ func TestSbxUIColorOnlyOnTerminal(t *testing.T) {
 		}
 		var b bytes.Buffer
 		app.Err = &b
-		ui := app.newSbxUI()
+		ui := app.newTermUI()
 		ui.ok("done")
 		if got := strings.Contains(b.String(), "\x1b["); got != c.want {
 			t.Errorf("%+v: colored=%v\n%q", c, got, b.String())
