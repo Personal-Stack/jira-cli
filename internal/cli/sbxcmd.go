@@ -281,6 +281,14 @@ func (s *sbxSetup) applyDefaults() bool {
 	if d.From != "" {
 		s.ui.note("Defaults from " + d.From)
 	}
+	// The agent your ~/.sbxenv.yaml sets is the one sbx requires.
+	if home, err := os.UserHomeDir(); err == nil && !s.set("agent") {
+		if base := sbx.BaseAgent(home); base != "" {
+			o.Agent = base
+			s.refreshName()
+			s.ui.note("Agent " + base + " (from ~/.sbxenv.yaml, which sbx merges into every environment)")
+		}
+	}
 	return d.From != ""
 }
 
@@ -350,7 +358,7 @@ func (s *sbxSetup) ask(ctx context.Context) error {
 	if q.err == nil {
 		ui.note("'-' uses sbx's own default, <agent>-<folder>, which 'sbx run' also gives a sandbox there.")
 	}
-	q.text(&o.Name, "Sandbox name", optional(sbx.ValidName))
+	q.text(&o.Name, "Sandbox name", optional(sbx.ValidSandboxName))
 	q.yesno(&o.ReadOnly, "Read-only (the agent cannot change anything in Jira)")
 	if q.err != nil {
 		return q.err

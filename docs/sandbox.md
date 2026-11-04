@@ -13,8 +13,8 @@ jira setup-sbx
 Run it without flags in a terminal and it asks:
 - **Project:** the folder the agent works in.
 - **Jira base URL:** checked for reachability as you enter it.
-- **Agent:** its sbx name, e.g. `opencode`. A name only: an image or kit reference is refused, so it can never end up as a kit.
-- **Sandbox name:** a new project gets `<agent>-<folder>-jira`.
+- **Agent:** its sbx name, e.g. `opencode`. If your `~/.sbxenv.yaml` sets an agent, that one is used: sbx merges that file into every environment and accepts no other. A name only: an image or kit reference is refused, so it can never end up as a kit.
+- **Sandbox name:** a new project gets `<agent>-<folder>-jira`. sbx's agent and command names (`opencode`, `claude`, `codex`, `cursor`, `env`, `run`, …) are refused: sbx resolves those words itself.
 - **Read-only:** default yes.
 
 After a summary and **Proceed**, it writes the files and prints the next

@@ -54,6 +54,27 @@ func AgentNameFromSbx(out []byte) (string, bool) {
 	return string(m[1]), true
 }
 
+// reserved are words sbx resolves itself in `sbx run <x>` / `sbx exec <x>`:
+// its built-in agents and its subcommands. A sandbox with such a name
+// would be ambiguous.
+var reserved = map[string]bool{}
+
+func init() {
+	for _, w := range strings.Fields(`claude codex copilot cursor devin docker-agent droid gemini kiro opencode shell
+		env run exec create ls list rm stop start login logout secret policy template ports diagnose version help`) {
+		reserved[w] = true
+	}
+}
+
+// ValidSandboxName checks a sandbox name: a plain name that is not one of
+// sbx's agents or commands.
+func ValidSandboxName(v string) error {
+	if reserved[strings.ToLower(v)] {
+		return fmt.Errorf("%q is reserved by sbx (an agent or command name); choose another sandbox name", v)
+	}
+	return ValidName(v)
+}
+
 // ValidAgent checks the agent: an sbx agent's name, not an image or kit
 // reference (those would end up as kits in sbxenv.yaml).
 func ValidAgent(v string) error {

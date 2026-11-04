@@ -308,6 +308,39 @@ func TestSetupSbxTakesAgentNameFromSbx(t *testing.T) {
 	}
 }
 
+// The agent ~/.sbxenv.yaml sets is known before sbx is asked: no
+// correction round. Reserved sandbox names are refused.
+func TestSetupSbxAgentFromBaseLayerAndReservedNames(t *testing.T) {
+	isolateHome(t)
+	if err := os.WriteFile(filepath.Join(os.Getenv("HOME"), ".sbxenv.yaml"), []byte("schemaVersion: \"1\"\nagent: devex-opencode\nkits: [company.example.com/devex/opencode:3]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	project := t.TempDir()
+	fs := &fakeSbx{secrets: "jira apiKey\n", baseKit: "devex-opencode"}
+	code, _, errOut := runSbx(t, fs, "", "--project", project, "--base-url", "https://jira.example.com")
+	if code != 0 || len(fs.planDirs) != 1 || !strings.Contains(errOut, "Agent devex-opencode (from ~/.sbxenv.yaml") {
+		t.Fatalf("exit %d, plans %d:\n%s", code, len(fs.planDirs), errOut)
+	}
+	if env, _ := os.ReadFile(filepath.Join(project, "sbxenv.yaml")); agentOf(string(env)) != "devex-opencode" {
+		t.Fatalf("sbxenv.yaml:\n%s", env)
+	}
+	// --agent still wins (and sbx corrects it).
+	if code, _, errOut := runSbx(t, fs, "", "--project", project, "--agent", "opencode-xxxx"); code != 0 || !strings.Contains(errOut, "the agent kit in this environment") {
+		t.Fatalf("--agent: exit %d\n%s", code, errOut)
+	}
+	for _, name := range []string{"opencode", "Claude", "env", "shell"} {
+		if code, _, errOut := runSbx(t, fs, "", "--project", project, "--name", name); code == 0 || !strings.Contains(errOut, "is reserved by sbx") {
+			t.Errorf("--name %s: exit %d", name, code)
+		}
+	}
+	// Guided (a fresh HOME: every question is asked): a reserved name is asked again.
+	isolateHome(t)
+	code, _, errOut = runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, answers(t.TempDir(), "https://jira.example.com", "devex-opencode", "codex", "team-sbx", "", "", ""), "-i", "--force")
+	if code != 0 || !strings.Contains(errOut, `"codex" is reserved by sbx`) {
+		t.Fatalf("guided: exit %d\n%s", code, errOut)
+	}
+}
+
 func TestSetupSbxRejectedBySbxWritesNothing(t *testing.T) {
 	isolateHome(t)
 	project := t.TempDir()

@@ -133,7 +133,7 @@ func NewPlan(o Options) (*Plan, error) {
 
 	checks := []error{ValidAgent(o.Agent), ValidSecretName(o.Secret), ValidName(p.CredRef)}
 	if o.Name != "" {
-		checks = append(checks, ValidName(o.Name))
+		checks = append(checks, ValidSandboxName(o.Name))
 	}
 	if err := errors.Join(checks...); err != nil {
 		return nil, err

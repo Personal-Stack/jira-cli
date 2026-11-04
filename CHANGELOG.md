@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `jira setup-sbx`: the agent comes from `~/.sbxenv.yaml` when it sets one (sbx merges that file into every environment and accepts no other agent there); the Docker wrapper mounts it read-only. sbx's agent and command names (`opencode`, `claude`, `codex`, `cursor`, `env`, `run`, ...) are refused as sandbox names.
+
 ## v0.2.0 (2026-11-03)
 
 ### Docker Sandboxes: `jira setup-sbx`

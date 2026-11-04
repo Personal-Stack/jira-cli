@@ -113,6 +113,7 @@ if [ "${2:-}" = setup-sbx ]; then   # $1 is the image (set above)
   done
   [ -d "$sbx_project" ] && rw "$sbx_project"
   rw "$sbx_settings"
+  ro "$HOME/.sbxenv.yaml"   # sbx's base layer: setup-sbx reads its agent
   set -- -e JIRA_CLI_CONTAINER=1 "$@"
 fi
 WORKDIR=""

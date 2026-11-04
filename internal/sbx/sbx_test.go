@@ -361,3 +361,22 @@ func TestBinaryFromReleaseVerifiesChecksum(t *testing.T) {
 		t.Fatalf("dev version: %v", err)
 	}
 }
+
+func TestReservedNamesAndBaseAgent(t *testing.T) {
+	for _, n := range []string{"opencode", "OpenCode", "env", "docker-agent"} {
+		if ValidSandboxName(n) == nil {
+			t.Errorf("%s accepted", n)
+		}
+	}
+	if ValidSandboxName("opencode-my-work-jira") != nil || ValidAgent("opencode") != nil {
+		t.Fatal("a normal sandbox name, or the built-in agent, refused")
+	}
+	home := t.TempDir()
+	if BaseAgent(home) != "" {
+		t.Fatal("no ~/.sbxenv.yaml: no agent")
+	}
+	write(t, filepath.Join(home, ".sbxenv.yaml"), "agent: devex-opencode\n")
+	if got := BaseAgent(home); got != "devex-opencode" {
+		t.Fatalf("base agent %q", got)
+	}
+}
