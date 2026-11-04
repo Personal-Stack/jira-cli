@@ -384,6 +384,25 @@ fi
 
 if [ "$COMPLETIONS" = 1 ]; then install_completions; fi
 
+# Until v0.2.0 the command was 'jira'. Remove that old jira-cli from the same
+# folder, with its completions, so 'jira' does not keep running the old
+# version. A 'jira' from another project is never touched. The PATH block is
+# shared with the new command and stays.
+OLD="$INSTALL_DIR/jira$EXE"
+if [ "$BIN_NAME" != jira ] && [ -f "$OLD" ] && [ "$OLD" != "$TARGET" ]; then
+  if grep -q "runs jira-cli from its Docker image" "$OLD" 2>/dev/null ||
+     LC_ALL=C grep -q "github.com/personal-stack/jira-cli" "$OLD" 2>/dev/null; then
+    rm -f "$OLD" && info "removed the previous command $OLD (renamed to $BIN_NAME in v0.3.0)"
+    old_name=$BIN_NAME; BIN_NAME=jira
+    completion_paths | while read -r _ path; do
+      if [ -f "$path" ]; then rm -f "$path"; info "removed $path"; fi
+    done
+    BIN_NAME=$old_name
+  else
+    info "kept $OLD: it is not jira-cli"
+  fi
+fi
+
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) on_path=1 ;;
   *) on_path=0 ;;
@@ -415,6 +434,6 @@ fi
 
 say ""
 say "Next steps:"
-say "  $BIN_NAME config validate      # create ~/.config/jira-cli/config.yaml first (see examples/config.yaml)"
+say "  $BIN_NAME config setup         # create or update ~/.config/jira-cli/config.yaml (guided)"
 say "  $BIN_NAME auth login           # store your personal access token in the OS keyring"
 say "  $BIN_NAME doctor               # check connectivity, TLS and authentication"

@@ -79,6 +79,20 @@ run --base-url "$BASE" --uninstall && ok "uninstall exits 0" || { ko "uninstall 
 [ ! -e "$HOME/.local/bin/jiracli" ] && ok "uninstall removes binary" || ko "binary left"
 cmp -s "$HOME/.bashrc" "$HOME/.bashrc.orig" && ok "uninstall restores .bashrc exactly" || { ko ".bashrc differs"; diff "$HOME/.bashrc.orig" "$HOME/.bashrc"; }
 
+echo "== upgrade from 'jira' (renamed in v0.3.0)"
+fresh_home bash
+data="$HOME/.local/share"; mkdir -p "$HOME/.local/bin" "$data/bash-completion/completions"
+printf '\177ELF old build of github.com/personal-stack/jira-cli\n' > "$HOME/.local/bin/jira"
+echo "# bash completion V2 for jira" > "$data/bash-completion/completions/jira"
+if run --base-url "$BASE"; then ok "install over an old jira"; else ko "install over an old jira"; cat "$WORK/out"; fi
+[ ! -e "$HOME/.local/bin/jira" ] && [ ! -e "$data/bash-completion/completions/jira" ] && [ -x "$HOME/.local/bin/jiracli" ] && ok "old native jira and its completion removed" || ko "old native jira kept"
+printf '#!/bin/sh\n# jira: runs jira-cli from its Docker image as if it were installed natively.\n' > "$HOME/.local/bin/jira"
+run --base-url "$BASE" && [ ! -e "$HOME/.local/bin/jira" ] && ok "old Docker wrapper jira removed" || { ko "old wrapper kept"; cat "$WORK/out"; }
+printf '#!/bin/sh\necho another jira\n' > "$HOME/.local/bin/jira"
+echo "# bash completion V2 for jira" > "$data/bash-completion/completions/jira"
+run --base-url "$BASE" && [ -f "$HOME/.local/bin/jira" ] && [ -f "$data/bash-completion/completions/jira" ] && grep -q "kept .*: it is not jira-cli" "$WORK/out" && ok "a jira from another project is kept" || { ko "foreign jira touched"; cat "$WORK/out"; }
+grep -c "^# >>> jira-cli >>>" "$HOME/.bashrc" | grep -qx 1 && ok "PATH block kept" || ko "PATH block"
+
 echo "== zsh with completions, explicit version, custom name"
 fresh_home zsh
 if run --base-url "$BASE" --version "$VERSION" --completions --name jira-dc; then ok "install"; else ko "install"; cat "$WORK/out"; fi

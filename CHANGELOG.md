@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Installer
+- Upgrading from v0.2.0 or earlier now removes the old `jira` command (the native binary or the Docker wrapper) and its shell completions from the install folder. Before this, `jira` kept running the old version next to the new `jiracli`. Only jira-cli's own `jira` is removed: it is recognised by its module path or the wrapper's header, and a `jira` from another project is kept. The PATH block stays, because `jiracli` uses it.
+- The next steps printed after installing start with `jiracli config setup`.
+
 ## v0.3.0 (2026-11-04)
 
 ### Breaking: the command is now `jiracli`
