@@ -22,8 +22,9 @@ func (a *App) NewRoot(args []string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "jira",
 		Short: "Spec-driven command-line interface for Jira Data Center",
-		Long: `jira is a command-line interface for Jira Data Center whose API commands are
-generated at build time from OpenAPI specifications.
+		Long: `jira (Personal Stack jira-cli) is a command-line interface for Jira Data
+Center whose API commands are generated at build time from OpenAPI
+specifications.
 
 Unofficial: not affiliated with or endorsed by Atlassian. "Jira" is a
 trademark of Atlassian. See LEGAL.md in the project.

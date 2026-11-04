@@ -20,6 +20,7 @@ RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main
 
 FROM gcr.io/distroless/static-debian12:nonroot
 LABEL org.opencontainers.image.source="https://github.com/Personal-Stack/jira-cli" \
+      org.opencontainers.image.title="Personal Stack jira-cli" \
       org.opencontainers.image.description="Unofficial command-line client for Jira Data Center (not affiliated with Atlassian)" \
       org.opencontainers.image.licenses="Apache-2.0"
 COPY --from=build /out/jira /usr/local/bin/jira

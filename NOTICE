@@ -1,9 +1,10 @@
-jira-cli
+Personal Stack jira-cli
 Copyright 2026 Bogdan Bogdanov
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 
-jira-cli is an independent, unofficial client for Jira's public REST API. It
+Personal Stack jira-cli is an independent, unofficial client for Jira's
+public REST API from the Personal Stack organization. It
 is not affiliated with, endorsed by or supported by Atlassian. See LEGAL.md
 for the legal notice and terms of use.
 

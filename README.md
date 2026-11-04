@@ -1,10 +1,11 @@
-# jira-cli
+# Personal Stack jira-cli
 
-> **Unofficial.** jira-cli is an independent open-source client and is not
-> affiliated with, endorsed by or supported by Atlassian. "Jira" is a trademark
-> of Atlassian, used here only to say which product it works with. See
-> [LEGAL.md](LEGAL.md): legal notice, terms of use, and what the tool does with
-> your data.
+> **Unofficial.** Personal Stack jira-cli is an independent open-source client
+> from the [Personal Stack](https://github.com/Personal-Stack) organization. It
+> is not affiliated with, endorsed by or supported by Atlassian. "Jira" is a
+> trademark of Atlassian, used here only to say which product it works with.
+> See [LEGAL.md](LEGAL.md): legal notice, terms of use, and what the tool does
+> with your data.
 
 A spec-driven command-line interface for **Jira Data Center**, written in Go.
 Every API command is generated at build time from OpenAPI specifications;

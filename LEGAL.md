@@ -1,6 +1,8 @@
 # Legal notice and terms of use
 
-jira-cli is an **independent, unofficial, open-source command-line client**.
+Personal Stack jira-cli ("jira-cli") is an **independent, unofficial,
+open-source command-line client** from the
+[Personal Stack](https://github.com/Personal-Stack) organization.
 It connects to a Jira instance that you already have access to, through
 Jira's public REST API. You can use it from a terminal, from scripts, and from
 AI agents (for example in a Docker Sandbox), with the credentials kept
