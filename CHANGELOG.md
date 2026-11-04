@@ -1,8 +1,30 @@
 # Changelog
 
-## Unreleased
+## v0.3.0 (2026-11-04)
 
-- `jira setup-sbx`: the agent comes from `~/.sbxenv.yaml` when it sets one (sbx merges that file into every environment and accepts no other agent there); the Docker wrapper mounts it read-only. sbx's agent and command names (`opencode`, `claude`, `codex`, `cursor`, `env`, `run`, ...) are refused as sandbox names.
+### Configuration: `jira setup`
+- New command `jira setup` (also `jira config init`). It creates the configuration in the expected place, creating the folder if needed, or adds or updates an instance (`--instance`). The place is `--config`, else `$JIRA_CONFIG`, else `~/.config/jira-cli/config.yaml`.
+- Guided in a terminal, with flags otherwise (`--base-url`, `--credential-ref`, `--ca-bundle`, `--allow-writes`, `--no-default`).
+- Each answer is checked when given: the Jira URL must be reachable, and a CA file must hold certificates.
+- Updates happen in place: comments, other instances and settings such as timeouts and proxy are kept. The result is validated before it is written.
+- A command run without a configuration offers to create it in a terminal, and names `jira config init` otherwise.
+
+### Docker Sandboxes: `jira setup-sbx`
+- The agent comes from `~/.sbxenv.yaml` when it sets one. sbx merges that file into every environment, and an agent kit there accepts no other agent name. The Docker wrapper mounts the file read-only.
+- When sbx still reports `agent kit name "X"`, X is used, saved and checked again, both in setup-sbx and in the Docker wrapper's host check. v0.2.0 stopped with sbx's error instead.
+- sbx's own agent and command names (`opencode`, `claude`, `codex`, `cursor`, `env`, `run`, …) are refused as sandbox names, because sbx resolves those words itself.
+
+### Project
+- The project presents itself as **Personal Stack jira-cli**, part of the Personal Stack GitHub organization: README, `LEGAL.md`, `NOTICE`, `jira --help`, the image title and the release title. The `jira` command, the repository, the image path and file names are unchanged.
+- `LEGAL.md`: legal notice and terms of use:
+  - unofficial, not affiliated with Atlassian;
+  - built from public sources only;
+  - user responsibilities;
+  - no telemetry;
+  - no warranty.
+
+  It is referenced from the README, `NOTICE`, `jira --help`, the image description and the release notes, and shipped in the archives and the image.
+- `PROGRESS.md` is removed; the release notes are in this file.
 
 ## v0.2.0 (2026-11-03)
 
@@ -17,7 +39,7 @@
 - Stops at the first problem, and nothing is written before everything has passed:
   - checks first: sbx installed, a Linux binary, existing secrets;
   - each answer checked when given, including Jira reachability;
-  - `sbx env plan` on a scratch copy (when an agent kit from `~/.sbxenv.yaml` requires another agent name, sbx's name is used and saved);
+  - `sbx env plan` on a scratch copy;
   - the PAT secret settled (stored via sbx if needed).
 - Answers are saved; a known setup takes one confirmation. The Linux binary is this `jira`, a build from a clone, or the matching GitHub release (SHA-256 verified).
 - Docker wrapper:
