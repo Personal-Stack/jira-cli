@@ -50,6 +50,7 @@ or "prod").`,
 	fl.StringVar(&f.baseURL, "base-url", "", "Jira base URL, with the context path if any")
 	fl.StringVar(&f.credRef, "credential-ref", "", "name of the stored token (default: jira-<instance>, or the current one)")
 	fl.StringVar(&f.caBundle, "ca-bundle", "", "company CA file (PEM or DER); empty: none (see 'jiracli certs fetch')")
+	_ = c.MarkFlagFilename("ca-bundle", "pem", "crt", "cer", "cert", "der")
 	fl.BoolVar(&f.allowWrites, "allow-writes", false, "do not set read_only (default for a new instance: read-only)")
 	fl.BoolVar(&f.noDefault, "no-default", false, "do not make this the default instance")
 	fl.BoolVar(&f.skipChecks, "skip-checks", false, "do not check that the Jira host is reachable")
@@ -99,7 +100,7 @@ func (a *App) runConfigInit(ctx context.Context, f *configInitFlags, guided bool
 			flag string
 			dst  *string
 			val  string
-		}{{"base-url", &u.BaseURL, f.baseURL}, {"credential-ref", &u.CredentialRef, f.credRef}, {"ca-bundle", &u.CABundle, absIfSet(f.caBundle)}} {
+		}{{"base-url", &u.BaseURL, sbx.NormalizeBaseURL(f.baseURL)}, {"credential-ref", &u.CredentialRef, f.credRef}, {"ca-bundle", &u.CABundle, absIfSet(f.caBundle)}} {
 			if set(v.flag) {
 				*v.dst = v.val
 			}
@@ -138,10 +139,10 @@ func (a *App) runConfigInit(ctx context.Context, f *configInitFlags, guided bool
 		if q.err == nil && u.Name != before {
 			fill()
 		}
-		q.text(&u.BaseURL, "Jira base URL (https://, with the context path if any)", checkURL)
+		q.url(&u.BaseURL, "Jira base URL (with the context path if any; https:// is added)", checkURL)
 		q.text(&u.CredentialRef, "Name of the stored token (credential_ref)", sbx.ValidName)
 		q.yesno(&u.ReadOnly, "Read-only (refuse every command that is not a read)")
-		q.text(&u.CABundle, "Company CA file (empty = none; most setups need none)", optional(checkCA))
+		q.path(&u.CABundle, "Company CA file (Tab completes; empty = none; most setups need none)", certExts, optional(checkCA))
 		q.yesno(&u.MakeDefault, "Make it the default instance")
 		if q.err != nil {
 			return q.err
@@ -188,11 +189,17 @@ func (a *App) runConfigInit(ctx context.Context, f *configInitFlags, guided bool
 	ui.section("Done")
 	ui.ok(map[bool]string{true: "updated", false: "added"}[existed] + " instance " + u.Name + " in " + path)
 	next := []string{"jiracli auth login" + map[bool]string{true: "", false: " --instance " + u.Name}[u.MakeDefault], "jiracli doctor" + map[bool]string{true: "", false: " --instance " + u.Name}[u.MakeDefault]}
-	ui.section("Next steps")
-	ui.println("  " + ui.cyan("1.") + " Store the token (a Personal Access Token from your Jira profile), unless it is already stored:")
-	ui.println("       " + ui.cmd(next[0]))
-	ui.println("  " + ui.cyan("2.") + " Check the connection, TLS and the token:")
-	ui.println("       " + ui.cmd(next[1]))
+	if guided {
+		if err := a.finishSetup(ctx, ui, u.Name); err != nil {
+			return err
+		}
+	} else {
+		ui.section("Next steps")
+		ui.println("  " + ui.cyan("1.") + " Store the token (a Personal Access Token from your Jira profile), unless it is already stored:")
+		ui.println("       " + ui.cmd(next[0]))
+		ui.println("  " + ui.cyan("2.") + " Check the connection, TLS and the token:")
+		ui.println("       " + ui.cmd(next[1]))
+	}
 	ui.println("")
 	if !guided || set("output") {
 		return output.Write(a.Out, map[string]any{"path": path, "instance": u.Name, "updated": existed, "default": u.MakeDefault, "next": next}, format)

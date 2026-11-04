@@ -5,9 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
+	"golang.org/x/term"
+
 	"github.com/personal-stack/jira-cli/internal/clierr"
+	"github.com/personal-stack/jira-cli/internal/sbx"
 )
 
 // termUI styles the human output of guided commands (config setup,
@@ -46,6 +50,7 @@ func (u *termUI) section(name string) { u.println("\n" + u.bold(u.cyan("▸ ")+n
 
 func (u *termUI) ok(s string)   { u.println("  " + u.green("✓") + " " + s) }
 func (u *termUI) warn(s string) { u.println("  " + u.yellow("!") + " " + s) }
+func (u *termUI) bad(s string)  { u.println("  " + u.paint("31", "✗") + " " + s) }
 func (u *termUI) note(s string) { u.println("  " + u.dim(s)) }
 
 // kv prints an aligned "key  value" line (summaries).
@@ -73,10 +78,28 @@ type form struct {
 
 // text asks until validate (nil: anything) accepts the answer.
 func (f *form) text(dst *string, q string, validate func(string) error) {
+	f.ask(dst, q, nil, validate, f.p.ask)
+}
+
+// url asks for a Jira base URL: https:// is added when the scheme is left out.
+func (f *form) url(dst *string, q string, validate func(string) error) {
+	f.ask(dst, q, sbx.NormalizeBaseURL, validate, f.p.ask)
+}
+
+// path asks for a file or folder, with Tab completion on a terminal: only
+// folders when exts is nil, else folders and files with these extensions.
+func (f *form) path(dst *string, q string, exts []string, validate func(string) error) {
+	f.ask(dst, q, nil, validate, func(q, cur string) (string, error) { return f.p.askPath(q, cur, exts) })
+}
+
+func (f *form) ask(dst *string, q string, normalize func(string) string, validate func(string) error, read func(q, cur string) (string, error)) {
 	for f.err == nil {
-		v, err := f.p.ask(q, *dst)
+		v, err := read(q, *dst)
 		if f.err = err; err != nil {
 			return
+		}
+		if normalize != nil {
+			v = normalize(v)
 		}
 		if validate != nil {
 			if verr := validate(v); verr != nil {
@@ -105,10 +128,15 @@ func optional(check func(string) error) func(string) error {
 }
 
 // prompter asks on stderr and reads answers in a goroutine, so Ctrl+C (a
-// cancelled ctx) ends a prompt at once instead of waiting for Enter.
+// cancelled ctx) ends a prompt at once instead of waiting for Enter. The
+// goroutine reads one line per question and nothing in between, so a hidden
+// token prompt (term.ReadPassword) can use the terminal between questions.
 type prompter struct {
 	ctx   context.Context
+	in    io.Reader
+	req   chan struct{}
 	lines chan string
+	eof   bool
 	ui    *termUI
 }
 
@@ -123,11 +151,16 @@ func (a *App) form(ctx context.Context, ui *termUI) *form {
 }
 
 func newPrompter(ctx context.Context, r io.Reader, ui *termUI) *prompter {
-	p := &prompter{ctx: ctx, lines: make(chan string), ui: ui}
+	p := &prompter{ctx: ctx, in: r, req: make(chan struct{}, 1), lines: make(chan string), ui: ui}
 	go func() {
 		defer close(p.lines) // later prompts see the end of input
 		br := bufio.NewReader(r)
 		for {
+			select {
+			case <-p.req:
+			case <-ctx.Done():
+				return
+			}
 			line, err := br.ReadString('\n')
 			if line == "" && err != nil {
 				return
@@ -142,26 +175,58 @@ func newPrompter(ctx context.Context, r io.Reader, ui *termUI) *prompter {
 	return p
 }
 
-// ask shows cur as the default: Enter keeps it, "-" clears it.
-func (p *prompter) ask(q, cur string) (string, error) {
-	fmt.Fprint(p.ui.w, p.ui.question(q, cur))
+// line reads the next answer.
+func (p *prompter) line() (string, error) {
+	if p.eof {
+		return "", clierr.New(clierr.LayerUsage, "no_answer", "no answer (end of input)")
+	}
+	select {
+	case p.req <- struct{}{}:
+	case <-p.ctx.Done():
+		fmt.Fprintln(p.ui.w)
+		return "", clierr.Interrupted()
+	}
 	select {
 	case <-p.ctx.Done():
 		fmt.Fprintln(p.ui.w)
 		return "", clierr.Interrupted()
 	case line, ok := <-p.lines:
 		if !ok {
+			p.eof = true
 			return "", clierr.New(clierr.LayerUsage, "no_answer", "no answer (end of input)")
 		}
-		switch v := strings.TrimSpace(line); v {
-		case "":
-			return cur, nil
-		case "-":
-			return "", nil
-		default:
-			return v, nil
-		}
+		return line, nil
 	}
+}
+
+// ask shows cur as the default: Enter keeps it, "-" clears it.
+func (p *prompter) ask(q, cur string) (string, error) {
+	fmt.Fprint(p.ui.w, p.ui.question(q, cur))
+	line, err := p.line()
+	if err != nil {
+		return "", err
+	}
+	switch v := strings.TrimSpace(line); v {
+	case "":
+		return cur, nil
+	case "-":
+		return "", nil
+	default:
+		return v, nil
+	}
+}
+
+// secret asks for a value that is not shown: hidden input on a terminal,
+// the next line otherwise.
+func (p *prompter) secret(q string) (string, error) {
+	fmt.Fprint(p.ui.w, p.ui.question(q, ""))
+	if f, ok := p.in.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		b, err := term.ReadPassword(int(f.Fd()))
+		fmt.Fprintln(p.ui.w)
+		return strings.TrimSpace(string(b)), err
+	}
+	line, err := p.line()
+	return strings.TrimSpace(line), err
 }
 
 func (p *prompter) yn(q string, cur bool) (bool, error) {

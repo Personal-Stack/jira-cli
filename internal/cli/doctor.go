@@ -33,9 +33,10 @@ type check struct {
 func (a *App) doctorCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "Diagnose configuration, DNS, TCP, TLS, proxy, Jira reachability and authentication",
+		Short: "Diagnose the installation, configuration, DNS, TCP, TLS, proxy, Jira reachability and authentication",
 		Long: `Runs layered checks against the selected instance and reports the first
-failing layer: configuration, DNS, TCP, TLS, HTTP (unauthenticated
+failing layer: installation (which jiracli runs, and other commands on PATH
+that shadow it; warnings only), configuration, DNS, TCP, TLS, HTTP (unauthenticated
 /rest/api/2/serverInfo), credentials and authentication (/rest/api/2/myself).
 Only read requests are sent. Secrets are never printed.`,
 		Args: cobra.NoArgs,
@@ -72,6 +73,9 @@ func (a *App) runDoctor(ctx context.Context) ([]check, *check) {
 		e := clierr.As(err)
 		return add(check{Name: name, Status: "fail", Layer: e.Layer, Detail: e.Error(), Hint: e.Hint})
 	}
+
+	// 0. installation (warnings only)
+	add(a.installCheck())
 
 	// 1. configuration
 	in, src, err := a.Instance()

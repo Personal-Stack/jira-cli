@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.4.0 (2026-11-04)
+
+From nothing to a working CLI in two commands (the install one-liner, then `jiracli config setup`), and `jiracli upgrade` to stay current.
+
+### Install
+- **One install command.** `curl -fsSL …/releases/latest/download/install.sh | sh` always gets the latest release's installer. No GitHub CLI and no login are needed: the repository and the image are public. Options go after `sh -s --` (`| sh -s -- --docker`). Piped, the script never takes the current directory for a clone.
+- **Tab completion by default** for bash, zsh and fish (`--no-completions` to skip it). In zsh it now also works when `compinit` runs earlier in `.zshrc` (oh-my-zsh, prezto) and when `~/.local/bin` was already on PATH; before, the completion was installed but never loaded in those cases.
+- **The old `jira` is cleaned up.** Installing over v0.2.0 or earlier removes jira-cli's old `jira` command (binary or Docker wrapper) and its completions from the install folder; before, `jira` kept running the old version next to `jiracli`. It is recognised by its module path or the wrapper's header, so a `jira` from another project is kept. The PATH block stays.
+- The installer's next steps point to `jiracli config setup`, and `--help` no longer says the default name is `jira`.
+
+### Upgrade
+- **New `jiracli upgrade`.** It downloads the latest release (or `--version`, also an older one) for this platform, checks it against `SHA256SUMS`, runs the new binary once, and only then replaces the installed one, at the same path. `--check` only reports. Nothing changes when any step fails.
+- It refuses inside the Docker wrapper (re-run the installer with `--docker` instead) and for development builds unless `--version` is given.
+- jiracli still never checks for updates on its own; it downloads only when you run `install.sh`, `upgrade` or `setup-sbx`.
+
+### Setup
+- **`jiracli config setup` ends with a working CLI.** After writing the configuration it offers to store the token (hidden input, verified against Jira, asked again when Jira refuses it) and to run `doctor`. Both are optional; if the answers end there, it stops without an error and prints the remaining steps.
+- **A missing token is offered, like a missing configuration.** In a terminal, a command that finds no stored token offers to store it. `auth` commands report the problem instead.
+- **`https://` is added** to a Jira URL typed without a scheme (`jira.company.internal/jira`), in the questions and in `--base-url`. `http://` is still refused, not rewritten.
+- **Tab completes paths** in the guided questions: the company CA file (folders and `.pem`, `.crt`, `.cer`, `.cert`, `.der` files; a second Tab lists the choices) and the project folder of `setup-sbx`. Shell completion completes the path flags too: `--ca-bundle` with certificate files; `--project`, `--settings`, `--kit-dir`, `--source-dir` with folders; `--config`, `--log-file`, `--binary-file`, `certs fetch --out` with files.
+
+### Diagnostics
+- **`jiracli doctor` checks the installation first** (warnings only): this binary's path and version, another `jiracli` earlier on PATH, a missing PATH entry, and jira-cli's old `jira` still on PATH, with the command to fix each.
+
+### Releases and docs
+- **Release notes like these:** what's new from this file, install and upgrade commands pinned to the version, a download table, checksum and image verification, and links to the docs at the tag. A release tag without a section here now fails before anything is built.
+- The docs no longer describe the repository and the image as private, and no longer ask for `docker login`.
+- The agent skill tells agents to leave `upgrade`, `config setup`, `auth login` and `setup-sbx` to the user.
+
+### Upgrading from v0.3.0
+Run the install command once (v0.3.0 has no `upgrade` yet); from then on, `jiracli upgrade`. Configuration and stored tokens are unchanged.
+
 ## v0.3.0 (2026-11-04)
 
 ### Breaking: the command is now `jiracli`

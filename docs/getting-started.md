@@ -42,27 +42,21 @@ sh install.sh --archive jira-cli_<version>_windows_amd64.zip
 The PATH entry applies to Git Bash; for cmd/PowerShell see
 [installation.md](installation.md#windows-git-bash).
 
-### Native, from a release with the GitHub CLI
+### Native, from a release
 
 ```bash
-gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber && sh /tmp/install.sh
+curl -fsSL https://github.com/Personal-Stack/jira-cli/releases/latest/download/install.sh | sh
 ```
+
+Upgrade later with `jiracli upgrade`.
 
 ### Docker image from the release (no clone, no Go)
 
 Every release publishes `ghcr.io/personal-stack/jira-cli:<version>`
-(linux/amd64 + arm64). The registry is private:
+(linux/amd64 + arm64, public, no login needed):
 
 ```bash
-gh auth refresh -h github.com -s read:packages
-```
-
-```bash
-gh auth token | docker login ghcr.io -u <github-user> --password-stdin
-```
-
-```bash
-gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber && sh /tmp/install.sh --docker
+curl -fsSL https://github.com/Personal-Stack/jira-cli/releases/latest/download/install.sh | sh -s -- --docker
 ```
 
 This installs the `jiracli` wrapper using the released image. To use plain
@@ -96,14 +90,20 @@ Check: `jiracli --version` shows the new commit (e.g. `v0.1.0-6-g84dd1a9`).
 jiracli config setup
 ```
 
-It asks for the Jira URL, the name for the token, read-only, and a company CA
-file if you need one (section 4). Each answer is checked when you give it: the
-URL must be reachable, and a CA file must hold certificates. The file goes to
+It asks for the Jira URL (`https://` is added if you leave it out), the name
+for the token, read-only, and a company CA file if you need one (section 4;
+Tab completes the path). Each answer is checked when you give it: the
+URL must be reachable, and a CA file must hold certificates. After writing the
+file it offers to store the token (hidden input, verified against Jira, asked
+again if Jira refuses it) and to run `jiracli doctor`, so one session ends with
+a working CLI. Both are optional: answer no and run `jiracli auth login` and
+`jiracli doctor` later. The file goes to
 `~/.config/jira-cli/config.yaml` (Windows: `%APPDATA%\jira-cli\config.yaml`),
 and the folder is created if needed. Run it again to change an instance or add
 another one (`--instance staging`). Only the values it asks about change.
 Flags (`--base-url`, ...) skip the
-questions. Any command run without a configuration offers to create one.
+questions. In a terminal, any command run without a configuration offers to
+create one, and any command run without a stored token offers to store it.
 
 The resulting file contains no secrets:
 

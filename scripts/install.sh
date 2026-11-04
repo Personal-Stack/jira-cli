@@ -5,8 +5,11 @@
 # to PATH in your shell startup file. Every download is verified against the
 # release's SHA256SUMS.
 #
+#   curl -fsSL https://github.com/Personal-Stack/jira-cli/releases/latest/download/install.sh | sh
+#   curl -fsSL …/install.sh | sh -s -- --docker      (options after "sh -s --")
+#
 #   sh install.sh                        latest release
-#   sh install.sh --version v0.2.0       a specific release
+#   sh install.sh --version v0.3.0       a specific release
 #   sh install.sh --dir /usr/local/bin   system-wide (may need sudo)
 #   sh install.sh --from-source          build from this repository clone (needs Go)
 #   sh install.sh --archive FILE         offline install from a downloaded archive
@@ -23,7 +26,7 @@ INSTALL_DIR="${JIRA_CLI_INSTALL_DIR:-$HOME/.local/bin}"
 BASE_URL="${JIRA_CLI_BASE_URL:-}"
 BIN_NAME="jiracli"
 MODIFY_PATH=1
-COMPLETIONS=0
+COMPLETIONS=1
 FROM_SOURCE=0
 ARCHIVE=""
 UNINSTALL=0
@@ -43,9 +46,9 @@ usage() {
 Options:
   --version TAG        release tag to install (default: latest)
   --dir DIR            install directory (default: \$HOME/.local/bin; env JIRA_CLI_INSTALL_DIR)
-  --name NAME          binary name (default: jira; e.g. jira-dc if another 'jira' exists)
+  --name NAME          command name (default: jiracli)
   --no-modify-path     do not edit shell startup files
-  --completions        install shell completions (bash, zsh, fish)
+  --no-completions     do not install shell completions (default: bash, zsh and fish)
   --base-url URL       mirror with layout URL/<tag>/<asset> (env JIRA_CLI_BASE_URL)
   --from-source [DIR]  build with Go from a repository clone (default: this script's repo)
   --archive FILE       install from a local release archive (SHA256SUMS next to it, if present, is checked)
@@ -67,7 +70,8 @@ while [ $# -gt 0 ]; do
     --dir) INSTALL_DIR="${2:?--dir needs a value}"; shift ;;
     --name) BIN_NAME="${2:?--name needs a value}"; shift ;;
     --no-modify-path) MODIFY_PATH=0 ;;
-    --completions) COMPLETIONS=1 ;;
+    --completions) COMPLETIONS=1 ;;   # the default; kept for old instructions
+    --no-completions) COMPLETIONS=0 ;;
     --base-url) BASE_URL="${2:?--base-url needs a value}"; shift ;;
     --from-source)
       FROM_SOURCE=1
@@ -142,8 +146,13 @@ add_block() { # add_block FILE
         # shellcheck disable=SC2016 # $PATH must stay literal in the rc file
         printf 'case ":$PATH:" in *":%s:"*) ;; *) export PATH="%s:$PATH" ;; esac\n' "$INSTALL_DIR" "$INSTALL_DIR"
         if [ "$COMPLETIONS" = 1 ] && [ "${f##*/}" = .zshrc ]; then
+          zcomp="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions"
           # shellcheck disable=SC2016 # $fpath must stay literal in the rc file
-          printf 'fpath=("%s" $fpath)\n' "${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions"
+          printf 'fpath=("%s" $fpath)\n' "$zcomp"
+          # compinit usually runs earlier in .zshrc (oh-my-zsh, prezto), when
+          # fpath did not have this folder yet: register the completion now.
+          # shellcheck disable=SC2016 # zsh syntax, literal in the rc file
+          printf '(( $+functions[compdef] )) && [ -r "%s/_%s" ] && source "%s/_%s"\n' "$zcomp" "$BIN_NAME" "$zcomp" "$BIN_NAME"
         fi
         printf '%s\n' "$MARK_END"
       } >> "$f" ;;
@@ -282,7 +291,12 @@ fetch_release() {
 # ---------- obtain what to install ----------
 
 BIN_SRC=""
-REPO_ROOT=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
+# The clone this script is in. Piped (curl ... | sh), $0 is the shell, not
+# this file: then there is no clone, whatever the current directory is.
+REPO_ROOT=""
+case "$0" in
+  *install.sh) REPO_ROOT=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd) ;;
+esac
 if [ "$DOCKER" = 1 ]; then
   [ "$os" != windows ] || die "--docker is not supported from Git Bash (path and TTY translation break the wrapper); install the native binary, or run this installer inside WSL"
   if [ "$os" = darwin ]; then
@@ -315,6 +329,7 @@ if [ "$DOCKER" = 1 ]; then
   BIN_SRC="$TMP/jira-wrapper"
 elif [ "$FROM_SOURCE" = 1 ]; then
   [ -n "$SRC_DIR" ] || SRC_DIR="$REPO_ROOT"
+  [ -n "$SRC_DIR" ] || die "--from-source needs a clone: run install.sh from it, or pass --from-source DIR"
   [ -f "$SRC_DIR/go.mod" ] || die "$SRC_DIR is not a jira-cli checkout (no go.mod)"
   command -v go >/dev/null 2>&1 || die "Go is required for --from-source (https://go.dev/dl/); or use --docker"
   ver=$(cd "$SRC_DIR" && git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -384,6 +399,25 @@ fi
 
 if [ "$COMPLETIONS" = 1 ]; then install_completions; fi
 
+# Until v0.2.0 the command was 'jira'. Remove that old jira-cli from the same
+# folder, with its completions, so 'jira' does not keep running the old
+# version. A 'jira' from another project is never touched. The PATH block is
+# shared with the new command and stays.
+OLD="$INSTALL_DIR/jira$EXE"
+if [ "$BIN_NAME" != jira ] && [ -f "$OLD" ] && [ "$OLD" != "$TARGET" ]; then
+  if grep -q "runs jira-cli from its Docker image" "$OLD" 2>/dev/null ||
+     LC_ALL=C grep -q "github.com/personal-stack/jira-cli" "$OLD" 2>/dev/null; then
+    rm -f "$OLD" && info "removed the previous command $OLD (renamed to $BIN_NAME in v0.3.0)"
+    old_name=$BIN_NAME; BIN_NAME=jira
+    completion_paths | while read -r _ path; do
+      if [ -f "$path" ]; then rm -f "$path"; info "removed $path"; fi
+    done
+    BIN_NAME=$old_name
+  else
+    info "kept $OLD: it is not jira-cli"
+  fi
+fi
+
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) on_path=1 ;;
   *) on_path=0 ;;
@@ -395,6 +429,12 @@ if [ "$on_path" = 0 ]; then
   else
     say "$INSTALL_DIR is not on PATH; add it to use '$BIN_NAME' directly."
   fi
+elif [ "$MODIFY_PATH" = 1 ] && [ "$COMPLETIONS" = 1 ] && [ "$(basename "${SHELL:-sh}")" = zsh ]; then
+  # Already on PATH, but zsh only finds completions through fpath.
+  for f in $(rc_files); do add_block "$f"; done
+fi
+if [ "$COMPLETIONS" = 1 ]; then
+  say "Tab completion is installed; it works in new terminals (bash needs the bash-completion package)."
 fi
 
 # Another 'jira' earlier on PATH (e.g. go-jira, ankitpokhrel/jira-cli) would
@@ -415,6 +455,9 @@ fi
 
 say ""
 say "Next steps:"
-say "  $BIN_NAME config validate      # create ~/.config/jira-cli/config.yaml first (see examples/config.yaml)"
-say "  $BIN_NAME auth login           # store your personal access token in the OS keyring"
-say "  $BIN_NAME doctor               # check connectivity, TLS and authentication"
+say "  $BIN_NAME config setup         # guided: the configuration, then the token and a connection check"
+if [ "$DOCKER" = 1 ]; then
+  say "Upgrade later by running this installer again with --docker."
+else
+  say "Upgrade later with:  $BIN_NAME upgrade"
+fi

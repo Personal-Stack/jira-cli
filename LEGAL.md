@@ -55,7 +55,9 @@ rights the Apache License 2.0 grants you.
 ## What jira-cli does with your data
 
 - It sends requests only to the Jira base URL you configure. It downloads
-  from GitHub only when you ask it to install or set up something.
+  from GitHub only when you ask it to: `install.sh`, `jiracli upgrade`, and
+  `jiracli setup-sbx` when it needs a Linux build. It never checks for updates
+  on its own.
 - It has **no telemetry and no analytics**, and it sends nothing to the
   project's authors or anyone else.
 - Tokens are read from where you put them (the OS keyring, files, environment

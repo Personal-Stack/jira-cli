@@ -74,14 +74,37 @@ grep -q "sha256 verified" "$WORK/out" && ok "checksum verified" || ko "no checks
 [ "$(blocks "$HOME/.bashrc")" = 1 ] && ok "PATH block added to .bashrc" || ko "PATH block"
 grep -q 'alias ll=' "$HOME/.bashrc" && ok "existing .bashrc content kept" || ko "rc content lost"
 bash -c "source '$HOME/.bashrc'; command -v jiracli" | grep -q "$HOME/.local/bin/jiracli" && ok "new bash shell finds jiracli" || ko "jiracli not on PATH in new shell"
+[ -s "$HOME/.local/share/bash-completion/completions/jiracli" ] && [ -s "$HOME/.local/share/zsh/site-functions/_jiracli" ] && [ -s "$HOME/.config/fish/completions/jiracli.fish" ] && ok "completions installed by default" || ko "no default completions"
 run --base-url "$BASE" && [ "$(blocks "$HOME/.bashrc")" = 1 ] && ok "re-install is idempotent (one block)" || ko "duplicate block"
 run --base-url "$BASE" --uninstall && ok "uninstall exits 0" || { ko "uninstall exit"; cat "$WORK/out"; }
 [ ! -e "$HOME/.local/bin/jiracli" ] && ok "uninstall removes binary" || ko "binary left"
 cmp -s "$HOME/.bashrc" "$HOME/.bashrc.orig" && ok "uninstall restores .bashrc exactly" || { ko ".bashrc differs"; diff "$HOME/.bashrc.orig" "$HOME/.bashrc"; }
 
+echo "== piped (curl ... | sh -s -- ...)"
+fresh_home bash
+run_piped() { (cd "$(dirname "$INSTALL")" && env -u GITHUB_TOKEN PATH="$PATH:/nonexistent-gh" "$SH" -s -- "$@" < "$INSTALL" > "$WORK/out" 2>&1); }
+if run_piped --base-url "$BASE"; then ok "piped install"; else ko "piped install"; cat "$WORK/out"; fi
+[ -x "$HOME/.local/bin/jiracli" ] && ok "piped: binary installed" || ko "piped: binary missing"
+# Run from inside the clone, piped: the clone must not be used.
+if run_piped --from-source; then ko "piped --from-source used the current directory"; else grep -q "needs a clone" "$WORK/out" && ok "piped: the current directory is not taken for a clone" || { ko "piped --from-source message"; cat "$WORK/out"; }; fi
+
+echo "== upgrade from 'jira' (renamed in v0.3.0)"
+fresh_home bash
+data="$HOME/.local/share"; mkdir -p "$HOME/.local/bin" "$data/bash-completion/completions"
+printf '\177ELF old build of github.com/personal-stack/jira-cli\n' > "$HOME/.local/bin/jira"
+echo "# bash completion V2 for jira" > "$data/bash-completion/completions/jira"
+if run --base-url "$BASE"; then ok "install over an old jira"; else ko "install over an old jira"; cat "$WORK/out"; fi
+[ ! -e "$HOME/.local/bin/jira" ] && [ ! -e "$data/bash-completion/completions/jira" ] && [ -x "$HOME/.local/bin/jiracli" ] && ok "old native jira and its completion removed" || ko "old native jira kept"
+printf '#!/bin/sh\n# jira: runs jira-cli from its Docker image as if it were installed natively.\n' > "$HOME/.local/bin/jira"
+run --base-url "$BASE" && [ ! -e "$HOME/.local/bin/jira" ] && ok "old Docker wrapper jira removed" || { ko "old wrapper kept"; cat "$WORK/out"; }
+printf '#!/bin/sh\necho another jira\n' > "$HOME/.local/bin/jira"
+echo "# bash completion V2 for jira" > "$data/bash-completion/completions/jira"
+run --base-url "$BASE" && [ -f "$HOME/.local/bin/jira" ] && [ -f "$data/bash-completion/completions/jira" ] && grep -q "kept .*: it is not jira-cli" "$WORK/out" && ok "a jira from another project is kept" || { ko "foreign jira touched"; cat "$WORK/out"; }
+grep -c "^# >>> jira-cli >>>" "$HOME/.bashrc" | grep -qx 1 && ok "PATH block kept" || ko "PATH block"
+
 echo "== zsh with completions, explicit version, custom name"
 fresh_home zsh
-if run --base-url "$BASE" --version "$VERSION" --completions --name jira-dc; then ok "install"; else ko "install"; cat "$WORK/out"; fi
+if run --base-url "$BASE" --version "$VERSION" --name jira-dc; then ok "install"; else ko "install"; cat "$WORK/out"; fi
 [ -x "$HOME/.local/bin/jira-dc" ] && ok "installed as jira-dc" || ko "custom name"
 grep -q 'fpath=' "$HOME/.zshrc" && ok "zsh fpath added" || ko "zsh fpath"
 [ -s "$HOME/.local/share/zsh/site-functions/_jira-dc" ] && ok "zsh completion" || ko "zsh completion"
@@ -97,6 +120,24 @@ echo "== already on PATH: no rc edits"
 fresh_home sh
 mkdir -p "$HOME/bin"; PATH="$HOME/bin:$PATH"
 run --base-url "$BASE" --dir "$HOME/bin" && [ ! -f "$HOME/.profile" ] && ok "no rc change when dir already on PATH" || { ko "rc modified"; cat "$WORK/out"; }
+
+echo "== --no-completions"
+fresh_home bash
+run --base-url "$BASE" --no-completions && [ ! -e "$HOME/.local/share/bash-completion/completions/jiracli" ] && ! grep -q "Tab completion" "$WORK/out" && ok "no completions" || { ko "--no-completions"; cat "$WORK/out"; }
+
+if command -v zsh > /dev/null; then
+  echo "== zsh: compinit earlier in .zshrc, folder already on PATH"
+  fresh_home zsh
+  mkdir -p "$HOME/.local/bin"; PATH="$HOME/.local/bin:$PATH"
+  printf 'autoload -Uz compinit && compinit -u\n' > "$HOME/.zshrc"
+  if run --base-url "$BASE"; then ok "install"; else ko "install"; cat "$WORK/out"; fi
+  grep -q 'fpath=' "$HOME/.zshrc" && ok "fpath block added although already on PATH" || ko "no fpath block"
+  [ "$(HOME="$HOME" zsh -ic 'print -r -- ${_comps[jiracli]}' 2>/dev/null)" = _jiracli ] && ok "zsh registers the completion after an earlier compinit" || ko "zsh completion not registered"
+  # compinit after our block (fpath set first): found through fpath.
+  printf 'autoload -Uz compinit && compinit -u\n' >> "$HOME/.zshrc"
+  sed -i.bak '1d' "$HOME/.zshrc"
+  [ "$(HOME="$HOME" zsh -ic 'print -r -- ${_comps[jiracli]}' 2>/dev/null)" = _jiracli ] && ok "zsh finds the completion through fpath" || ko "zsh fpath completion"
+fi
 
 echo "== --no-modify-path"
 fresh_home bash

@@ -58,33 +58,67 @@ sh install.sh --archive jira-cli_<version>_windows_amd64.zip
 - The native binary verifies TLS with the Windows certificate store and stores tokens in Credential Manager.
 - Not tested in CI (Windows runners cost twice the Linux minutes). The Windows branch (zip, `.exe`, platform check, tamper rejection, PATH block, uninstall) was exercised on Linux with a `uname` shim reporting `MINGW64_NT`; no real Windows machine has run it yet.
 
-## The repository is private
+## Getting the installer
 
-Release assets need authentication. The installers try, in order:
-
-1. a mirror (`--base-url`, or `JIRA_CLI_BASE_URL`), with layout `<url>/<tag>/<asset>` and `<url>/LATEST`;
-2. the GitHub CLI, if `gh auth status` succeeds (`gh release download`);
-3. `GITHUB_TOKEN` (a fine-grained token with *Contents: read* on this repository);
-4. the public download URL (works only if the repository becomes public).
-
-Getting the installer itself:
+The latest release's installer is always at the same URL:
 
 ```bash
-# Linux / macOS, with the GitHub CLI
-gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber && sh /tmp/install.sh
-# or from a clone
-git clone https://github.com/Personal-Stack/jira-cli && sh jira-cli/scripts/install.sh
+curl -fsSL https://github.com/Personal-Stack/jira-cli/releases/latest/download/install.sh | sh
 ```
+
+Options go after `sh -s --`, e.g. `| sh -s -- --docker` or
+`| sh -s -- --version v0.3.0`. Piped, the script never uses a clone in the
+current directory.
+
+To read the script before running it (it's ~450 lines of POSIX sh):
+
+```bash
+curl -fsSLo /tmp/install.sh https://github.com/Personal-Stack/jira-cli/releases/latest/download/install.sh && less /tmp/install.sh
+```
+
+```bash
+sh /tmp/install.sh
+```
+
+What is verified: every **archive** and the Docker wrapper are checked
+against the release's `SHA256SUMS` before anything is installed. The
+installer script itself is not signed; it comes over HTTPS from GitHub, like
+any `curl | sh` installer.
+
+Release assets come from, in order:
+
+1. a mirror (`--base-url`, or `JIRA_CLI_BASE_URL`), with layout `<url>/<tag>/<asset>` and `<url>/LATEST`;
+2. the GitHub CLI, if `gh auth status` succeeds;
+3. `GITHUB_TOKEN`, if set (avoids GitHub's anonymous API rate limit of 60 requests per hour);
+4. the public download URL.
+
+## Upgrading
+
+```bash
+jiracli upgrade
+```
+
+It downloads the latest release for this platform, checks it against
+`SHA256SUMS`, runs the new binary once, and only then replaces the installed
+one in place (same path, same name). `--check` only reports whether a newer
+release exists; `--version vX.Y.Z` installs that release, also an older one.
+The configuration and stored tokens are not touched. jiracli never checks for
+updates on its own.
+
+- **Docker wrapper:** run the installer again with `--docker`; `upgrade` refuses inside the container and says so.
+- **System folder** (e.g. `/usr/local/bin`): run it as the folder's owner (`sudo jiracli upgrade`).
+- **Development build** (`make install`): `upgrade` refuses unless you pass `--version`.
+- **From v0.2.0 or earlier**, where the command was `jira`: there is no `upgrade` yet, so run the installer. It removes the old `jira` it finds in the install folder.
 
 ## Options
 
 | install.sh | Meaning |
 |---|---|
-| `--version v0.2.0` | specific release (default: latest) |
+| `--version v0.3.0` | specific release (default: latest) |
 | `--dir DIR` | install directory (`JIRA_CLI_INSTALL_DIR`) |
-| `--name jira-dc` | binary name, if another `jira` (go-jira, ankitpokhrel/jira-cli) is installed |
+| `--name NAME` | command name (default `jiracli`) |
 | `--no-modify-path` | do not touch shell files |
-| `--completions` | bash, zsh and fish completions |
+| `--no-completions` | skip the bash, zsh and fish completions (installed by default; bash needs the bash-completion package) |
 | `--base-url URL` | internal mirror (air-gapped networks) |
 | `--archive FILE` | offline install from a downloaded archive (`SHA256SUMS` next to it is checked) |
 | `--from-source [DIR]` | build with Go from a clone (`make install`) |
