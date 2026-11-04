@@ -74,6 +74,7 @@ grep -q "sha256 verified" "$WORK/out" && ok "checksum verified" || ko "no checks
 [ "$(blocks "$HOME/.bashrc")" = 1 ] && ok "PATH block added to .bashrc" || ko "PATH block"
 grep -q 'alias ll=' "$HOME/.bashrc" && ok "existing .bashrc content kept" || ko "rc content lost"
 bash -c "source '$HOME/.bashrc'; command -v jiracli" | grep -q "$HOME/.local/bin/jiracli" && ok "new bash shell finds jiracli" || ko "jiracli not on PATH in new shell"
+[ -s "$HOME/.local/share/bash-completion/completions/jiracli" ] && [ -s "$HOME/.local/share/zsh/site-functions/_jiracli" ] && [ -s "$HOME/.config/fish/completions/jiracli.fish" ] && ok "completions installed by default" || ko "no default completions"
 run --base-url "$BASE" && [ "$(blocks "$HOME/.bashrc")" = 1 ] && ok "re-install is idempotent (one block)" || ko "duplicate block"
 run --base-url "$BASE" --uninstall && ok "uninstall exits 0" || { ko "uninstall exit"; cat "$WORK/out"; }
 [ ! -e "$HOME/.local/bin/jiracli" ] && ok "uninstall removes binary" || ko "binary left"
@@ -103,7 +104,7 @@ grep -c "^# >>> jira-cli >>>" "$HOME/.bashrc" | grep -qx 1 && ok "PATH block kep
 
 echo "== zsh with completions, explicit version, custom name"
 fresh_home zsh
-if run --base-url "$BASE" --version "$VERSION" --completions --name jira-dc; then ok "install"; else ko "install"; cat "$WORK/out"; fi
+if run --base-url "$BASE" --version "$VERSION" --name jira-dc; then ok "install"; else ko "install"; cat "$WORK/out"; fi
 [ -x "$HOME/.local/bin/jira-dc" ] && ok "installed as jira-dc" || ko "custom name"
 grep -q 'fpath=' "$HOME/.zshrc" && ok "zsh fpath added" || ko "zsh fpath"
 [ -s "$HOME/.local/share/zsh/site-functions/_jira-dc" ] && ok "zsh completion" || ko "zsh completion"
@@ -119,6 +120,24 @@ echo "== already on PATH: no rc edits"
 fresh_home sh
 mkdir -p "$HOME/bin"; PATH="$HOME/bin:$PATH"
 run --base-url "$BASE" --dir "$HOME/bin" && [ ! -f "$HOME/.profile" ] && ok "no rc change when dir already on PATH" || { ko "rc modified"; cat "$WORK/out"; }
+
+echo "== --no-completions"
+fresh_home bash
+run --base-url "$BASE" --no-completions && [ ! -e "$HOME/.local/share/bash-completion/completions/jiracli" ] && ! grep -q "Tab completion" "$WORK/out" && ok "no completions" || { ko "--no-completions"; cat "$WORK/out"; }
+
+if command -v zsh > /dev/null; then
+  echo "== zsh: compinit earlier in .zshrc, folder already on PATH"
+  fresh_home zsh
+  mkdir -p "$HOME/.local/bin"; PATH="$HOME/.local/bin:$PATH"
+  printf 'autoload -Uz compinit && compinit -u\n' > "$HOME/.zshrc"
+  if run --base-url "$BASE"; then ok "install"; else ko "install"; cat "$WORK/out"; fi
+  grep -q 'fpath=' "$HOME/.zshrc" && ok "fpath block added although already on PATH" || ko "no fpath block"
+  [ "$(HOME="$HOME" zsh -ic 'print -r -- ${_comps[jiracli]}' 2>/dev/null)" = _jiracli ] && ok "zsh registers the completion after an earlier compinit" || ko "zsh completion not registered"
+  # compinit after our block (fpath set first): found through fpath.
+  printf 'autoload -Uz compinit && compinit -u\n' >> "$HOME/.zshrc"
+  sed -i.bak '1d' "$HOME/.zshrc"
+  [ "$(HOME="$HOME" zsh -ic 'print -r -- ${_comps[jiracli]}' 2>/dev/null)" = _jiracli ] && ok "zsh finds the completion through fpath" || ko "zsh fpath completion"
+fi
 
 echo "== --no-modify-path"
 fresh_home bash

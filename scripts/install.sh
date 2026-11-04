@@ -26,7 +26,7 @@ INSTALL_DIR="${JIRA_CLI_INSTALL_DIR:-$HOME/.local/bin}"
 BASE_URL="${JIRA_CLI_BASE_URL:-}"
 BIN_NAME="jiracli"
 MODIFY_PATH=1
-COMPLETIONS=0
+COMPLETIONS=1
 FROM_SOURCE=0
 ARCHIVE=""
 UNINSTALL=0
@@ -48,7 +48,7 @@ Options:
   --dir DIR            install directory (default: \$HOME/.local/bin; env JIRA_CLI_INSTALL_DIR)
   --name NAME          command name (default: jiracli)
   --no-modify-path     do not edit shell startup files
-  --completions        install shell completions (bash, zsh, fish)
+  --no-completions     do not install shell completions (default: bash, zsh and fish)
   --base-url URL       mirror with layout URL/<tag>/<asset> (env JIRA_CLI_BASE_URL)
   --from-source [DIR]  build with Go from a repository clone (default: this script's repo)
   --archive FILE       install from a local release archive (SHA256SUMS next to it, if present, is checked)
@@ -70,7 +70,8 @@ while [ $# -gt 0 ]; do
     --dir) INSTALL_DIR="${2:?--dir needs a value}"; shift ;;
     --name) BIN_NAME="${2:?--name needs a value}"; shift ;;
     --no-modify-path) MODIFY_PATH=0 ;;
-    --completions) COMPLETIONS=1 ;;
+    --completions) COMPLETIONS=1 ;;   # the default; kept for old instructions
+    --no-completions) COMPLETIONS=0 ;;
     --base-url) BASE_URL="${2:?--base-url needs a value}"; shift ;;
     --from-source)
       FROM_SOURCE=1
@@ -145,8 +146,13 @@ add_block() { # add_block FILE
         # shellcheck disable=SC2016 # $PATH must stay literal in the rc file
         printf 'case ":$PATH:" in *":%s:"*) ;; *) export PATH="%s:$PATH" ;; esac\n' "$INSTALL_DIR" "$INSTALL_DIR"
         if [ "$COMPLETIONS" = 1 ] && [ "${f##*/}" = .zshrc ]; then
+          zcomp="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions"
           # shellcheck disable=SC2016 # $fpath must stay literal in the rc file
-          printf 'fpath=("%s" $fpath)\n' "${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions"
+          printf 'fpath=("%s" $fpath)\n' "$zcomp"
+          # compinit usually runs earlier in .zshrc (oh-my-zsh, prezto), when
+          # fpath did not have this folder yet: register the completion now.
+          # shellcheck disable=SC2016 # zsh syntax, literal in the rc file
+          printf '(( $+functions[compdef] )) && [ -r "%s/_%s" ] && source "%s/_%s"\n' "$zcomp" "$BIN_NAME" "$zcomp" "$BIN_NAME"
         fi
         printf '%s\n' "$MARK_END"
       } >> "$f" ;;
@@ -423,6 +429,12 @@ if [ "$on_path" = 0 ]; then
   else
     say "$INSTALL_DIR is not on PATH; add it to use '$BIN_NAME' directly."
   fi
+elif [ "$MODIFY_PATH" = 1 ] && [ "$COMPLETIONS" = 1 ] && [ "$(basename "${SHELL:-sh}")" = zsh ]; then
+  # Already on PATH, but zsh only finds completions through fpath.
+  for f in $(rc_files); do add_block "$f"; done
+fi
+if [ "$COMPLETIONS" = 1 ]; then
+  say "Tab completion is installed; it works in new terminals (bash needs the bash-completion package)."
 fi
 
 # Another 'jira' earlier on PATH (e.g. go-jira, ankitpokhrel/jira-cli) would

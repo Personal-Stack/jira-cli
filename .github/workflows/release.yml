@@ -6,8 +6,11 @@ name: release
 #                 installers and the Docker wrapper
 #   3. image    - multi-arch image ghcr.io/personal-stack/jira-cli, pushed, then
 #                 pulled back by digest and smoke-tested on amd64 and arm64
-#   4. publish  - the GitHub release, created LAST, only if 1-3 succeeded, with
-#                 the image reference and digest in the notes
+#   4. publish  - the GitHub release, created LAST, only if 1-3 succeeded. Its
+#                 notes come from scripts/release-notes.sh: the version's
+#                 CHANGELOG.md section, install/upgrade, downloads, checksums,
+#                 the image digest. A release tag without a CHANGELOG section
+#                 fails in step 1, before anything is built.
 #
 # Run it manually (Actions > release > Run workflow) for a dry run: everything
 # is built and tested, nothing is pushed or published.
@@ -48,6 +51,9 @@ jobs:
       - name: Version format
         run: |
           [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::'$VERSION' is not vX.Y.Z[-pre]"; exit 1; }
+      - name: CHANGELOG entry (releases need their notes before anything is built)
+        if: env.PUBLISH == 'true' && !contains(env.VERSION, '-')
+        run: scripts/release-notes.sh --check "$VERSION"
       - name: Generated code in sync
         run: go run ./cmd/jiragen check
       - name: Tests
@@ -164,27 +170,9 @@ jobs:
         env:
           DIGEST: ${{ needs.image.outputs.digest }}
         run: |
-          cat > notes.md <<EOF
-          ## Install
-
-          **Native** (Linux/macOS): download \`install.sh\`, \`SHA256SUMS\` and the archive for your platform, then \`sh install.sh --archive <archive>\`; or \`gh release download $VERSION -R $GITHUB_REPOSITORY -p install.sh -D /tmp && sh /tmp/install.sh --version $VERSION\`.
-          **Windows** (Git Bash): \`sh install.sh --archive jira-cli_<version>_windows_amd64.zip\`.
-
-          **Docker image** (linux/amd64, linux/arm64):
-
-          \`\`\`
-          docker pull $IMAGE:$VERSION
-          \`\`\`
-
-          Digest: \`$DIGEST\` (pin with \`$IMAGE@$DIGEST\`).
-          As a \`jiracli\` command on your PATH: \`sh install.sh --docker --version $VERSION\`.
-          The registry is private: \`gh auth refresh -h github.com -s read:packages\`, then \`gh auth token | docker login ghcr.io -u <github-user> --password-stdin\`.
-
-          See docs/getting-started.md.
-
-          Unofficial: jira-cli is not affiliated with or endorsed by Atlassian; "Jira" is a trademark of Atlassian. See LEGAL.md.
-
-          EOF
+          # What's new (CHANGELOG.md), install and upgrade, downloads, verify, docs.
+          scripts/release-notes.sh "$VERSION" dist "$IMAGE" "$DIGEST" > notes.md
+          cat notes.md >> "$GITHUB_STEP_SUMMARY"
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

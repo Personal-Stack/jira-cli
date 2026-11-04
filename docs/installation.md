@@ -118,7 +118,7 @@ updates on its own.
 | `--dir DIR` | install directory (`JIRA_CLI_INSTALL_DIR`) |
 | `--name NAME` | command name (default `jiracli`) |
 | `--no-modify-path` | do not touch shell files |
-| `--completions` | bash, zsh and fish completions |
+| `--no-completions` | skip the bash, zsh and fish completions (installed by default; bash needs the bash-completion package) |
 | `--base-url URL` | internal mirror (air-gapped networks) |
 | `--archive FILE` | offline install from a downloaded archive (`SHA256SUMS` next to it is checked) |
 | `--from-source [DIR]` | build with Go from a clone (`make install`) |
