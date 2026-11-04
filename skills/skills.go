@@ -1,5 +1,5 @@
 // Package skills embeds the agent skills shipped with jira-cli, so commands
-// such as `jira setup-sbx` can install them without a repository clone.
+// such as `jiracli setup-sbx` can install them without a repository clone.
 package skills
 
 import "embed"

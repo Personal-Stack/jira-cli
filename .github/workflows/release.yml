@@ -72,7 +72,7 @@ jobs:
       - name: Smoke test the linux/amd64 binary
         run: |
           tar -xzf dist/jira-cli_"${VERSION#v}"_linux_amd64.tar.gz -C "$RUNNER_TEMP"
-          out=$("$RUNNER_TEMP"/jira-cli_"${VERSION#v}"_linux_amd64/jira --version)
+          out=$("$RUNNER_TEMP"/jira-cli_"${VERSION#v}"_linux_amd64/jiracli --version)
           echo "$out"; [[ "$out" == *"$VERSION"* ]]
       - uses: actions/upload-artifact@v4
         with:
@@ -104,6 +104,8 @@ jobs:
             type=raw,value=latest,enable=${{ !contains(env.VERSION, '-') }}
           labels: |
             org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.title=Personal Stack jira-cli
+            org.opencontainers.image.description=Unofficial command-line client for Jira Data Center (not affiliated with Atlassian)
       - name: Log in to GHCR
         if: env.PUBLISH == 'true'
         uses: docker/login-action@v3
@@ -175,10 +177,12 @@ jobs:
           \`\`\`
 
           Digest: \`$DIGEST\` (pin with \`$IMAGE@$DIGEST\`).
-          As a \`jira\` command on your PATH: \`sh install.sh --docker --version $VERSION\`.
+          As a \`jiracli\` command on your PATH: \`sh install.sh --docker --version $VERSION\`.
           The registry is private: \`gh auth refresh -h github.com -s read:packages\`, then \`gh auth token | docker login ghcr.io -u <github-user> --password-stdin\`.
 
           See docs/getting-started.md.
+
+          Unofficial: jira-cli is not affiliated with or endorsed by Atlassian; "Jira" is a trademark of Atlassian. See LEGAL.md.
 
           EOF
       - name: Publish GitHub release
@@ -186,5 +190,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           pre=(); [[ "$VERSION" == *-* ]] && pre=(--prerelease)
-          gh release create "$VERSION" dist/* --verify-tag --title "jira-cli $VERSION" \
+          gh release create "$VERSION" dist/* --verify-tag --title "Personal Stack jira-cli $VERSION" \
             --notes-file notes.md --generate-notes "${pre[@]}"

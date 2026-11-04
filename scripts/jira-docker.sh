@@ -1,13 +1,13 @@
 #!/bin/sh
 # jira: runs jira-cli from its Docker image as if it were installed natively.
 #
-# Installed as `jira` by `install.sh --docker`. Every invocation is a
+# Installed as `jiracli` by `install.sh --docker`. Every invocation is a
 # `docker run --rm` of the CLI image with:
 #   - your config dir (~/.config/jira-cli) mounted read-write at the SAME path,
 #     so paths in config.yaml (ca_bundle, client_cert) work unchanged;
 #   - the current directory mounted read-only at the same path, so
 #     `--file issue.json` works;
-#   - for `jira setup-sbx`: the project (current directory or --project) and
+#   - for `jiracli setup-sbx`: the project (current directory or --project) and
 #     the settings folder read-write, --binary-file read-only;
 #   - credentials stored as 0600 files in ~/.config/jira-cli/credentials
 #     (JIRA_CREDENTIAL_STORE=file), because containers have no OS keyring;
@@ -79,10 +79,10 @@ for d in $LOG_DIRS; do [ -n "$d" ] && rw "$d"; done
 IFS=$OLDIFS
 if [ -n "${JIRA_CONFIG:-}" ]; then ro "$(dirname "$JIRA_CONFIG")"; fi
 if [ -n "${JIRA_CREDENTIAL_FILE:-}" ]; then ro "$JIRA_CREDENTIAL_FILE"; fi
-# `jira setup-sbx` writes into the project and the settings folder; sbx itself
+# `jiracli setup-sbx` writes into the project and the settings folder; sbx itself
 # runs on the host afterwards (the command prints those steps).
 if [ "${2:-}" = setup-sbx ]; then   # $1 is the image (set above)
-  # Guided run (`jira setup-sbx` alone, in a terminal): ask for the project
+  # Guided run (`jiracli setup-sbx` alone, in a terminal): ask for the project
   # here, on the host, because the container only sees mounted folders.
   if [ $# -eq 2 ] && [ -t 0 ] && [ -t 2 ]; then
     while :; do
@@ -113,6 +113,7 @@ if [ "${2:-}" = setup-sbx ]; then   # $1 is the image (set above)
   done
   [ -d "$sbx_project" ] && rw "$sbx_project"
   rw "$sbx_settings"
+  ro "$HOME/.sbxenv.yaml"   # sbx's base layer: setup-sbx reads its agent
   set -- -e JIRA_CLI_CONTAINER=1 "$@"
 fi
 WORKDIR=""
@@ -164,6 +165,15 @@ sbx_host_checks() {
   fi
   [ -f "$sbx_project/sbxenv.yaml" ] || return 0
   if out=$(cd "$sbx_project" && sbx env plan 2>&1); then echo "  ✓ sbx accepts the environment" >&2; return 0; fi
+  # An agent kit from ~/.sbxenv.yaml: sbx names the agent it requires.
+  name=$(printf '%s\n' "$out" | sed -n 's/.*agent kit name "\([A-Za-z0-9._-]*\)".*/\1/p' | head -n 1)
+  if [ -n "$name" ]; then
+    echo "  ! sbx: the agent kit in this environment is \"$name\": using it" >&2
+    for f in "$sbx_project/sbxenv.yaml" "$sbx_settings/setup.yaml"; do
+      if [ -f "$f" ]; then sed "s/^agent: .*/agent: $name/" "$f" > "$f.tmp" && mv "$f.tmp" "$f"; fi
+    done
+    if out=$(cd "$sbx_project" && sbx env plan 2>&1); then echo "  ✓ sbx accepts the environment" >&2; return 0; fi
+  fi
   echo "  ! sbx rejected the environment:" >&2
   printf '%s\n' "$out" | sed 's/^/    /' >&2
   return 1

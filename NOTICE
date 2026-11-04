@@ -1,7 +1,12 @@
-jira-cli
+Personal Stack jira-cli
 Copyright 2026 Bogdan Bogdanov
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Personal Stack jira-cli is an independent, unofficial client for Jira's
+public REST API from the Personal Stack organization. It
+is not affiliated with, endorsed by or supported by Atlassian. See LEGAL.md
+for the legal notice and terms of use.
 
 Third-party material
 --------------------
@@ -14,7 +19,7 @@ Third-party material
    are trademarks of Atlassian. This project is not affiliated with or
    endorsed by Atlassian.
 
-2. Go modules and the Go standard library compiled into the jira binary are
+2. Go modules and the Go standard library compiled into the jiracli binary are
    licensed by their respective authors (Apache-2.0, BSD and MIT licenses).
    Their license texts are in THIRD_PARTY_LICENSES, which is shipped with
    every release archive and in the container image at

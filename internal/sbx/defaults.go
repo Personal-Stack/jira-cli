@@ -77,6 +77,20 @@ func LoadDefaults(project, settings string) Defaults {
 	return d
 }
 
+// BaseAgent is the agent of the user's ~/.sbxenv.yaml, which sbx merges
+// under every project's sbxenv.yaml; "" if there is none. When that file
+// brings an agent kit, sbx accepts no other agent name.
+func BaseAgent(home string) string {
+	var base struct {
+		Agent string `yaml:"agent"`
+	}
+	b, err := os.ReadFile(filepath.Join(home, ".sbxenv.yaml"))
+	if err != nil || yaml.Unmarshal(b, &base) != nil || ValidAgent(base.Agent) != nil {
+		return ""
+	}
+	return base.Agent
+}
+
 // SaveDefaults stores this plan's choices for the next project.
 func (p *Plan) SaveDefaults() error {
 	ro, skill := p.ReadOnly, p.Skill
@@ -88,7 +102,7 @@ func (p *Plan) SaveDefaults() error {
 	if err != nil {
 		return err
 	}
-	head := "# Choices of the last 'jira setup-sbx', used as defaults for the next project.\n"
+	head := "# Choices of the last 'jiracli setup-sbx', used as defaults for the next project.\n"
 	return os.WriteFile(filepath.Join(p.Settings, DefaultsFile), append([]byte(head), b...), 0o644)
 }
 

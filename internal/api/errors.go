@@ -64,7 +64,7 @@ func APIError(r *Response) *clierr.Error {
 	switch r.Status {
 	case http.StatusUnauthorized:
 		if e.Hint == "" {
-			e.Hint = "the credential was rejected: check that the token is valid and not expired (`jira auth status`, `jira auth login`)"
+			e.Hint = "the credential was rejected: check that the token is valid and not expired (`jiracli auth status`, `jiracli auth login`)"
 		}
 	case http.StatusForbidden:
 		e.Hint = "authenticated, but this account lacks the Jira permission for this operation"

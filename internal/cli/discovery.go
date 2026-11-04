@@ -148,7 +148,7 @@ func (a *App) commandsCmd() *cobra.Command {
 			op := p.Find(args[0], args[1])
 			if op == nil {
 				return clierr.New(clierr.LayerUsage, "unknown_command", fmt.Sprintf("no command %q %q in profile %s", args[0], args[1], p.Name)).
-					WithHint("run `jira commands list` to see available commands")
+					WithHint("run `jiracli commands list` to see available commands")
 			}
 			d := describe(p, op, true)
 			return output.Write(a.Out, map[string]any{"command": d, "provenance": map[string]any{
@@ -197,7 +197,7 @@ func (a *App) capabilitiesCmd() *cobra.Command {
 				}
 			}
 			return output.Write(a.Out, map[string]any{
-				"cli":                 map[string]any{"name": "jira", "version": a.Version, "go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH},
+				"cli":                 map[string]any{"name": "jiracli", "version": a.Version, "go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH},
 				"profiles":            profiles,
 				"active":              active,
 				"auth_methods":        []string{"pat", "oauth"},

@@ -27,7 +27,7 @@ the end.
 sh install.sh --archive jira-cli_<version>_darwin_arm64.tar.gz
 ```
 
-The installer verifies the SHA-256, installs to `~/.local/bin/jira`, adds that
+The installer verifies the SHA-256, installs to `~/.local/bin/jiracli`, adds that
 directory to your `PATH` and, on macOS, removes the browser's quarantine flag
 so Gatekeeper does not block the (not yet code-signed) binary. Open a new
 terminal afterwards. To update, run the same command with the new archive.
@@ -65,7 +65,7 @@ gh auth token | docker login ghcr.io -u <github-user> --password-stdin
 gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber && sh /tmp/install.sh --docker
 ```
 
-This installs the `jira` wrapper using the released image. To use plain
+This installs the `jiracli` wrapper using the released image. To use plain
 `docker run` instead, see [docker.md](docker.md#use-the-published-image-directly-no-wrapper).
 Update by re-running the installer with the new `--version`.
 
@@ -88,12 +88,24 @@ arrive only when you rebuild it:
 cd jira-cli && git pull && sh scripts/install.sh --docker
 ```
 
-Check: `jira --version` shows the new commit (e.g. `v0.1.0-6-g84dd1a9`).
+Check: `jiracli --version` shows the new commit (e.g. `v0.1.0-6-g84dd1a9`).
 
 ## 3. Configure
 
-Create `~/.config/jira-cli/config.yaml` (Windows: `%APPDATA%\jira-cli\config.yaml`).
-It contains no secrets:
+```bash
+jiracli config setup
+```
+
+It asks for the Jira URL, the name for the token, read-only, and a company CA
+file if you need one (section 4). Each answer is checked when you give it: the
+URL must be reachable, and a CA file must hold certificates. The file goes to
+`~/.config/jira-cli/config.yaml` (Windows: `%APPDATA%\jira-cli\config.yaml`),
+and the folder is created if needed. Run it again to change an instance or add
+another one (`--instance staging`). Only the values it asks about change.
+Flags (`--base-url`, ...) skip the
+questions. Any command run without a configuration offers to create one.
+
+The resulting file contains no secrets:
 
 ```yaml
 version: 1
@@ -111,7 +123,7 @@ instances:
 ```
 
 ```bash
-jira config validate
+jiracli config validate
 ```
 
 ## 4. Company certificate (only if needed)
@@ -122,17 +134,17 @@ jira config validate
 - **Docker wrapper:** usually **yes**, if Jira uses a company (internal) CA. The container only trusts public CAs.
 - **Native on Linux:** only if the company CA is not installed in the system bundle.
 
-`jira doctor` tells you: a `tls` check failing with `tls_certificate` /
+`jiracli doctor` tells you: a `tls` check failing with `tls_certificate` /
 `unknown_certificate_authority` means you need it.
 
 ### Option A: let the CLI download it (simplest; works with Docker)
 
 ```bash
-jira certs fetch                                   # uses base_url from your config
+jiracli certs fetch                                   # uses base_url from your config
 ```
 
 ```bash
-jira certs fetch https://jira.company.internal     # or any URL
+jiracli certs fetch https://jira.company.internal     # or any URL
 ```
 
 The command:
@@ -205,7 +217,7 @@ In `config.yaml` (absolute path; `~` is not expanded):
 
 - The server may send an **incomplete chain**. Browsers fetch the missing intermediate silently; the CLI does not. Export the **intermediate** too (the entry just below the root) and combine both: `cat company-root.pem company-intermediate.pem > ~/.config/jira-cli/company-ca.pem`.
 - A corporate proxy may **inspect TLS** (Zscaler, Netskope, Palo Alto...). Then the top of the chain is the proxy's CA, which is the one you need.
-- `jira certs fetch --dry-run` shows the chain the CLI sees, including through your proxy.
+- `jiracli certs fetch --dry-run` shows the chain the CLI sees, including through your proxy.
 - Diagnose precisely, from a clone: `scripts/tls-diagnose.sh jira.company.internal ~/.config/jira-cli/company-ca.pem`. It shows the server's chain and says for each certificate whether it works as `ca_bundle`.
 
 ## 5. Token (Personal Access Token)
@@ -214,7 +226,7 @@ In `config.yaml` (absolute path; `~` is not expanded):
 2. Store it:
 
 ```bash
-jira auth login
+jiracli auth login
 ```
 
 Paste the token at the hidden prompt. It is verified against Jira and stored in
@@ -227,7 +239,7 @@ Other options (mounted files, environment variables for CI) are in
 ## 6. Check the connection
 
 ```bash
-jira doctor
+jiracli doctor
 ```
 
 Expect `"ok": true`. The checks, in order:
@@ -248,19 +260,19 @@ Docker wrapper and a Jira or proxy reachable only via `localhost`/VPN DNS:
 ## 7. Use it
 
 ```bash
-jira issue search --jql 'project = ABC ORDER BY updated DESC' --max-results 5 --fields summary,status -o table
+jiracli issue search --jql 'project = ABC ORDER BY updated DESC' --max-results 5 --fields summary,status -o table
 ```
 
 ```bash
-jira issue get ABC-123 --fields summary,status,assignee
+jiracli issue get ABC-123 --fields summary,status,assignee
 ```
 
 ```bash
-jira commands list --group issue -o table          # what exists
+jiracli commands list --group issue -o table          # what exists
 ```
 
 ```bash
-jira commands describe issue create                 # parameters, body, risk
+jiracli commands describe issue create                 # parameters, body, risk
 ```
 
 - Output: JSON by default; `-o yaml`, `-o table`.
@@ -274,13 +286,13 @@ jira commands describe issue create                 # parameters, body, risk
 
 1. The token is from a low-privilege account.
 2. `read_only: true` in the config, and `export JIRA_READ_ONLY=1`.
-3. Guard test before any real request: `jira issue delete ABC-1 --yes` must exit `9` (`read_only_mode`).
+3. Guard test before any real request: `jiracli issue delete ABC-1 --yes` must exit `9` (`read_only_mode`).
 4. Small queries: `--max-results` of 50 or less, `--max-pages 3` with `--all`.
 5. Tell the Jira admins: requests carry `User-Agent: jira-cli/<version>`, and `--log-file` traces include Jira's request IDs.
 
 ## 9. Verify everything at once (read-only)
 
-From a clone, with `jira` on your PATH (native or Docker wrapper):
+From a clone, with `jiracli` on your PATH (native or Docker wrapper):
 
 ```bash
 scripts/phase4-readonly.sh --project <KEY>

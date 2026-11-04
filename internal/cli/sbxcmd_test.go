@@ -26,6 +26,7 @@ type fakeSbx struct {
 	missing   bool   // sbx not installed
 	secrets   string // `sbx secret ls` output
 	reject    string // env plan fails with this output
+	baseKit   string // an agent kit from ~/.sbxenv.yaml: env plan requires it as the agent
 	unreach   string // host the Jira reachability probe cannot reach
 	calls     []sbxCall
 	planDirs  []string
@@ -39,7 +40,7 @@ func isolateHome(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 }
 
-// runSbx runs `jira setup-sbx` with stdin answers against fs.
+// runSbx runs `jiracli setup-sbx` with stdin answers against fs.
 func runSbx(t *testing.T, fs *fakeSbx, stdin string, args ...string) (int, string, string) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
@@ -70,6 +71,10 @@ func runSbx(t *testing.T, fs *fakeSbx, stdin string, args ...string) (int, strin
 			if fs.reject != "" {
 				return []byte(fs.reject), errors.New("exit status 1")
 			}
+			env, _ := os.ReadFile(filepath.Join(dir, "sbxenv.yaml"))
+			if a := agentOf(string(env)); fs.baseKit != "" && a != fs.baseKit {
+				return []byte(`error: agent "` + a + `" does not match agent kit name "` + fs.baseKit + `" (set agent: "` + fs.baseKit + `" in sbxenv.yaml)` + "\n"), errors.New("exit status 1")
+			}
 			return []byte("plan ok\n"), nil
 		case "secret set jira":
 			fs.setSecret = true
@@ -89,6 +94,15 @@ func runSbx(t *testing.T, fs *fakeSbx, stdin string, args ...string) (int, strin
 		}
 	})
 	return code, out.String(), errb.String()
+}
+
+func agentOf(env string) string {
+	for _, l := range strings.Split(env, "\n") {
+		if a, ok := strings.CutPrefix(l, "agent: "); ok {
+			return a
+		}
+	}
+	return ""
 }
 
 func empty(t *testing.T, dir string) {
@@ -121,7 +135,7 @@ func TestSetupSbxFlags(t *testing.T) {
 			t.Errorf("sbxenv.yaml lacks %q:\n%s", want, env)
 		}
 	}
-	for _, f := range []string{".opencode/skills/jira/SKILL.md", "tmp/.sbx/jira-cli/bin/jira"} {
+	for _, f := range []string{".opencode/skills/jira/SKILL.md", "tmp/.sbx/jira-cli/bin/jiracli"} {
 		if _, err := os.Stat(filepath.Join(project, f)); err != nil {
 			t.Fatalf("missing %s", f)
 		}
@@ -254,7 +268,7 @@ func TestSetupSbxDropsOldKitsAndMovesTheKit(t *testing.T) {
 	if !strings.Contains(string(env), "agent: devex-opencode\nkits:\n  - ./tmp/.sbx/jira-cli\nworkspace:") {
 		t.Fatalf("kits:\n%s", env)
 	}
-	if _, err := os.Stat(filepath.Join(project, "tmp/.sbx/jira-cli/bin/jira")); err != nil {
+	if _, err := os.Stat(filepath.Join(project, "tmp/.sbx/jira-cli/bin/jiracli")); err != nil {
 		t.Fatal("kit not in tmp/")
 	}
 	if _, err := os.Stat(filepath.Join(project, "temp")); err == nil {
@@ -270,6 +284,60 @@ func TestSetupSbxDropsOldKitsAndMovesTheKit(t *testing.T) {
 	if code, _, errOut := runSbx(t, fs, "", "--project", project, "--agent", "company.jfrog.io/team/opencode-sbx:1.2"); code == 0 ||
 		!strings.Contains(errOut, "looks like an image or kit reference") {
 		t.Errorf("an image as --agent: exit %d", code)
+	}
+}
+
+// The case from real use: ~/.sbxenv.yaml brings the agent kit
+// "devex-opencode", so sbx rejects any other agent name. setup-sbx takes
+// the name sbx gives, saves it, and the next project starts with it.
+func TestSetupSbxTakesAgentNameFromSbx(t *testing.T) {
+	isolateHome(t)
+	project, next := t.TempDir(), t.TempDir()
+	fs := &fakeSbx{secrets: "jira apiKey\n", baseKit: "devex-opencode"}
+	code, _, errOut := runSbx(t, fs, "", "--project", project, "--base-url", "https://jira.example.com", "--agent", "opencode-xxxx")
+	if code != 0 || !strings.Contains(errOut, `the agent kit in this environment is "devex-opencode"`) || len(fs.planDirs) != 2 {
+		t.Fatalf("exit %d, plans %d:\n%s", code, len(fs.planDirs), errOut)
+	}
+	env, _ := os.ReadFile(filepath.Join(project, "sbxenv.yaml"))
+	if agentOf(string(env)) != "devex-opencode" || !strings.Contains(string(env), "name: devex-opencode-") {
+		t.Fatalf("sbxenv.yaml:\n%s", env)
+	}
+	fs.planDirs = nil
+	if code, _, _ := runSbx(t, fs, "", "--project", next); code != 0 || len(fs.planDirs) != 1 {
+		t.Fatalf("next project: exit %d, plans %d", code, len(fs.planDirs))
+	}
+}
+
+// The agent ~/.sbxenv.yaml sets is known before sbx is asked: no
+// correction round. Reserved sandbox names are refused.
+func TestSetupSbxAgentFromBaseLayerAndReservedNames(t *testing.T) {
+	isolateHome(t)
+	if err := os.WriteFile(filepath.Join(os.Getenv("HOME"), ".sbxenv.yaml"), []byte("schemaVersion: \"1\"\nagent: devex-opencode\nkits: [company.example.com/devex/opencode:3]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	project := t.TempDir()
+	fs := &fakeSbx{secrets: "jira apiKey\n", baseKit: "devex-opencode"}
+	code, _, errOut := runSbx(t, fs, "", "--project", project, "--base-url", "https://jira.example.com")
+	if code != 0 || len(fs.planDirs) != 1 || !strings.Contains(errOut, "Agent devex-opencode (from ~/.sbxenv.yaml") {
+		t.Fatalf("exit %d, plans %d:\n%s", code, len(fs.planDirs), errOut)
+	}
+	if env, _ := os.ReadFile(filepath.Join(project, "sbxenv.yaml")); agentOf(string(env)) != "devex-opencode" {
+		t.Fatalf("sbxenv.yaml:\n%s", env)
+	}
+	// --agent still wins (and sbx corrects it).
+	if code, _, errOut := runSbx(t, fs, "", "--project", project, "--agent", "opencode-xxxx"); code != 0 || !strings.Contains(errOut, "the agent kit in this environment") {
+		t.Fatalf("--agent: exit %d\n%s", code, errOut)
+	}
+	for _, name := range []string{"opencode", "Claude", "env", "shell"} {
+		if code, _, errOut := runSbx(t, fs, "", "--project", project, "--name", name); code == 0 || !strings.Contains(errOut, "is reserved by sbx") {
+			t.Errorf("--name %s: exit %d", name, code)
+		}
+	}
+	// Guided (a fresh HOME: every question is asked): a reserved name is asked again.
+	isolateHome(t)
+	code, _, errOut = runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, answers(t.TempDir(), "https://jira.example.com", "devex-opencode", "codex", "team-sbx", "", "", ""), "-i", "--force")
+	if code != 0 || !strings.Contains(errOut, `"codex" is reserved by sbx`) {
+		t.Fatalf("guided: exit %d\n%s", code, errOut)
 	}
 }
 
@@ -413,7 +481,7 @@ func TestSetupSbxPrintsNextSteps(t *testing.T) {
 	}
 	q := "'" + project + "'" // the path has a space: quoted for the shell
 	for _, want := range []string{"Next steps", "Start the sandbox jira-sbx", "$ cd " + q + " && sbx env run",
-		"$ cd " + q + " && sbx env exec -- '" + project + "/tmp/.sbx/jira-cli/bin/jira' doctor", "env:JIRA_CREDENTIAL_JIRA_PROD", "$ sbx ls", "$ sbx diagnose"} {
+		"$ cd " + q + " && sbx env exec -- '" + project + "/tmp/.sbx/jira-cli/bin/jiracli' doctor", "env:JIRA_CREDENTIAL_JIRA_PROD", "$ sbx ls", "$ sbx diagnose"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("next steps lack %q:\n%s", want, errOut)
 		}
@@ -444,7 +512,7 @@ func TestSbxUIColorOnlyOnTerminal(t *testing.T) {
 		}
 		var b bytes.Buffer
 		app.Err = &b
-		ui := app.newSbxUI()
+		ui := app.newTermUI()
 		ui.ok("done")
 		if got := strings.Contains(b.String(), "\x1b["); got != c.want {
 			t.Errorf("%+v: colored=%v\n%q", c, got, b.String())

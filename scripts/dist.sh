@@ -14,10 +14,10 @@ for p in $PLATFORMS; do
   name="jira-cli_${VERSION#v}_${os}_${arch}"
   stage="$OUT/$name"
   mkdir -p "$stage"
-  exe=jira; [ "$os" = windows ] && exe=jira.exe
+  exe=jiracli; [ "$os" = windows ] && exe=jiracli.exe
   CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
-    -ldflags "-s -w -X main.version=$VERSION" -o "$stage/$exe" ./cmd/jira
-  cp README.md LICENSE NOTICE "$OUT/THIRD_PARTY_LICENSES" "$stage/"
+    -ldflags "-s -w -X main.version=$VERSION" -o "$stage/$exe" ./cmd/jiracli
+  cp README.md LICENSE NOTICE LEGAL.md "$OUT/THIRD_PARTY_LICENSES" "$stage/"
   if [ "$os" = windows ]; then
     (cd "$OUT" && zip -qr "$name.zip" "$name")
   else

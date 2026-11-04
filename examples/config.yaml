@@ -4,7 +4,7 @@
 # This file must never contain secrets. Credentials are referenced by name
 # (credential_ref) and resolved from: $JIRA_CREDENTIAL_FILE, the secrets
 # directory ($JIRA_CREDENTIALS_DIR, default /run/secrets/<ref>),
-# $JIRA_CREDENTIAL_<REF>, or the OS keyring (`jira auth login`).
+# $JIRA_CREDENTIAL_<REF>, or the OS keyring (`jiracli auth login`).
 version: 1
 
 default_instance: company-production
@@ -14,7 +14,7 @@ instances:
     deployment: datacenter
     base_url: https://jira.company.internal      # context path allowed, e.g. https://host/jira
     specification:
-      profile: datacenter-10.3                     # compiled-in profile (`jira spec list`)
+      profile: datacenter-10.3                     # compiled-in profile (`jiracli spec list`)
     auth:
       type: pat                                    # Authorization: Bearer <PAT>
       username: user@company.com                   # informational; PAT does not need it

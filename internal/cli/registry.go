@@ -68,7 +68,7 @@ func (a *App) operationCommand(p *operation.Profile, op *operation.Operation) *c
 		for _, pp := range pathParams {
 			ex = append(ex, "<"+pp.Name+">")
 		}
-		cmd.Example = fmt.Sprintf("  jira %s %s %s", op.Group, op.Name, strings.Join(ex, " "))
+		cmd.Example = fmt.Sprintf("  jiracli %s %s %s", op.Group, op.Name, strings.Join(ex, " "))
 	}
 	f := cmd.Flags()
 	for _, prm := range op.Params {

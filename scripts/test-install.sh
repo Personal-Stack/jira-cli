@@ -68,15 +68,15 @@ blocks() { grep -c "^# >>> jira-cli >>>" "$1" 2>/dev/null || true; }
 echo "== mirror install (latest), bash"
 fresh_home bash
 if run --base-url "$BASE"; then ok "install exits 0"; else ko "install"; cat "$WORK/out"; fi
-[ -x "$HOME/.local/bin/jira" ] && ok "binary at ~/.local/bin/jira" || ko "binary missing"
-"$HOME/.local/bin/jira" --version | grep -q "${VERSION}" && ok "version $VERSION" || ko "wrong version"
+[ -x "$HOME/.local/bin/jiracli" ] && ok "binary at ~/.local/bin/jiracli" || ko "binary missing"
+"$HOME/.local/bin/jiracli" --version | grep -q "${VERSION}" && ok "version $VERSION" || ko "wrong version"
 grep -q "sha256 verified" "$WORK/out" && ok "checksum verified" || ko "no checksum message"
 [ "$(blocks "$HOME/.bashrc")" = 1 ] && ok "PATH block added to .bashrc" || ko "PATH block"
 grep -q 'alias ll=' "$HOME/.bashrc" && ok "existing .bashrc content kept" || ko "rc content lost"
-bash -c "source '$HOME/.bashrc'; command -v jira" | grep -q "$HOME/.local/bin/jira" && ok "new bash shell finds jira" || ko "jira not on PATH in new shell"
+bash -c "source '$HOME/.bashrc'; command -v jiracli" | grep -q "$HOME/.local/bin/jiracli" && ok "new bash shell finds jiracli" || ko "jiracli not on PATH in new shell"
 run --base-url "$BASE" && [ "$(blocks "$HOME/.bashrc")" = 1 ] && ok "re-install is idempotent (one block)" || ko "duplicate block"
 run --base-url "$BASE" --uninstall && ok "uninstall exits 0" || { ko "uninstall exit"; cat "$WORK/out"; }
-[ ! -e "$HOME/.local/bin/jira" ] && ok "uninstall removes binary" || ko "binary left"
+[ ! -e "$HOME/.local/bin/jiracli" ] && ok "uninstall removes binary" || ko "binary left"
 cmp -s "$HOME/.bashrc" "$HOME/.bashrc.orig" && ok "uninstall restores .bashrc exactly" || { ko ".bashrc differs"; diff "$HOME/.bashrc.orig" "$HOME/.bashrc"; }
 
 echo "== zsh with completions, explicit version, custom name"
@@ -115,14 +115,14 @@ OTHER="$WORK/jira-cli_${VERSION#v}_${other_os}_${HOST_ARCH}.tar.gz"
 cp "$ARCH" "$OTHER"   # name decides the platform check; content is irrelevant here
 if run --archive "$OTHER"; then ko "wrong-platform archive accepted"
 else grep -q "is built for ${other_os}/${HOST_ARCH}, but this machine is ${HOST_OS}/${HOST_ARCH}" "$WORK/out" && ok "wrong-platform archive refused with a clear message" || { ko "wrong message"; cat "$WORK/out"; }; fi
-"$HOME/.local/bin/jira" --version > /dev/null 2>&1 && ok "existing installation left working" || ko "existing installation damaged"
+"$HOME/.local/bin/jiracli" --version > /dev/null 2>&1 && ok "existing installation left working" || ko "existing installation damaged"
 # Right name, broken binary (e.g. corrupted download without SHA256SUMS):
 mkdir -p "$WORK/broken/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}" "$WORK/brokenpkg"
-printf 'not a program\n' > "$WORK/broken/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}/jira"; chmod +x "$WORK/broken/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}/jira"
+printf 'not a program\n' > "$WORK/broken/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}/jiracli"; chmod +x "$WORK/broken/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}/jiracli"
 tar -czf "$WORK/brokenpkg/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}.tar.gz" -C "$WORK/broken" "jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}"
 if run --archive "$WORK/brokenpkg/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}.tar.gz"; then ko "non-running binary installed"
 else grep -q "does not run on this machine" "$WORK/out" && ok "non-running binary refused before replacing anything" || { ko "wrong message"; cat "$WORK/out"; }; fi
-"$HOME/.local/bin/jira" --version > /dev/null 2>&1 && ok "existing installation still working" || ko "existing installation replaced by a broken binary"
+"$HOME/.local/bin/jiracli" --version > /dev/null 2>&1 && ok "existing installation still working" || ko "existing installation replaced by a broken binary"
 staged=$(find "$HOME/.local/bin" -maxdepth 1 -name '.jira.tmp*' | head -n1)
 [ -z "$staged" ] && ok "no staged temp file left behind" || ko "staged temp file left behind: $staged"
 
@@ -134,7 +134,7 @@ for f in "$MIRROR/v9.9.9"/jira-cli_*; do n=$(basename "$f"); mv "$f" "$MIRROR/v9
 sed "s/${VERSION#v}/9.9.9/" "$MIRROR/$VERSION/SHA256SUMS" > "$MIRROR/v9.9.9/SHA256SUMS"
 for f in "$MIRROR/v9.9.9"/jira-cli_*; do printf 'tampered' >> "$f"; done   # every platform's archive
 if run --base-url "$BASE" --version v9.9.9; then ko "tampered archive accepted"; else grep -q "checksum mismatch" "$WORK/out" && ok "tampered archive rejected" || { ko "wrong failure"; cat "$WORK/out"; }; fi
-[ ! -e "$HOME/.local/bin/jira" ] && ok "nothing installed after checksum failure" || ko "binary installed despite mismatch"
+[ ! -e "$HOME/.local/bin/jiracli" ] && ok "nothing installed after checksum failure" || ko "binary installed despite mismatch"
 if run --base-url "http://example.com/mirror" --version "$VERSION"; then ko "plain http accepted"; else grep -q "refusing non-HTTPS" "$WORK/out" && ok "non-HTTPS mirror refused" || { ko "wrong failure"; cat "$WORK/out"; }; fi
 
 if command -v go > /dev/null; then
@@ -150,10 +150,10 @@ if command -v docker > /dev/null && docker image inspect "$DIMG" > /dev/null 2>&
   echo "== --docker from a clone (image $DIMG)"
   fresh_home bash
   if run --docker --image "$DIMG"; then ok "install --docker"; else ko "install --docker"; cat "$WORK/out"; fi
-  head -1 "$HOME/.local/bin/jira" | grep -q '^#!/bin/sh' && grep -q "JIRA_CLI_IMAGE:-$DIMG" "$HOME/.local/bin/jira" && ok "wrapper installed with the image baked in" || ko "wrapper content"
-  "$HOME/.local/bin/jira" --version | grep -q "jira version" && ok "wrapper runs the container" || ko "wrapper run"
+  head -1 "$HOME/.local/bin/jiracli" | grep -q '^#!/bin/sh' && grep -q "JIRA_CLI_IMAGE:-$DIMG" "$HOME/.local/bin/jiracli" && ok "wrapper installed with the image baked in" || ko "wrapper content"
+  "$HOME/.local/bin/jiracli" --version | grep -q "jiracli version" && ok "wrapper runs the container" || ko "wrapper run"
   [ "$(blocks "$HOME/.bashrc")" = 1 ] && ok "PATH block added" || ko "PATH block"
-  run --uninstall && [ ! -e "$HOME/.local/bin/jira" ] && cmp -s "$HOME/.bashrc" "$HOME/.bashrc.orig" && ok "uninstall restores everything" || ko "docker uninstall"
+  run --uninstall && [ ! -e "$HOME/.local/bin/jiracli" ] && cmp -s "$HOME/.bashrc" "$HOME/.bashrc.orig" && ok "uninstall restores everything" || ko "docker uninstall"
 
   echo "== --docker from a release mirror (wrapper checksum-verified)"
   fresh_home bash

@@ -1,7 +1,7 @@
 # Jira CLI build targets. Requires Go 1.27 (go.mod toolchain directive).
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
-BIN     := bin/jira
+BIN     := bin/jiracli
 
 .PHONY: all spec-validate spec-update security smoke e2e e2e-boot dist install uninstall test-install sbx generate verify-generated test test-race vet lint build docker clean
 
@@ -62,14 +62,14 @@ uninstall:
 
 ## Set up a Docker Sandbox (sbx) with jira-cli for an agent; asks for everything.
 sbx:
-	go run ./cmd/jira setup-sbx --interactive --source-dir .
+	go run ./cmd/jiracli setup-sbx --interactive --source-dir .
 
 ## Installer tests in isolated HOMEs against a local mirror.
 test-install:
 	scripts/test-install.sh
 
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/jira
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/jiracli
 
 docker:
 	docker build --build-arg VERSION=$(VERSION) -t jira-cli:$(VERSION) .

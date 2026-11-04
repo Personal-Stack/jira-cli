@@ -16,9 +16,9 @@ filter = 12345                   -- saved filter
 Tips:
 
 - Quote values with spaces. Quote the whole JQL in single quotes in the shell.
-- Field names that are custom fields can be referenced by name in quotes or as `cf[10010]`; get IDs from `jira field list`.
-- Count only: `jira issue search --jql '...' --max-results 0` returns `total`.
+- Field names that are custom fields can be referenced by name in quotes or as `cf[10010]`; get IDs from `jiracli field list`.
+- Count only: `jiracli issue search --jql '...' --max-results 0` returns `total`.
 - Restrict payload size with `--fields key,summary,status`.
 - Use `--validate-query strict` to get errors for unknown fields/values instead of silent warnings.
-- Autocomplete help: `jira jql get-auto-complete` (field names, operators, functions).
-- Long queries: `jira issue search-post --stdin <<< '{"jql":"...","fields":["summary"]}'`.
+- Autocomplete help: `jiracli jql get-auto-complete` (field names, operators, functions).
+- Long queries: `jiracli issue search-post --stdin <<< '{"jql":"...","fields":["summary"]}'`.

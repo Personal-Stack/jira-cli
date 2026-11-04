@@ -3,7 +3,7 @@ name: installers
 # Exercises scripts/install.sh (Linux, macOS) against real release archives
 # served from a local mirror. Windows (Git Bash) uses the same script; it has
 # no CI job: Windows runners cost 2x Linux minutes, and the Windows code path
-# (zip + .exe) is small. Test it locally with a uname shim, see PROGRESS.md.
+# (zip + .exe) is small. Test it locally with a uname shim (docs/installation.md).
 
 on:
   pull_request:
@@ -77,7 +77,7 @@ jobs:
           go-version-file: go.mod
       - run: make build
       - name: Keychain trust and token storage
-        run: scripts/test-macos-keychain.sh bin/jira
+        run: scripts/test-macos-keychain.sh bin/jiracli
 
   docker-wrapper:
     needs: dist

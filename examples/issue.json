@@ -3,6 +3,6 @@
     "project": { "key": "ABC" },
     "issuetype": { "name": "Task" },
     "summary": "Created from jira-cli",
-    "description": "Body supplied with: jira issue create --file examples/issue.json"
+    "description": "Body supplied with: jiracli issue create --file examples/issue.json"
   }
 }

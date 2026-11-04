@@ -8,7 +8,7 @@ toolchain is downloaded automatically). No CGO.
 ## Layout
 
 ```
-cmd/jira          runtime entry point
+cmd/jiracli          runtime entry point
 cmd/jiragen       code generator (build time only)
 generator/        generator implementation + tests
 generated/        GENERATED: operation tables and REPORT.md (do not edit)
@@ -25,7 +25,7 @@ make generate           # after changing specs/overlays/risk (+ make spec-update
 make verify-generated   # CI check
 make vet test           # gofmt check, go vet, tests
 make test-race
-make build              # bin/jira (static, trimmed)
+make build              # bin/jiracli (static, trimmed)
 make smoke              # run the binary with JSON debug logs + secret-leak scan (see docs/logging.md)
 make e2e-boot           # real Jira 10.3 in Docker Compose, CLI diagnostics (no license)
 make e2e E2E_LICENSE_FILE=lic.txt   # full e2e scenario (see e2e/README.md)
@@ -65,6 +65,8 @@ files that carry the generated header.
 
 ## Releasing
 
-Tag `vX.Y.Z`; build with `make build VERSION=vX.Y.Z` (the version is embedded
-via `-ldflags`) and `make docker VERSION=vX.Y.Z`. Release automation is not
-implemented yet (see PROGRESS.md).
+Update `CHANGELOG.md`, then push a tag `vX.Y.Z` on `main`.
+`.github/workflows/release.yml` tests, builds the archives and the multi-arch
+image, pushes and smoke-tests the image, and publishes the GitHub release last.
+Locally: `make build VERSION=vX.Y.Z` (the version is embedded via `-ldflags`)
+and `make docker VERSION=vX.Y.Z`.
