@@ -25,6 +25,9 @@ func (a *App) NewRoot(args []string) *cobra.Command {
 		Long: `jira is a command-line interface for Jira Data Center whose API commands are
 generated at build time from OpenAPI specifications.
 
+Unofficial: not affiliated with or endorsed by Atlassian. "Jira" is a
+trademark of Atlassian. See LEGAL.md in the project.
+
 Start with:
   jira config validate        check the configuration
   jira doctor                 diagnose connectivity, TLS and authentication

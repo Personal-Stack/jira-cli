@@ -180,6 +180,8 @@ jobs:
 
           See docs/getting-started.md.
 
+          Unofficial: jira-cli is not affiliated with or endorsed by Atlassian; "Jira" is a trademark of Atlassian. See LEGAL.md.
+
           EOF
       - name: Publish GitHub release
         env:

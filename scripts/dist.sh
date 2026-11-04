@@ -17,7 +17,7 @@ for p in $PLATFORMS; do
   exe=jira; [ "$os" = windows ] && exe=jira.exe
   CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
     -ldflags "-s -w -X main.version=$VERSION" -o "$stage/$exe" ./cmd/jira
-  cp README.md LICENSE NOTICE "$OUT/THIRD_PARTY_LICENSES" "$stage/"
+  cp README.md LICENSE NOTICE LEGAL.md "$OUT/THIRD_PARTY_LICENSES" "$stage/"
   if [ "$os" = windows ]; then
     (cd "$OUT" && zip -qr "$name.zip" "$name")
   else
