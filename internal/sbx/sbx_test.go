@@ -136,10 +136,10 @@ func TestWriteKitAndEnvFile(t *testing.T) {
 	if hook := startup[0].(map[string]any)["command"].([]any)[2].(string); len(startup) != 1 || !strings.HasSuffix(strings.TrimSpace(hook), "|| true") {
 		t.Fatalf("startup hooks can fail the start: %v", startup)
 	}
-	if st, err := os.Stat(p.BinPath()); err != nil || st.Mode().Perm() != 0o755 || p.BinPath() != filepath.Join(p.Project, "tmp", ".sbx", "jira-cli", "bin", "jira") {
+	if st, err := os.Stat(p.BinPath()); err != nil || st.Mode().Perm() != 0o755 || p.BinPath() != filepath.Join(p.Project, "tmp", ".sbx", "jira-cli", "bin", "jiracli") {
 		t.Fatalf("binary: %v %v", st, err)
 	}
-	if df, _ := os.ReadFile(filepath.Join(p.KitDir, "jira-cli.dockerfile")); !strings.Contains(string(df), "COPY --chmod=0755 bin/jira /usr/bin/jira") {
+	if df, _ := os.ReadFile(filepath.Join(p.KitDir, "jira-cli.dockerfile")); !strings.Contains(string(df), "COPY --chmod=0755 bin/jiracli /usr/bin/jiracli") {
 		t.Fatalf("dockerfile:\n%s", df)
 	}
 
@@ -321,7 +321,7 @@ func TestBinaryFromReleaseVerifiesChecksum(t *testing.T) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
-	_ = tw.WriteHeader(&tar.Header{Name: "jira-cli/jira", Mode: 0o755, Size: int64(len(elfBytes)), Typeflag: tar.TypeReg})
+	_ = tw.WriteHeader(&tar.Header{Name: "jira-cli/jiracli", Mode: 0o755, Size: int64(len(elfBytes)), Typeflag: tar.TypeReg})
 	_, _ = tw.Write(elfBytes)
 	_, _ = tw.Close(), gz.Close()
 	archive := buf.Bytes()

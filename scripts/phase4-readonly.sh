@@ -12,7 +12,7 @@
 #
 # Usage:
 #   scripts/phase4-readonly.sh --project KEY [--instance NAME] [--user NAME] [--out DIR]
-#   JIRA_BIN="path/to/jira" scripts/phase4-readonly.sh --project KEY   (default: jira on PATH;
+#   JIRA_BIN="path/to/jiracli" scripts/phase4-readonly.sh --project KEY   (default: jiracli on PATH;
 #                                                                       the Docker wrapper works)
 # Requires: bash 3.2+, grep, sed, awk. No python/jq needed.
 # Output: DIR (default ./phase4-<timestamp>) with summary.txt, trace.jsonl and
@@ -35,8 +35,8 @@ done
 [ -n "$PROJECT" ] || { echo "--project KEY is required (a project you can browse)" >&2; exit 2; }
 case "$PROJECT" in *[!A-Za-z0-9_]*) echo "invalid project key: $PROJECT" >&2; exit 2 ;; esac
 
-JIRA_BIN="${JIRA_BIN:-jira}"
-command -v "${JIRA_BIN%% *}" >/dev/null 2>&1 || { echo "jira CLI not found ($JIRA_BIN); install it or set JIRA_BIN" >&2; exit 127; }
+JIRA_BIN="${JIRA_BIN:-jiracli}"
+command -v "${JIRA_BIN%% *}" >/dev/null 2>&1 || { echo "jiracli not found ($JIRA_BIN); install it or set JIRA_BIN" >&2; exit 127; }
 OUT="${OUT:-phase4-$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$OUT/steps"
 OUT=$(cd "$OUT" && pwd)
@@ -66,8 +66,8 @@ step() {
   t1=$(ms)
   LAST_EXIT=$rc
   case " $allowed " in
-    *" $rc "*) PASS=$((PASS + 1)); printf 'PASS  %-24s exit=%-2s %8s  jira %s\n' "$name" "$rc" "$(dur "$t0" "$t1")" "$(shown "$@")" | tee -a "$SUMMARY" ;;
-    *) FAIL=$((FAIL + 1)); printf 'FAIL  %-24s exit=%-2s %8s  jira %s\n' "$name" "$rc" "$(dur "$t0" "$t1")" "$(shown "$@")" | tee -a "$SUMMARY"
+    *" $rc "*) PASS=$((PASS + 1)); printf 'PASS  %-24s exit=%-2s %8s  jiracli %s\n' "$name" "$rc" "$(dur "$t0" "$t1")" "$(shown "$@")" | tee -a "$SUMMARY" ;;
+    *) FAIL=$((FAIL + 1)); printf 'FAIL  %-24s exit=%-2s %8s  jiracli %s\n' "$name" "$rc" "$(dur "$t0" "$t1")" "$(shown "$@")" | tee -a "$SUMMARY"
        sed 's/^/      /' "$OUT/steps/$name.err" | head -12 | tee -a "$SUMMARY" ;;
   esac
 }
@@ -100,8 +100,8 @@ check "no HTTP request sent by the refused write ($((after - before)) sent)" [ "
 if [ "$LAST_EXIT" -ne 9 ] || [ "$after" -ne "$before" ]; then
   say ""
   case "$LAST_EXIT" in
-    3) say "STOP: configuration or credential problem (exit 3), see $OUT/steps/guard-delete.err; run 'jira config validate' and 'jira doctor' first." ;;
-    127) say "STOP: the jira command was not found or not executable ($JIRA_BIN)." ;;
+    3) say "STOP: configuration or credential problem (exit 3), see $OUT/steps/guard-delete.err; run 'jiracli config validate' and 'jiracli doctor' first." ;;
+    127) say "STOP: the jiracli command was not found or not executable ($JIRA_BIN)." ;;
     *) say "STOP: the read-only guard did not behave as expected (exit $LAST_EXIT); nothing else was run. Do not use this CLI against production until this is understood." ;;
   esac
   exit 1
@@ -114,7 +114,7 @@ step config-validate "0 3" config validate
 if [ "$LAST_EXIT" -eq 3 ]; then
   bad=$(grep -o 'instance(s): [^"]*' "$OUT/steps/config-validate.err" | sed 's/^instance(s): //')
   if grep -q 'the selected instance' "$OUT/steps/config-validate.err"; then
-    warn "other instance(s) in your config file are invalid (not used by this run): ${bad:-?}; fix or remove them (jira config validate)"
+    warn "other instance(s) in your config file are invalid (not used by this run): ${bad:-?}; fix or remove them (jiracli config validate)"
   else
     PASS=$((PASS - 1)); FAIL=$((FAIL + 1))
     printf 'FAIL    the selected instance is invalid: %s\n' "${bad:-see steps/config-validate.err}" | tee -a "$SUMMARY"
@@ -123,7 +123,7 @@ fi
 step doctor "0" doctor
 JIRA_VERSION=$(first '      ' jira_version "$OUT/steps/doctor.out")
 [ -n "$JIRA_VERSION" ] || JIRA_VERSION=$(grep -m1 -o '"jira_version": "[^"]*"' "$OUT/steps/doctor.out" | sed 's/.*: "//; s/"$//')
-note "jira version: ${JIRA_VERSION:-unknown} (CLI spec: 10.3.26)"
+note "jiracli version: ${JIRA_VERSION:-unknown} (CLI spec: 10.3.26)"
 case "$JIRA_VERSION" in 10.3.*) ;; "") warn "could not read the Jira version from doctor" ;; *) warn "Jira $JIRA_VERSION differs from the spec version 10.3.26; some commands may differ" ;; esac
 step auth-test "0" auth test
 step myself "0" myself get

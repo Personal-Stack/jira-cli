@@ -1,7 +1,7 @@
 # Running the CLI from Docker (no Go, no native binary)
 
-`install.sh --docker` installs a small `jira` wrapper script
-(`scripts/jira-docker.sh`) on your PATH. Each `jira ...` runs
+`install.sh --docker` installs a small `jiracli` wrapper script
+(`scripts/jira-docker.sh`) on your PATH. Each `jiracli ...` runs
 `docker run --rm` of the CLI image, so the only requirement on the machine
 is Docker.
 
@@ -31,15 +31,15 @@ gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber &
 Then use it exactly like the native CLI:
 
 ```bash
-jira config validate
+jiracli config validate
 ```
 
 ```bash
-jira auth login          # token stored in ~/.config/jira-cli/credentials/<ref> (0600)
+jiracli auth login          # token stored in ~/.config/jira-cli/credentials/<ref> (0600)
 ```
 
 ```bash
-jira doctor
+jiracli doctor
 ```
 
 Uninstall with `sh install.sh --uninstall`. The image stays; remove it with
@@ -80,7 +80,7 @@ tested against a Jira-like TLS server.
 **Workstation**, sharing your normal config and storing the token in a file:
 
 ```bash
-jira() {
+jiracli() {
   docker run --rm -i --user "$(id -u):$(id -g)" \
     -e HOME="$HOME" -e JIRA_CONFIG="$HOME/.config/jira-cli/config.yaml" \
     -e JIRA_NO_KEYRING=1 -e JIRA_CREDENTIAL_STORE=file \
@@ -90,7 +90,7 @@ jira() {
 }
 ```
 
-Then `jira auth login`, `jira doctor` and so on, as usual. Paths in
+Then `jiracli auth login`, `jiracli doctor` and so on, as usual. Paths in
 `config.yaml` (e.g. `ca_bundle`) must be under `~/.config/jira-cli`. For
 `--file` inputs, add `-v "$PWD:$PWD:ro" -w "$PWD"`.
 
@@ -122,7 +122,7 @@ cd jira-cli && git pull && sh scripts/install.sh --docker
 ## Company CA certificate
 
 The container cannot see your OS certificate store or Keychain. Easiest:
-`jira certs fetch` saves the server's CA chain into `~/.config/jira-cli/`
+`jiracli certs fetch` saves the server's CA chain into `~/.config/jira-cli/`
 (check the fingerprint it shows). Alternatively, export the company root CA
 from your browser
 ([getting-started.md, section 4](getting-started.md#4-company-certificate-only-if-needed)),
@@ -172,6 +172,6 @@ container), and reference it by absolute path in `tls.ca_bundle`.
 
 ## Docker Sandboxes
 
-`jira setup-sbx` works through the wrapper: it mounts the project and the
+`jiracli setup-sbx` works through the wrapper: it mounts the project and the
 settings folder read-write and prints the `sbx` steps to run on the host. See
 [sandbox.md](sandbox.md#with-the-docker-wrapper-installsh---docker).

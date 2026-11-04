@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Tests scripts/phase4-readonly.sh against scripts/testdata/fake_jira.py.
-# Usage: scripts/test-phase4.sh [path/to/jira]   (default: bin/jira)
+# Usage: scripts/test-phase4.sh [path/to/jira]   (default: bin/jiracli)
 # Assertions use `cond && ok || ko`; ok() always succeeds.
 # shellcheck disable=SC2015
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-BIN=$(cd "$(dirname "${1:-$ROOT/bin/jira}")" && pwd)/$(basename "${1:-$ROOT/bin/jira}")
+BIN=$(cd "$(dirname "${1:-$ROOT/bin/jiracli}")" && pwd)/$(basename "${1:-$ROOT/bin/jiracli}")
 WORK=$(mktemp -d)
 PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 TOKEN="phase4-test-token-$RANDOM$RANDOM"
@@ -59,7 +59,7 @@ grep -q "REST v2 pagination (total-based): 60 issue(s) expected, got 60" "$WORK/
 grep -q "4 board(s) over 2 page(s)" "$WORK/r1.txt" && ok "agile --all capped at 2 pages x 2 = 4" || ko "agile pagination"
 grep -q "board 1 does not support sprints" "$WORK/r1.txt" && ko "scrum board treated as kanban" || ok "scrum board sprints fetched"
 grep -q "PASS    user search finds 'jdoe'" "$WORK/r1.txt" && ok "user (taken from myself) found via bare-array search" || ko "user find"
-grep -q "jira version: 10.3.26" "$WORK/r1.txt" && ok "Jira version read from doctor" || ko "version"
+grep -q "jiracli version: 10.3.26" "$WORK/r1.txt" && ok "Jira version read from doctor" || ko "version"
 grep -q "first key: DEMO-1" "$WORK/r1.txt" && ok "issue key taken from search results" || ko "issue key"
 [ -s "$WORK/r1/trace.jsonl" ] && [ -s "$WORK/r1/summary.txt" ] && ok "trace.jsonl and summary.txt written" || ko "outputs"
 non_get=$(grep -v '^GET ' requests.log | grep -vc '^POST /rest/api/2/search$')

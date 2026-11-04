@@ -66,7 +66,7 @@ func (p *Provider) Apply(_ context.Context, req *http.Request) error {
 	f, err := p.load()
 	if err != nil {
 		e := clierr.Wrap(clierr.LayerCredentials, "credential_unavailable", fmt.Sprintf("personal access token %q is not available", p.Ref), err)
-		return e.WithHint("run `jira auth login --method pat`, mount the token file (JIRA_CREDENTIAL_FILE) or set " + credentials.EnvName(p.Ref))
+		return e.WithHint("run `jiracli auth login --method pat`, mount the token file (JIRA_CREDENTIAL_FILE) or set " + credentials.EnvName(p.Ref))
 	}
 	req.Header.Set("Authorization", "Bearer "+f.Secret.Reveal())
 	return nil

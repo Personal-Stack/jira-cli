@@ -66,9 +66,9 @@ confidential (hence mode `0600`).
 ## Examples
 
 ```bash
-jira -v issue get ABC-1                                            # human-readable debug trace
-jira --log-level debug --log-format json issue get ABC-1 2> trace.jsonl
-JIRA_LOG_FILE=~/jira-trace.log JIRA_LOG_LEVEL=info jira issue search --jql 'project = ABC' --all
+jiracli -v issue get ABC-1                                            # human-readable debug trace
+jiracli --log-level debug --log-format json issue get ABC-1 2> trace.jsonl
+JIRA_LOG_FILE=~/jira-trace.log JIRA_LOG_LEVEL=info jiracli issue search --jql 'project = ABC' --all
 jq -c 'select(.msg=="http response") | {status, duration_ms, ttfb_ms, jira_request_id}' trace.jsonl
 ```
 

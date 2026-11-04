@@ -1,13 +1,13 @@
 #!/bin/sh
 # jira: runs jira-cli from its Docker image as if it were installed natively.
 #
-# Installed as `jira` by `install.sh --docker`. Every invocation is a
+# Installed as `jiracli` by `install.sh --docker`. Every invocation is a
 # `docker run --rm` of the CLI image with:
 #   - your config dir (~/.config/jira-cli) mounted read-write at the SAME path,
 #     so paths in config.yaml (ca_bundle, client_cert) work unchanged;
 #   - the current directory mounted read-only at the same path, so
 #     `--file issue.json` works;
-#   - for `jira setup-sbx`: the project (current directory or --project) and
+#   - for `jiracli setup-sbx`: the project (current directory or --project) and
 #     the settings folder read-write, --binary-file read-only;
 #   - credentials stored as 0600 files in ~/.config/jira-cli/credentials
 #     (JIRA_CREDENTIAL_STORE=file), because containers have no OS keyring;
@@ -79,10 +79,10 @@ for d in $LOG_DIRS; do [ -n "$d" ] && rw "$d"; done
 IFS=$OLDIFS
 if [ -n "${JIRA_CONFIG:-}" ]; then ro "$(dirname "$JIRA_CONFIG")"; fi
 if [ -n "${JIRA_CREDENTIAL_FILE:-}" ]; then ro "$JIRA_CREDENTIAL_FILE"; fi
-# `jira setup-sbx` writes into the project and the settings folder; sbx itself
+# `jiracli setup-sbx` writes into the project and the settings folder; sbx itself
 # runs on the host afterwards (the command prints those steps).
 if [ "${2:-}" = setup-sbx ]; then   # $1 is the image (set above)
-  # Guided run (`jira setup-sbx` alone, in a terminal): ask for the project
+  # Guided run (`jiracli setup-sbx` alone, in a terminal): ask for the project
   # here, on the host, because the container only sees mounted folders.
   if [ $# -eq 2 ] && [ -t 0 ] && [ -t 2 ]; then
     while :; do

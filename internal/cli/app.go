@@ -171,7 +171,7 @@ func (a *App) Config() (*config.Config, error) {
 			e := clierr.Wrap(clierr.LayerConfig, "config_invalid", "cannot load configuration "+p, a.cfgErr)
 			if errors.Is(a.cfgErr, os.ErrNotExist) {
 				e.Code = "config_not_found"
-				e.Hint = "create it with 'jira config init' (or 'jira setup'), or point " + config.EnvConfig + " / --config at an existing file"
+				e.Hint = "create it with 'jiracli config setup', or point " + config.EnvConfig + " / --config at an existing file"
 			}
 			a.cfgErr = e
 		}

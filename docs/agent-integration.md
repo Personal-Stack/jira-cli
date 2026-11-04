@@ -7,18 +7,18 @@ The CLI is the execution layer; the skill is the operating manual.
 
 Copy or symlink `skills/jira` into the agent's skills directory (e.g.
 `~/.claude/skills/jira` or a project's `.claude/skills/jira`) and make sure
-the `jira` binary is on `PATH` with a valid config and credential.
+the `jiracli` binary is on `PATH` with a valid config and credential.
 
 ## Machine-readable interfaces
 
 | Command | Returns |
 |---|---|
-| `jira capabilities` | binary version, compiled profiles, active instance, read-only state, features, global flags, exit codes |
-| `jira commands list [--group G] [--risk R]` | every command: method, path, risk, confirmation, idempotency, pagination, args, flags, body mode |
-| `jira commands describe G N` | one command in full: descriptions, body schema name and top-level properties, provenance (spec file, version, sha256, overlays) |
-| `jira spec status` | profile provenance, counts by risk/method, skipped operations |
-| `jira auth status` | credential presence/source (never values) |
-| `jira doctor` | layered connectivity diagnosis |
+| `jiracli capabilities` | binary version, compiled profiles, active instance, read-only state, features, global flags, exit codes |
+| `jiracli commands list [--group G] [--risk R]` | every command: method, path, risk, confirmation, idempotency, pagination, args, flags, body mode |
+| `jiracli commands describe G N` | one command in full: descriptions, body schema name and top-level properties, provenance (spec file, version, sha256, overlays) |
+| `jiracli spec status` | profile provenance, counts by risk/method, skipped operations |
+| `jiracli auth status` | credential presence/source (never values) |
+| `jiracli doctor` | layered connectivity diagnosis |
 
 All default to JSON on stdout. Errors are JSON on stderr when stderr is not
 a terminal:

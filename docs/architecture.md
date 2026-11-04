@@ -15,7 +15,7 @@ the Cobra command tree from those tables.
                                                                   ▼
                                     generated/<profile>/ops_<group>.go (committed)
                                                                   │
- cmd/jira ─► internal/cli ─► registry (Cobra) ─► executor ────────┘
+ cmd/jiracli ─► internal/cli ─► registry (Cobra) ─► executor ────────┘
                                    │
                     safety ◄───────┤ (read-only, confirmation, dry-run)
                                    ▼
@@ -59,7 +59,7 @@ Cloud support would add a `cloud` deployment, its own profiles (different
 base path and pagination), and an auth provider. The current code has no
 Cloud-specific branches, by design.
 
-## Request flow (`jira issue get ABC-1`)
+## Request flow (`jiracli issue get ABC-1`)
 
 1. `NewRoot` pre-scans `--instance/--config`, loads the config, picks the profile, registers its commands.
 2. The executor validates arguments/flags/body against the operation metadata.

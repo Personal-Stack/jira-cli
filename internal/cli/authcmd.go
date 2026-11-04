@@ -38,7 +38,7 @@ JIRA_CREDENTIAL_STORE=file (the Docker wrapper's default), in a 0600 file in
 JIRA_CREDENTIALS_DIR.
 
 PAT: the token is read from standard input (hidden prompt on a terminal, or
-piped: ` + "`printf %s \"$TOKEN\" | jira auth login --method pat`" + `). It is never
+piped: ` + "`printf %s \"$TOKEN\" | jiracli auth login --method pat`" + `). It is never
 accepted as a command-line argument. The token is verified against
 /rest/api/2/myself before it is stored (disable with --no-verify).
 
@@ -123,7 +123,7 @@ point JIRA_CREDENTIAL_FILE at it (see docs/credentials.md).`,
 			}
 			if !st.Present {
 				return clierr.New(clierr.LayerCredentials, "credential_unavailable", "credential "+in.Auth.CredentialRef+" is not available").
-					WithHint("run `jira auth login` or provide it via JIRA_CREDENTIAL_FILE / " + credentials.EnvName(in.Auth.CredentialRef))
+					WithHint("run `jiracli auth login` or provide it via JIRA_CREDENTIAL_FILE / " + credentials.EnvName(in.Auth.CredentialRef))
 			}
 			return nil
 		},

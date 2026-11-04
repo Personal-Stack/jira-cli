@@ -32,7 +32,7 @@ const (
 // ReleaseBase is where release assets are downloaded from (a variable for tests).
 var ReleaseBase = "https://github.com/Personal-Stack/jira-cli/releases/download"
 
-// BinaryRequest describes where to get a linux jira binary from.
+// BinaryRequest describes where to get a linux jiracli binary from.
 type BinaryRequest struct {
 	Source  string // auto, self, go, release, file
 	Arch    string // GOARCH of the sandbox (= the host's, sandboxes are VMs of the host architecture)
@@ -43,7 +43,7 @@ type BinaryRequest struct {
 	Log     func(string)
 }
 
-// GetBinary returns the path of a verified linux/<arch> jira binary and the
+// GetBinary returns the path of a verified linux/<arch> jiracli binary and the
 // source that produced it.
 func GetBinary(ctx context.Context, r BinaryRequest) (path, source string, err error) {
 	if r.Log == nil {
@@ -79,7 +79,7 @@ func GetBinary(ctx context.Context, r BinaryRequest) (path, source string, err e
 		}
 		errs = append(errs, s+": "+err.Error())
 	}
-	return "", "", fmt.Errorf("no linux/%s jira binary:\n  %s", r.Arch, strings.Join(errs, "\n  "))
+	return "", "", fmt.Errorf("no linux/%s jiracli binary:\n  %s", r.Arch, strings.Join(errs, "\n  "))
 }
 
 // CheckLinuxBinary verifies that path is a linux ELF executable for arch,
@@ -140,7 +140,7 @@ func fromGo(ctx context.Context, r BinaryRequest) (string, error) {
 	}
 	out := filepath.Join(r.Dir, "jira-go-"+r.Arch)
 	r.Log(fmt.Sprintf("building jira %s for linux/%s with Go from %s", ver, r.Arch, clone))
-	cmd := exec.CommandContext(ctx, "go", "build", "-trimpath", "-ldflags", "-s -w -X main.version="+ver, "-o", out, "./cmd/jira")
+	cmd := exec.CommandContext(ctx, "go", "build", "-trimpath", "-ldflags", "-s -w -X main.version="+ver, "-o", out, "./cmd/jiracli")
 	cmd.Dir = clone
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+r.Arch)
 	if b, err := cmd.CombinedOutput(); err != nil {
@@ -224,12 +224,12 @@ func extractJira(archive []byte, out string) error {
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
-			return errors.New("no jira binary in the archive")
+			return errors.New("no jiracli binary in the archive")
 		}
 		if err != nil {
 			return err
 		}
-		if h.Typeflag == tar.TypeReg && filepath.Base(h.Name) == "jira" {
+		if h.Typeflag == tar.TypeReg && filepath.Base(h.Name) == "jiracli" {
 			f, err := os.OpenFile(out, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
 			if err != nil {
 				return err

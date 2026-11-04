@@ -102,7 +102,7 @@ func (p *Plan) SaveDefaults() error {
 	if err != nil {
 		return err
 	}
-	head := "# Choices of the last 'jira setup-sbx', used as defaults for the next project.\n"
+	head := "# Choices of the last 'jiracli setup-sbx', used as defaults for the next project.\n"
 	return os.WriteFile(filepath.Join(p.Settings, DefaultsFile), append([]byte(head), b...), 0o644)
 }
 

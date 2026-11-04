@@ -77,7 +77,7 @@ jobs:
           go-version-file: go.mod
       - run: make build
       - name: Keychain trust and token storage
-        run: scripts/test-macos-keychain.sh bin/jira
+        run: scripts/test-macos-keychain.sh bin/jiracli
 
   docker-wrapper:
     needs: dist

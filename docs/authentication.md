@@ -24,11 +24,11 @@ Basic authentication is not implemented, by design.
 - Rotation: credentials are re-read on every invocation; replace the file/env/keyring entry.
 
 ```bash
-jira auth login --method pat              # hidden prompt; verifies via /rest/api/2/myself, stores in keyring
-printf %s "$TOKEN" | jira auth login      # non-interactive (still never an argument)
-jira auth status                          # source + presence, no network
-jira auth test                            # GET /rest/api/2/myself
-jira auth logout                          # remove from keyring
+jiracli auth login --method pat              # hidden prompt; verifies via /rest/api/2/myself, stores in keyring
+printf %s "$TOKEN" | jiracli auth login      # non-interactive (still never an argument)
+jiracli auth status                          # source + presence, no network
+jiracli auth test                            # GET /rest/api/2/myself
+jiracli auth logout                          # remove from keyring
 ```
 
 ## OAuth 2.0 (`type: oauth`)
@@ -52,7 +52,7 @@ auth:
 ```
 
 - Authorization-code flow with PKCE (S256) and a random `state` checked in constant time.
-- Loopback listener on `redirect_uri`, or `jira auth login --manual` to paste the redirect URL (remote shells).
+- Loopback listener on `redirect_uri`, or `jiracli auth login --manual` to paste the redirect URL (remote shells).
 - Tokens are stored in the keyring as JSON (`access_token`, `refresh_token`, `expiry`) and refreshed automatically when expired, and once after a 401. Refreshed tokens are written back only to the keyring.
 - Headless: mount either the token JSON or a bare refresh token as the credential (`JIRA_CREDENTIAL_FILE`). Refreshed tokens then live only in memory for that process; if the server rotates refresh tokens, the mounted one eventually becomes invalid and must be re-issued.
 - SSO is not a separate protocol: the authorization page redirects to the configured identity provider as usual.

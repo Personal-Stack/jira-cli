@@ -15,7 +15,7 @@ no `..`). The config file never contains secrets: unknown keys such as
 
 ## File store (opt-in, for containers and hosts without a keyring)
 
-`JIRA_CREDENTIAL_STORE=file` makes `jira auth login`/`logout` and OAuth refresh
+`JIRA_CREDENTIAL_STORE=file` makes `jiracli auth login`/`logout` and OAuth refresh
 use `$JIRA_CREDENTIALS_DIR/<credential_ref>` instead of the keyring (the
 keyring is then not used at all). The Docker wrapper sets this, with
 `JIRA_CREDENTIALS_DIR=~/.config/jira-cli/credentials`.

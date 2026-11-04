@@ -10,7 +10,7 @@ import (
 	"github.com/personal-stack/jira-cli/internal/clierr"
 )
 
-// termUI styles the human output of guided commands (config init,
+// termUI styles the human output of guided commands (config setup,
 // setup-sbx) on stderr: sections, ✓ / ! marks, highlighted commands. Colors only on a terminal, and never with --no-color,
 // NO_COLOR or TERM=dumb. stdout (the machine-readable result) is never styled.
 type termUI struct {

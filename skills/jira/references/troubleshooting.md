@@ -1,18 +1,18 @@
 # Troubleshooting
 
-Run `jira doctor` first. It reports checks in order and stops at the first
+Run `jiracli doctor` first. It reports checks in order and stops at the first
 failing layer:
 
 | Check | Fails when | Typical fix |
 |---|---|---|
-| `config` | file missing/invalid, CA bundle/cert unreadable | `jira config validate`; fix paths |
+| `config` | file missing/invalid, CA bundle/cert unreadable | `jiracli config validate`; fix paths |
 | `dns` | host cannot be resolved | VPN/internal DNS; check `base_url` |
 | `tcp` | port unreachable | firewall, wrong port, proxy needed |
 | `proxy_tcp` | proxy unreachable | `proxy.url` / `HTTPS_PROXY` |
-| `tls` | certificate unknown/expired/mismatched | `jira certs fetch` saves the server's CA chain (shows SHA-256 fingerprints, asks to confirm) and prints the `ca_bundle` line; or set `tls.ca_bundle` to the corporate CA yourself. To test candidate CA files: `scripts/tls-diagnose.sh HOST file...` |
+| `tls` | certificate unknown/expired/mismatched | `jiracli certs fetch` saves the server's CA chain (shows SHA-256 fingerprints, asks to confirm) and prints the `ca_bundle` line; or set `tls.ca_bundle` to the corporate CA yourself. To test candidate CA files: `scripts/tls-diagnose.sh HOST file...` |
 | `http` | `/rest/api/2/serverInfo` (sent without credentials) fails or returns HTML | wrong base URL/context path, SSO gateway in front of the API. A 401/403 **from Jira** (has `X-AREQUESTID`) is `ok`: anonymous access is disabled, which is normal in production; the version is then checked in the `version` step with credentials |
 | `version` | authenticated `serverInfo` fails | only runs when anonymous access is disabled |
-| `credentials` | no credential found | `jira auth login` or `JIRA_CREDENTIAL_FILE` |
+| `credentials` | no credential found | `jiracli auth login` or `JIRA_CREDENTIAL_FILE` |
 | `authentication` | `/myself` returns 401 | token expired/revoked; CAPTCHA (`login_reason`) |
 
 Warnings worth reporting: the Jira version differs from the profile's spec
@@ -34,7 +34,7 @@ expires within 14 days, or a secret file is group/world-readable.
 - `404` (exit 6) also occurs when the user lacks *browse* permission: Jira hides existence.
 
 Use `-v` for debug logs (never headers, bodies or secrets). For a
-machine-readable trace: `jira --log-level debug --log-format json <command> 2> trace.jsonl`.
+machine-readable trace: `jiracli --log-level debug --log-format json <command> 2> trace.jsonl`.
 Every line carries `run_id`; HTTP lines carry `request_id`, timings
 (`dns_ms`, `connect_ms`, `tls_ms`, `ttfb_ms`) and `jira_request_id`, which a
 Jira administrator can look up in Jira's access log. See docs/logging.md.

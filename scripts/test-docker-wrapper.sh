@@ -12,14 +12,14 @@ export HOME="$WORK/home" JIRA_CLI_IMAGE="$IMAGE"
 unset XDG_CONFIG_HOME JIRA_CONFIG JIRA_CREDENTIALS_DIR JIRA_LOG_FILE JIRA_READ_ONLY
 mkdir -p "$HOME/project"
 BIN="$WORK/bin"; mkdir -p "$BIN"
-cp "$ROOT/scripts/jira-docker.sh" "$BIN/jira"
+cp "$ROOT/scripts/jira-docker.sh" "$BIN/jiracli"
 CFG="$HOME/.config/jira-cli"
 pass=0 fail=0
 ok() { echo "PASS  $*"; pass=$((pass + 1)); }
 ko() { echo "FAIL  $*"; fail=$((fail + 1)); }
-j() { (cd "$HOME/project" && "$BIN/jira" "$@"); }
+j() { (cd "$HOME/project" && "$BIN/jiracli" "$@"); }
 
-j --version | grep -q "jira version" && ok "runs the image (--version)" || ko "--version"
+j --version | grep -q "jiracli version" && ok "runs the image (--version)" || ko "--version"
 
 j config validate > "$WORK/o" 2> "$WORK/e"; rc=$?
 [ $rc = 3 ] && grep -q "$CFG/config.yaml" "$WORK/e" && ok "no config: exit 3, host path in error" || { ko "no config (exit $rc)"; cat "$WORK/e"; }
@@ -70,7 +70,7 @@ printf '%s\n' "$@" > "$ARGS_OUT"
 SH
 chmod +x "$WORK/fake-docker"; mkdir -p "$WORK/fakebin"; cp "$WORK/fake-docker" "$WORK/fakebin/docker"
 ( export PATH="$WORK/fakebin:$PATH" ARGS_OUT="$WORK/args" JIRA_CREDENTIAL_JIRA_PROD="$TOKEN" HTTPS_PROXY=http://proxy.example:3128
-  cd "$HOME/project" && "$BIN/jira" issue get ABC-1 )
+  cd "$HOME/project" && "$BIN/jiracli" issue get ABC-1 )
 grep -qx -- "JIRA_CREDENTIAL_JIRA_PROD" "$WORK/args" && grep -qx HTTPS_PROXY "$WORK/args" && ok "env forwarded by name (-e NAME)" || ko "env forwarding"
 ! grep -qF "$TOKEN" "$WORK/args" && ok "token not on the docker command line" || ko "token visible in docker argv"
 tail -4 "$WORK/args" | tr '\n' ' ' | grep -q "$IMAGE issue get ABC-1" && ok "CLI arguments passed unchanged after the image" || { ko "argv order"; cat "$WORK/args"; }
@@ -99,12 +99,12 @@ LISTENER=$!
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$WORK/port" ] && break; sleep 0.2; done
 JIRA_URL="https://127.0.0.1:$(cat "$WORK/port")"
 mkdir -p "$HOME/sbxproj"
-(cd "$HOME/sbxproj" && PATH="$WORK/sbxbin:$PATH" JIRA_DOCKER_NETWORK=host "$BIN/jira" setup-sbx --base-url "$JIRA_URL" --agent opencode-xxxx --name sbx-test < /dev/null) > "$WORK/o" 2> "$WORK/e"; rc=$?
+(cd "$HOME/sbxproj" && PATH="$WORK/sbxbin:$PATH" JIRA_DOCKER_NETWORK=host "$BIN/jiracli" setup-sbx --base-url "$JIRA_URL" --agent opencode-xxxx --name sbx-test < /dev/null) > "$WORK/o" 2> "$WORK/e"; rc=$?
 kill "$LISTENER" 2> /dev/null
 SBXSET="$HOME/.config/jira-cli-sbx"
 [ $rc = 0 ] && [ -f "$HOME/sbxproj/sbxenv.yaml" ] && [ -f "$HOME/sbxproj/.opencode/skills/jira/SKILL.md" ] && [ -f "$SBXSET/config.yaml" ] \
   && ok "setup-sbx writes the project files and settings through the container" || { ko "setup-sbx (exit $rc)"; cat "$WORK/o" "$WORK/e"; }
-[ -x "$HOME/sbxproj/tmp/.sbx/jira-cli/bin/jira" ] && grep -q '"binary_source": "self"' "$WORK/o" \
+[ -x "$HOME/sbxproj/tmp/.sbx/jira-cli/bin/jiracli" ] && grep -q '"binary_source": "self"' "$WORK/o" \
   && ok "setup-sbx uses the container's own linux binary" || { ko "setup-sbx binary"; cat "$WORK/o"; }
 grep -q "path: $SBXSET" "$HOME/sbxproj/sbxenv.yaml" && grep -q "JIRA_CONFIG: $SBXSET/config.yaml" "$HOME/sbxproj/sbxenv.yaml" \
   && ok "setup-sbx writes host paths into sbxenv.yaml" || { ko "setup-sbx paths"; cat "$HOME/sbxproj/sbxenv.yaml"; }
@@ -122,7 +122,7 @@ grep -q "cd $HOME/sbxproj && sbx env run" "$WORK/e" && grep -q "sbx accepts the 
 if command -v script > /dev/null 2>&1; then
   mkdir -p "$HOME/other project"
   ( export PATH="$WORK/fakebin:$PATH" ARGS_OUT="$WORK/args2"
-    cd "$HOME/project" && printf '%s\n' "$HOME/missing" "$HOME/other project" | script -qec "$BIN/jira setup-sbx" /dev/null ) > "$WORK/o" 2>&1
+    cd "$HOME/project" && printf '%s\n' "$HOME/missing" "$HOME/other project" | script -qec "$BIN/jiracli setup-sbx" /dev/null ) > "$WORK/o" 2>&1
   grep -q "not a directory: $HOME/missing" "$WORK/o" && grep -qx -- "--project" "$WORK/args2" && grep -qx -- "$HOME/other project" "$WORK/args2" \
     && grep -qx -- "-i" "$WORK/args2" && grep -qx -- "$HOME/other project:$HOME/other project" "$WORK/args2" \
     && ok "guided setup-sbx: project asked on the host, re-asked if missing, mounted read-write" || { ko "guided setup-sbx"; cat "$WORK/o" "$WORK/args2"; }

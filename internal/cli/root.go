@@ -20,9 +20,9 @@ import (
 // the command tree of the selected instance's profile can be registered.
 func (a *App) NewRoot(args []string) *cobra.Command {
 	root := &cobra.Command{
-		Use:   "jira",
+		Use:   "jiracli",
 		Short: "Spec-driven command-line interface for Jira Data Center",
-		Long: `jira (Personal Stack jira-cli) is a command-line interface for Jira Data
+		Long: `jiracli (Personal Stack jira-cli) is a command-line interface for Jira Data
 Center whose API commands are generated at build time from OpenAPI
 specifications.
 
@@ -30,10 +30,10 @@ Unofficial: not affiliated with or endorsed by Atlassian. "Jira" is a
 trademark of Atlassian. See LEGAL.md in the project.
 
 Start with:
-  jira config validate        check the configuration
-  jira doctor                 diagnose connectivity, TLS and authentication
-  jira commands list          list available API commands (machine-readable)
-  jira capabilities           describe this binary and the selected instance`,
+  jiracli config validate        check the configuration
+  jiracli doctor                 diagnose connectivity, TLS and authentication
+  jiracli commands list          list available API commands (machine-readable)
+  jiracli capabilities           describe this binary and the selected instance`,
 		Version:           a.Version,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
@@ -67,8 +67,7 @@ Start with:
 		return nil
 	}
 
-	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd(), a.certsCmd(), a.setupSbxCmd(),
-		a.configInitCmd("setup", "Set up jira: create or update the configuration (same as 'config init')")} {
+	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd(), a.certsCmd(), a.setupSbxCmd()} {
 		c.GroupID = "core"
 		root.AddCommand(c)
 	}
@@ -151,7 +150,7 @@ func isSetupCommand(args []string) bool {
 			words = append(words, a)
 		}
 	}
-	return len(words) > 0 && (words[0] == "setup" || words[0] == "setup-sbx" || len(words) > 1 && words[0] == "config" && words[1] == "init")
+	return len(words) > 0 && (words[0] == "setup-sbx" || len(words) > 1 && words[0] == "config" && words[1] == "setup")
 }
 
 func isCobraUsage(err error) bool {

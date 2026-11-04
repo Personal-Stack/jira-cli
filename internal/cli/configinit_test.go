@@ -43,8 +43,8 @@ func runInit(t *testing.T, terminal bool, stdin string, unreachable string, args
 
 func TestConfigInitFlagsCreatesInTheExpectedFolder(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "jira-cli", "config.yaml") // folder created
-	code, out, _ := runInit(t, false, "", "", "config", "init", "--config", path, "--base-url", "https://jira.example.com/jira")
-	if code != 0 || !strings.Contains(out, `"instance": "prod"`) || !strings.Contains(out, `"jira auth login"`) {
+	code, out, _ := runInit(t, false, "", "", "config", "setup", "--config", path, "--base-url", "https://jira.example.com/jira")
+	if code != 0 || !strings.Contains(out, `"instance": "prod"`) || !strings.Contains(out, `"jiracli auth login"`) {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
 	c, err := config.Load(path)
@@ -57,10 +57,10 @@ func TestConfigInitFlagsCreatesInTheExpectedFolder(t *testing.T) {
 	}
 	// Missing --base-url for a new instance, an unreachable host: refused, nothing written.
 	other := filepath.Join(t.TempDir(), "c.yaml")
-	if code, _, _ := runInit(t, false, "", "", "config", "init", "--config", other); code != 2 {
+	if code, _, _ := runInit(t, false, "", "", "config", "setup", "--config", other); code != 2 {
 		t.Fatalf("no --base-url: exit %d", code)
 	}
-	if code, _, errOut := runInit(t, false, "", "jira.example.com", "setup", "--config", other, "--base-url", "https://jira.example.com"); code == 0 || !strings.Contains(errOut, "cannot reach") {
+	if code, _, errOut := runInit(t, false, "", "jira.example.com", "config", "setup", "--config", other, "--base-url", "https://jira.example.com"); code == 0 || !strings.Contains(errOut, "cannot reach") {
 		t.Fatalf("unreachable: exit %d", code)
 	}
 	if _, err := os.Stat(other); err == nil {
@@ -84,11 +84,11 @@ func TestConfigInitGuidedChecksEachAnswerAndUpdates(t *testing.T) {
 		ca,                         //
 		"",                         // default: yes
 		"",                         // write it
-	), "down.example.com", "config", "init", "--config", path)
+	), "down.example.com", "config", "setup", "--config", path)
 	if code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	for _, want := range []string{"cannot reach down.example.com:443", "cannot read " + dir + "/missing.pem", "jira certs fetch", "jira auth login"} {
+	for _, want := range []string{"cannot reach down.example.com:443", "cannot read " + dir + "/missing.pem", "jiracli certs fetch", "jiracli auth login"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("stderr lacks %q", want)
 		}
@@ -102,7 +102,7 @@ func TestConfigInitGuidedChecksEachAnswerAndUpdates(t *testing.T) {
 	if err := os.WriteFile(path, []byte(strings.Replace(string(b), "    read_only: true\n", "    read_only: true\n    timeouts:\n      request: 30s\n", 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	code, _, errOut = runInit(t, true, answers("", "", "team-pat", "n", "-", "", ""), "", "setup", "--config", path)
+	code, _, errOut = runInit(t, true, answers("", "", "team-pat", "n", "-", "", ""), "", "config", "setup", "--config", path)
 	if code != 0 || !strings.Contains(errOut, "[https://jira.example.com]") {
 		t.Fatalf("update: exit %d\n%s", code, errOut)
 	}
@@ -124,7 +124,7 @@ func TestMissingConfigOffersToCreateIt(t *testing.T) {
 	}
 	// Without a terminal: the error, with the command to run.
 	code, _, errOut = runInit(t, false, "", "", "--config", path+".missing", "myself", "get")
-	if code != 3 || !strings.Contains(errOut, "jira config init") || strings.Contains(errOut, "Create it now") {
+	if code != 3 || !strings.Contains(errOut, "jiracli config setup") || strings.Contains(errOut, "Create it now") {
 		t.Fatalf("exit %d\n%s", code, errOut)
 	}
 }

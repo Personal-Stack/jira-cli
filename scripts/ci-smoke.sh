@@ -9,7 +9,7 @@
 # Usage: scripts/ci-smoke.sh [path/to/jira] [artifact-dir]
 set -euo pipefail
 
-BIN=${1:-bin/jira}
+BIN=${1:-bin/jiracli}
 ART=${2:-ci-artifacts}
 mkdir -p "$ART/smoke"
 ART=$(cd "$ART" && pwd)

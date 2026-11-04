@@ -38,12 +38,12 @@ Linux / macOS (installs to `~/.local/bin` and adds it to `PATH`):
 gh release download -R Personal-Stack/jira-cli -p install.sh -D /tmp --clobber && sh /tmp/install.sh
 ```
 
-Windows: run the same `install.sh` from **Git Bash** (installs `jira.exe` to
+Windows: run the same `install.sh` from **Git Bash** (installs `jiracli.exe` to
 `~/.local/bin`; the PATH entry applies to Git Bash, see
 [docs/installation.md](docs/installation.md#windows-git-bash)).
 
 From a clone: `make install` (needs Go 1.27).
-Only Docker on the machine: `sh scripts/install.sh --docker` installs a `jira`
+Only Docker on the machine: `sh scripts/install.sh --docker` installs a `jiracli`
 wrapper that runs the CLI image ([docs/docker.md](docs/docker.md)).
 The repository is private, so downloads use the GitHub CLI or `GITHUB_TOKEN`;
 mirrors, offline archives and uninstall are covered in
@@ -54,7 +54,7 @@ mirrors, offline archives and uninstall are covered in
 ```bash
 mkdir -p ~/.config/jira-cli
 cp examples/config.yaml ~/.config/jira-cli/config.yaml   # edit base_url, credential_ref, ca_bundle
-jira config validate
+jiracli config validate
 ```
 
 Minimal read-only instance:
@@ -74,9 +74,9 @@ instances:
 ## Authenticate
 
 ```bash
-jira auth login            # PAT: hidden prompt, verified against /rest/api/2/myself, stored in the OS keyring
-jira auth status
-jira doctor                # config, DNS, TCP, TLS, HTTP, credentials, auth
+jiracli auth login            # PAT: hidden prompt, verified against /rest/api/2/myself, stored in the OS keyring
+jiracli auth status
+jiracli doctor                # config, DNS, TCP, TLS, HTTP, credentials, auth
 ```
 
 Headless (CI, containers): `JIRA_CREDENTIAL_FILE=/run/secrets/jira_pat` or
@@ -85,12 +85,12 @@ Headless (CI, containers): `JIRA_CREDENTIAL_FILE=/run/secrets/jira_pat` or
 ## Use
 
 ```bash
-jira issue get ABC-123 --fields summary,status
-jira issue search --jql 'project = ABC AND statusCategory != Done' --all -o table
-jira issue create --file examples/issue.json --dry-run
-jira issue delete ABC-123            # refused without --yes (exit 9)
-jira commands list --group issue     # discover generated commands
-jira commands describe issue create  # parameters, body schema, risk, provenance
+jiracli issue get ABC-123 --fields summary,status
+jiracli issue search --jql 'project = ABC AND statusCategory != Done' --all -o table
+jiracli issue create --file examples/issue.json --dry-run
+jiracli issue delete ABC-123            # refused without --yes (exit 9)
+jiracli commands list --group issue     # discover generated commands
+jiracli commands describe issue create  # parameters, body schema, risk, provenance
 ```
 
 ## Docker
@@ -109,7 +109,7 @@ docker run --rm \
 | Getting started (install, certificate from the browser, token, usage) | [docs/getting-started.md](docs/getting-started.md) |
 | Installation | [docs/installation.md](docs/installation.md) |
 | Docker wrapper (no Go/binary on the machine) | [docs/docker.md](docs/docker.md) |
-| Agents in Docker Sandboxes (sbx), token kept on the host: `jira setup-sbx` | [docs/sandbox.md](docs/sandbox.md) |
+| Agents in Docker Sandboxes (sbx), token kept on the host: `jiracli setup-sbx` | [docs/sandbox.md](docs/sandbox.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
 | OpenAPI generation, overlays, spec updates | [docs/openapi-generation.md](docs/openapi-generation.md) |
 | Authentication (PAT, OAuth) | [docs/authentication.md](docs/authentication.md) |

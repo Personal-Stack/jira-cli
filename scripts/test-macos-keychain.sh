@@ -2,7 +2,7 @@
 # Verifies on macOS that the native CLI uses the Keychain:
 #   1. TLS trust: a CA trusted in the System keychain is accepted with NO
 #      tls.ca_bundle (Go's platform verifier), and rejected before it is trusted.
-#   2. Tokens: `jira auth login` stores the PAT in the Keychain, `auth status`
+#   2. Tokens: `jiracli auth login` stores the PAT in the Keychain, `auth status`
 #      reads it from there, `auth logout` removes it.
 # Needs sudo (to add/remove the test CA in the System keychain). CI only.
 # Usage: scripts/test-macos-keychain.sh [path/to/jira]
@@ -10,7 +10,7 @@
 # shellcheck disable=SC2015
 set -uo pipefail
 [ "$(uname -s)" = Darwin ] || { echo "macOS only"; exit 2; }
-BIN=$(cd "$(dirname "${1:-bin/jira}")" && pwd)/$(basename "${1:-bin/jira}")
+BIN=$(cd "$(dirname "${1:-bin/jiracli}")" && pwd)/$(basename "${1:-bin/jiracli}")
 WORK=$(mktemp -d)
 CA_NAME="jira-cli keychain test CA $$"
 REF="jira-cli-keychain-test-$$"

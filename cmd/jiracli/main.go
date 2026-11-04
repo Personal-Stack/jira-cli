@@ -1,4 +1,4 @@
-// Command jira is the spec-driven Jira Data Center CLI.
+// Command jiracli is the spec-driven Jira Data Center CLI.
 package main
 
 import (

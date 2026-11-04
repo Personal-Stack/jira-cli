@@ -1,7 +1,7 @@
 #!/bin/sh
 # jira-cli installer for Linux, macOS and Windows (Git Bash, MSYS2, Cygwin).
 #
-# Installs the `jira` binary to ~/.local/bin (no sudo) and adds that directory
+# Installs the `jiracli` binary to ~/.local/bin (no sudo) and adds that directory
 # to PATH in your shell startup file. Every download is verified against the
 # release's SHA256SUMS.
 #
@@ -10,7 +10,7 @@
 #   sh install.sh --dir /usr/local/bin   system-wide (may need sudo)
 #   sh install.sh --from-source          build from this repository clone (needs Go)
 #   sh install.sh --archive FILE         offline install from a downloaded archive
-#   sh install.sh --docker               no Go/binary: install a `jira` wrapper that runs the Docker image
+#   sh install.sh --docker               no Go/binary: install a `jiracli` wrapper that runs the Docker image
 #   sh install.sh --uninstall            remove binary, completions and PATH entry
 #
 # Run `sh install.sh --help` for all options. On Windows, run it from Git Bash;
@@ -21,7 +21,7 @@ REPO="Personal-Stack/jira-cli"
 VERSION="${JIRA_CLI_VERSION:-}"
 INSTALL_DIR="${JIRA_CLI_INSTALL_DIR:-$HOME/.local/bin}"
 BASE_URL="${JIRA_CLI_BASE_URL:-}"
-BIN_NAME="jira"
+BIN_NAME="jiracli"
 MODIFY_PATH=1
 COMPLETIONS=0
 FROM_SOURCE=0
@@ -49,7 +49,7 @@ Options:
   --base-url URL       mirror with layout URL/<tag>/<asset> (env JIRA_CLI_BASE_URL)
   --from-source [DIR]  build with Go from a repository clone (default: this script's repo)
   --archive FILE       install from a local release archive (SHA256SUMS next to it, if present, is checked)
-  --docker             install a 'jira' wrapper that runs the CLI in Docker (no Go needed).
+  --docker             install a 'jiracli' wrapper that runs the CLI in Docker (no Go needed).
                        From a clone it builds jira-cli:local; otherwise it pulls
                        ghcr.io/personal-stack/jira-cli:<version>
   --image IMAGE        image for --docker (env JIRA_CLI_IMAGE)
@@ -319,8 +319,8 @@ elif [ "$FROM_SOURCE" = 1 ]; then
   command -v go >/dev/null 2>&1 || die "Go is required for --from-source (https://go.dev/dl/); or use --docker"
   ver=$(cd "$SRC_DIR" && git describe --tags --always --dirty 2>/dev/null || echo dev)
   say "Building jira-cli $ver from $SRC_DIR"
-  (cd "$SRC_DIR" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$ver" -o "$TMP/jira$EXE" ./cmd/jira)
-  BIN_SRC="$TMP/jira$EXE"
+  (cd "$SRC_DIR" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$ver" -o "$TMP/jiracli$EXE" ./cmd/jiracli)
+  BIN_SRC="$TMP/jiracli$EXE"
 else
   if [ -n "$ARCHIVE" ]; then
     [ -f "$ARCHIVE" ] || die "archive not found: $ARCHIVE"
@@ -351,8 +351,8 @@ else
       else die "need unzip to extract $asset (Git for Windows ships it)"; fi ;;
     *) die "unknown archive type: $asset" ;;
   esac
-  BIN_SRC=$(find "$TMP/x" -type f -name "jira$EXE" | head -n1)
-  [ -n "$BIN_SRC" ] || die "archive does not contain a 'jira$EXE' binary"
+  BIN_SRC=$(find "$TMP/x" -type f -name "jiracli$EXE" | head -n1)
+  [ -n "$BIN_SRC" ] || die "archive does not contain a 'jiracli$EXE' binary"
 fi
 
 # ---------- install ----------

@@ -2,20 +2,28 @@
 
 ## v0.3.0 (2026-11-04)
 
-### Configuration: `jira setup`
-- New command `jira setup` (also `jira config init`). It creates the configuration in the expected place, creating the folder if needed, or adds or updates an instance (`--instance`). The place is `--config`, else `$JIRA_CONFIG`, else `~/.config/jira-cli/config.yaml`.
+### Breaking: the command is now `jiracli`
+- The binary, the Docker wrapper and the image entrypoint are renamed from `jira` to `jiracli`, so commands such as `jiracli config setup` cannot be read as setting up Jira itself. Archives contain `jiracli` (`jiracli.exe` on Windows); the sbx kit puts it at `tmp/.sbx/jira-cli/bin/jiracli` and `/usr/bin/jiracli`.
+- Unchanged: the configuration folder `~/.config/jira-cli`, the keyring service `jira-cli`, the `JIRA_*` environment variables, the sbx secret `jira`, the skill name `jira`, the repository and the image path `ghcr.io/personal-stack/jira-cli`. Existing configurations and stored tokens keep working.
+- Migration:
+  - first remove the old command: `sh install.sh --uninstall --name jira`. Do it before installing, because `--uninstall` also removes the PATH block that both installs share;
+  - then install v0.3.0 (`sh install.sh`, or `sh install.sh --docker` for the wrapper);
+  - re-run `jiracli setup-sbx` in each sandbox project, so the kit, the skill and the agent context name the new binary.
+
+### Configuration: `jiracli config setup`
+- New command `jiracli config setup`. It creates the configuration in the expected place, creating the folder if needed, or adds or updates an instance (`--instance`). The place is `--config`, else `$JIRA_CONFIG`, else `~/.config/jira-cli/config.yaml`.
 - Guided in a terminal, with flags otherwise (`--base-url`, `--credential-ref`, `--ca-bundle`, `--allow-writes`, `--no-default`).
 - Each answer is checked when given: the Jira URL must be reachable, and a CA file must hold certificates.
 - Updates happen in place: comments, other instances and settings such as timeouts and proxy are kept. The result is validated before it is written.
-- A command run without a configuration offers to create it in a terminal, and names `jira config init` otherwise.
+- A command run without a configuration offers to create it in a terminal, and names `jiracli config setup` otherwise.
 
-### Docker Sandboxes: `jira setup-sbx`
+### Docker Sandboxes: `jiracli setup-sbx`
 - The agent comes from `~/.sbxenv.yaml` when it sets one. sbx merges that file into every environment, and an agent kit there accepts no other agent name. The Docker wrapper mounts the file read-only.
 - When sbx still reports `agent kit name "X"`, X is used, saved and checked again, both in setup-sbx and in the Docker wrapper's host check. v0.2.0 stopped with sbx's error instead.
 - sbx's own agent and command names (`opencode`, `claude`, `codex`, `cursor`, `env`, `run`, …) are refused as sandbox names, because sbx resolves those words itself.
 
 ### Project
-- The project presents itself as **Personal Stack jira-cli**, part of the Personal Stack GitHub organization: README, `LEGAL.md`, `NOTICE`, `jira --help`, the image title and the release title. The `jira` command, the repository, the image path and file names are unchanged.
+- The project presents itself as **Personal Stack jira-cli**, part of the Personal Stack GitHub organization: README, `LEGAL.md`, `NOTICE`, `jiracli --help`, the image title and the release title.
 - `LEGAL.md`: legal notice and terms of use:
   - unofficial, not affiliated with Atlassian;
   - built from public sources only;
@@ -23,7 +31,7 @@
   - no telemetry;
   - no warranty.
 
-  It is referenced from the README, `NOTICE`, `jira --help`, the image description and the release notes, and shipped in the archives and the image.
+  It is referenced from the README, `NOTICE`, `jiracli --help`, the image description and the release notes, and shipped in the archives and the image.
 - `PROGRESS.md` is removed; the release notes are in this file.
 
 ## v0.2.0 (2026-11-03)

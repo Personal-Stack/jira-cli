@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// InstanceUpdate is what `jira config init` sets on one instance. Other
+// InstanceUpdate is what `jiracli config setup` sets on one instance. Other
 // settings of an existing instance (timeouts, proxy, mTLS, ...) are kept.
 type InstanceUpdate struct {
 	Name          string

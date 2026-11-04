@@ -131,13 +131,13 @@ func (p *Provider) token(ctx context.Context, force bool) (*oauth2.Token, error)
 	defer p.mu.Unlock()
 	if err := p.load(); err != nil {
 		return nil, clierr.Wrap(clierr.LayerCredentials, "credential_unavailable", fmt.Sprintf("OAuth token %q is not available", p.Ref), err).
-			WithHint("run `jira auth login --method oauth` (or mount a refresh token via JIRA_CREDENTIAL_FILE)")
+			WithHint("run `jiracli auth login --method oauth` (or mount a refresh token via JIRA_CREDENTIAL_FILE)")
 	}
 	cur := p.tok
 	if force {
 		if cur.RefreshToken == "" {
 			return nil, clierr.New(clierr.LayerAuth, "no_refresh_token", "access token rejected and no refresh token is available").
-				WithHint("run `jira auth login --method oauth` again")
+				WithHint("run `jiracli auth login --method oauth` again")
 		}
 		cp := *cur
 		cp.AccessToken, cp.Expiry = "", time.Unix(1, 0)
@@ -148,7 +148,7 @@ func (p *Provider) token(ctx context.Context, force bool) (*oauth2.Token, error)
 		var re *oauth2.RetrieveError
 		if errors.As(err, &re) {
 			return nil, clierr.Wrap(clierr.LayerAuth, "token_refresh_failed", "OAuth token refresh was rejected by the token endpoint", errors.New(re.ErrorCode)).
-				WithHint("the refresh token may be expired or revoked; run `jira auth login --method oauth`")
+				WithHint("the refresh token may be expired or revoked; run `jiracli auth login --method oauth`")
 		}
 		return nil, clierr.Classify(err)
 	}

@@ -24,7 +24,7 @@ func TestUpsertInstanceCreates(t *testing.T) {
 
 func TestUpsertInstanceUpdatesInPlace(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	orig := `# my jira setup
+	orig := `# my jiracli setup
 version: 1
 default_instance: prod
 instances:
@@ -55,7 +55,7 @@ instances:
 	}
 	b, _ := os.ReadFile(path)
 	s := string(b)
-	for _, want := range []string{"# my jira setup", "base_url: https://new.example.com", "credential_ref: team-pat", "request: 30s", "staging:", "https://staging.example.com"} {
+	for _, want := range []string{"# my jiracli setup", "base_url: https://new.example.com", "credential_ref: team-pat", "request: 30s", "staging:", "https://staging.example.com"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("lacks %q:\n%s", want, s)
 		}

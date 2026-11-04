@@ -21,7 +21,7 @@ type configInitFlags struct {
 	skipChecks, interactive    bool
 }
 
-// configInitCmd is `jira config init` and its shortcut `jira setup`.
+// configInitCmd is `jiracli config setup`.
 func (a *App) configInitCmd(use, short string) *cobra.Command {
 	f := &configInitFlags{}
 	c := &cobra.Command{
@@ -32,15 +32,14 @@ Without flags in a terminal it asks for each value, checks it when given
 (the Jira URL must be reachable, a CA file must hold certificates) and
 offers the current values as defaults.
 
-The file is the one jira uses: --config, else $` + config.EnvConfig + `, else
+The file is the one jiracli uses: --config, else $` + config.EnvConfig + `, else
 ` + config.DefaultPath() + `; the folder is created if needed. Only the
 values asked for change: comments, other instances and settings such as
 timeouts or proxy are kept, and the result is validated before it is
 written. --instance selects the instance (default: the default instance,
 or "prod").`,
-		Example: `  jira config init
-  jira config init --instance prod --base-url https://jira.company.internal
-  jira setup`,
+		Example: `  jiracli config setup
+  jiracli config setup --instance prod --base-url https://jira.company.internal`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			guided := f.interactive || (cmd.LocalFlags().NFlag() == 0 && a.IsTerminal())
@@ -50,7 +49,7 @@ or "prod").`,
 	fl := c.Flags()
 	fl.StringVar(&f.baseURL, "base-url", "", "Jira base URL, with the context path if any")
 	fl.StringVar(&f.credRef, "credential-ref", "", "name of the stored token (default: jira-<instance>, or the current one)")
-	fl.StringVar(&f.caBundle, "ca-bundle", "", "company CA file (PEM or DER); empty: none (see 'jira certs fetch')")
+	fl.StringVar(&f.caBundle, "ca-bundle", "", "company CA file (PEM or DER); empty: none (see 'jiracli certs fetch')")
 	fl.BoolVar(&f.allowWrites, "allow-writes", false, "do not set read_only (default for a new instance: read-only)")
 	fl.BoolVar(&f.noDefault, "no-default", false, "do not make this the default instance")
 	fl.BoolVar(&f.skipChecks, "skip-checks", false, "do not check that the Jira host is reachable")
@@ -73,7 +72,7 @@ func (a *App) runConfigInit(ctx context.Context, f *configInitFlags, guided bool
 	cfg, err := config.Load(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return clierr.Wrap(clierr.LayerConfig, "config_invalid", "cannot read "+path, err).
-			WithHint("fix the file (jira config validate shows what is wrong), or move it away to start over")
+			WithHint("fix the file (jiracli config validate shows what is wrong), or move it away to start over")
 	}
 	u := config.InstanceUpdate{Name: firstNonEmpty(a.instance, a.Getenv(config.EnvInstance)), ReadOnly: !f.allowWrites}
 	current := func() *config.Instance {
@@ -118,7 +117,7 @@ func (a *App) runConfigInit(ctx context.Context, f *configInitFlags, guided bool
 	checkCA := func(v string) error {
 		b, err := os.ReadFile(absPath(v))
 		if err != nil {
-			return fmt.Errorf("cannot read %s (to get the CA from the server: jira certs fetch)", v)
+			return fmt.Errorf("cannot read %s (to get the CA from the server: jiracli certs fetch)", v)
 		}
 		if _, _, err := config.ParseCABundle(b, v); err != nil {
 			return err
@@ -126,7 +125,7 @@ func (a *App) runConfigInit(ctx context.Context, f *configInitFlags, guided bool
 		return nil
 	}
 
-	ui.title("jira config init", "Jira configuration")
+	ui.title("jiracli config setup", "Jira configuration")
 	ui.kv("file", path)
 	if guided {
 		q := a.form(ctx, ui)
@@ -188,7 +187,7 @@ func (a *App) runConfigInit(ctx context.Context, f *configInitFlags, guided bool
 	a.cfgLoaded = false // later reads see the new file
 	ui.section("Done")
 	ui.ok(map[bool]string{true: "updated", false: "added"}[existed] + " instance " + u.Name + " in " + path)
-	next := []string{"jira auth login" + map[bool]string{true: "", false: " --instance " + u.Name}[u.MakeDefault], "jira doctor" + map[bool]string{true: "", false: " --instance " + u.Name}[u.MakeDefault]}
+	next := []string{"jiracli auth login" + map[bool]string{true: "", false: " --instance " + u.Name}[u.MakeDefault], "jiracli doctor" + map[bool]string{true: "", false: " --instance " + u.Name}[u.MakeDefault]}
 	ui.section("Next steps")
 	ui.println("  " + ui.cyan("1.") + " Store the token (a Personal Access Token from your Jira profile), unless it is already stored:")
 	ui.println("       " + ui.cmd(next[0]))

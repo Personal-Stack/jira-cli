@@ -187,7 +187,7 @@ func (a *App) runDoctor(ctx context.Context) ([]check, *check) {
 	st := client.Auth.Status(ctx)
 	if !st.Present {
 		add(check{Name: "credentials", Status: "fail", Layer: clierr.LayerCredentials, Detail: st.Error,
-			Hint: "run `jira auth login` or set JIRA_CREDENTIAL_FILE"})
+			Hint: "run `jiracli auth login` or set JIRA_CREDENTIAL_FILE"})
 		return checks, failed
 	}
 	cc := check{Name: "credentials", Status: "ok", Data: map[string]any{"method": st.Method, "source": st.Source}}

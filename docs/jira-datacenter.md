@@ -8,7 +8,7 @@
 | Tested against a real instance | **Read-only: yes**, a production Data Center (`scripts/phase4-readonly.sh`). Writes: no, `httptest` fakes only |
 | PAT | Jira DC 8.14+ |
 | OAuth 2.0 provider | Jira DC with OAuth 2.0 incoming application links (not verified against a real instance) |
-| Version check | `jira doctor` compares `serverInfo.version` (major.minor) with the profile spec version and warns on mismatch |
+| Version check | `jiracli doctor` compares `serverInfo.version` (major.minor) with the profile spec version and warns on mismatch |
 
 Other Jira versions: most `api/2` endpoints are stable across 8.x-10.x, but
 commands may be missing or behave differently. For a materially different

@@ -40,7 +40,7 @@ func isolateHome(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 }
 
-// runSbx runs `jira setup-sbx` with stdin answers against fs.
+// runSbx runs `jiracli setup-sbx` with stdin answers against fs.
 func runSbx(t *testing.T, fs *fakeSbx, stdin string, args ...string) (int, string, string) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
@@ -135,7 +135,7 @@ func TestSetupSbxFlags(t *testing.T) {
 			t.Errorf("sbxenv.yaml lacks %q:\n%s", want, env)
 		}
 	}
-	for _, f := range []string{".opencode/skills/jira/SKILL.md", "tmp/.sbx/jira-cli/bin/jira"} {
+	for _, f := range []string{".opencode/skills/jira/SKILL.md", "tmp/.sbx/jira-cli/bin/jiracli"} {
 		if _, err := os.Stat(filepath.Join(project, f)); err != nil {
 			t.Fatalf("missing %s", f)
 		}
@@ -268,7 +268,7 @@ func TestSetupSbxDropsOldKitsAndMovesTheKit(t *testing.T) {
 	if !strings.Contains(string(env), "agent: devex-opencode\nkits:\n  - ./tmp/.sbx/jira-cli\nworkspace:") {
 		t.Fatalf("kits:\n%s", env)
 	}
-	if _, err := os.Stat(filepath.Join(project, "tmp/.sbx/jira-cli/bin/jira")); err != nil {
+	if _, err := os.Stat(filepath.Join(project, "tmp/.sbx/jira-cli/bin/jiracli")); err != nil {
 		t.Fatal("kit not in tmp/")
 	}
 	if _, err := os.Stat(filepath.Join(project, "temp")); err == nil {
@@ -481,7 +481,7 @@ func TestSetupSbxPrintsNextSteps(t *testing.T) {
 	}
 	q := "'" + project + "'" // the path has a space: quoted for the shell
 	for _, want := range []string{"Next steps", "Start the sandbox jira-sbx", "$ cd " + q + " && sbx env run",
-		"$ cd " + q + " && sbx env exec -- '" + project + "/tmp/.sbx/jira-cli/bin/jira' doctor", "env:JIRA_CREDENTIAL_JIRA_PROD", "$ sbx ls", "$ sbx diagnose"} {
+		"$ cd " + q + " && sbx env exec -- '" + project + "/tmp/.sbx/jira-cli/bin/jiracli' doctor", "env:JIRA_CREDENTIAL_JIRA_PROD", "$ sbx ls", "$ sbx diagnose"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("next steps lack %q:\n%s", want, errOut)
 		}

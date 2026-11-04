@@ -48,7 +48,7 @@ rights the Apache License 2.0 grants you.
   Complying with them is your responsibility.
 - **Agents act on your behalf.** When an AI agent runs jira-cli, you are
   responsible for what it does with your access. The defaults are
-  conservative to help with that: sandboxes set up with `jira setup-sbx` are
+  conservative to help with that: sandboxes set up with `jiracli setup-sbx` are
   read-only, and destructive operations require confirmation. Keep them
   unless you have a reason to change them.
 

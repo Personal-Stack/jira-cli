@@ -53,7 +53,7 @@ the 429 is returned (exit 10).
 
 ## Diagnostics
 
-`jira doctor` checks config, DNS, TCP, TLS (version, cipher, certificate
+`jiracli doctor` checks config, DNS, TCP, TLS (version, cipher, certificate
 subject/issuer/expiry), HTTP (`/rest/api/2/serverInfo`, unauthenticated),
 credentials, and authentication, and attributes failures to a layer: `dns`,
 `tcp`, `proxy`, `tls`, `tls_certificate`, `timeout`, `http_transport`,

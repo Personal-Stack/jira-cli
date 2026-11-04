@@ -19,7 +19,7 @@ Third-party material
    are trademarks of Atlassian. This project is not affiliated with or
    endorsed by Atlassian.
 
-2. Go modules and the Go standard library compiled into the jira binary are
+2. Go modules and the Go standard library compiled into the jiracli binary are
    licensed by their respective authors (Apache-2.0, BSD and MIT licenses).
    Their license texts are in THIRD_PARTY_LICENSES, which is shipped with
    every release archive and in the container image at
