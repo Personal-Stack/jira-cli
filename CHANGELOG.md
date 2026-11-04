@@ -8,6 +8,8 @@
 - `jiracli config setup` (guided) now continues with the token and the connection: it offers to store the token (hidden, verified against Jira, asked again when refused) and to run `doctor`. Both are optional; end of input stops there without an error.
 - In a terminal, a command that finds no stored token offers to store it, like the existing offer for a missing configuration. `auth` commands report the problem instead.
 - `jiracli doctor` starts with an `installation` check (warnings only): this binary's path and version, another `jiracli` earlier on PATH, a missing PATH entry, and jira-cli's old `jira` command still on PATH.
+- Path questions complete with Tab, like a shell: the company CA file in `config setup` (folders and `.pem`/`.crt`/`.cer`/`.cert`/`.der` files; a second Tab lists the choices) and the project folder in `setup-sbx`. Shell completion (`install.sh --completions`) completes the path flags too: `--ca-bundle` with certificate files, `--project`/`--settings`/`--kit-dir`/`--source-dir` with folders, `--config`, `--log-file`, `--binary-file`, `certs fetch --out`.
+- A Jira URL typed without a scheme gets `https://`: `jira.company.internal/jira` becomes `https://jira.company.internal/jira`, in the guided questions and in `--base-url`. `http://` is still refused, not rewritten.
 - `install.sh --help` no longer says the default name is `jira`.
 - The docs no longer describe the repository and the image as private: both are public, and `docker login` is not needed.
 

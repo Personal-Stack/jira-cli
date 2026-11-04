@@ -184,6 +184,7 @@ the file works.`,
 		},
 	}
 	fetch.Flags().StringVar(&out, "out", "", "output file (default: <config dir>/<host>-ca.pem)")
+	_ = fetch.MarkFlagFilename("out", "pem")
 	c.AddCommand(fetch)
 	return c
 }

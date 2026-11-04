@@ -11,6 +11,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/personal-stack/jira-cli/internal/clierr"
+	"github.com/personal-stack/jira-cli/internal/sbx"
 )
 
 // termUI styles the human output of guided commands (config setup,
@@ -77,10 +78,28 @@ type form struct {
 
 // text asks until validate (nil: anything) accepts the answer.
 func (f *form) text(dst *string, q string, validate func(string) error) {
+	f.ask(dst, q, nil, validate, f.p.ask)
+}
+
+// url asks for a Jira base URL: https:// is added when the scheme is left out.
+func (f *form) url(dst *string, q string, validate func(string) error) {
+	f.ask(dst, q, sbx.NormalizeBaseURL, validate, f.p.ask)
+}
+
+// path asks for a file or folder, with Tab completion on a terminal: only
+// folders when exts is nil, else folders and files with these extensions.
+func (f *form) path(dst *string, q string, exts []string, validate func(string) error) {
+	f.ask(dst, q, nil, validate, func(q, cur string) (string, error) { return f.p.askPath(q, cur, exts) })
+}
+
+func (f *form) ask(dst *string, q string, normalize func(string) string, validate func(string) error, read func(q, cur string) (string, error)) {
 	for f.err == nil {
-		v, err := f.p.ask(q, *dst)
+		v, err := read(q, *dst)
 		if f.err = err; err != nil {
 			return
+		}
+		if normalize != nil {
+			v = normalize(v)
 		}
 		if validate != nil {
 			if verr := validate(v); verr != nil {

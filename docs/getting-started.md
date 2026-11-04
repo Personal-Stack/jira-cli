@@ -90,8 +90,9 @@ Check: `jiracli --version` shows the new commit (e.g. `v0.1.0-6-g84dd1a9`).
 jiracli config setup
 ```
 
-It asks for the Jira URL, the name for the token, read-only, and a company CA
-file if you need one (section 4). Each answer is checked when you give it: the
+It asks for the Jira URL (`https://` is added if you leave it out), the name
+for the token, read-only, and a company CA file if you need one (section 4;
+Tab completes the path). Each answer is checked when you give it: the
 URL must be reachable, and a CA file must hold certificates. After writing the
 file it offers to store the token (hidden input, verified against Jira, asked
 again if Jira refuses it) and to run `jiracli doctor`, so one session ends with

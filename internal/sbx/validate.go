@@ -117,6 +117,17 @@ func ValidDir(path string) error {
 }
 
 // ParseBaseURL checks a Jira base URL and returns its host and port.
+// NormalizeBaseURL adds https:// to a URL typed without a scheme
+// ("jira.company.internal/jira"). Other schemes are left for ParseBaseURL
+// to refuse, so http:// is never silently turned into https://.
+func NormalizeBaseURL(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" || strings.Contains(v, "://") {
+		return v
+	}
+	return "https://" + v
+}
+
 func ParseBaseURL(v string) (host string, port int, err error) {
 	if !baseURLRe.MatchString(v) {
 		return "", 0, fmt.Errorf("%q: the Jira base URL must be https://... without spaces, quotes or '#'", v)

@@ -118,7 +118,8 @@ func TestSetupSbxFlags(t *testing.T) {
 	isolateHome(t)
 	project := t.TempDir()
 	fs := &fakeSbx{secrets: "NAME  TYPE\njira  apiKey\n"}
-	code, out, _ := runSbx(t, fs, "", "--project", project, "--base-url", "https://jira.example.com/jira", "--agent", "devex-opencode", "--name", "jira-sbx")
+	// No scheme: https:// is added.
+	code, out, _ := runSbx(t, fs, "", "--project", project, "--base-url", "jira.example.com/jira", "--agent", "devex-opencode", "--name", "jira-sbx")
 	if code != 0 {
 		t.Fatalf("exit %d", code)
 	}
@@ -139,6 +140,9 @@ func TestSetupSbxFlags(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(project, f)); err != nil {
 			t.Fatalf("missing %s", f)
 		}
+	}
+	if skill, _ := os.ReadFile(filepath.Join(project, ".opencode/skills/jira/SKILL.md")); !strings.Contains(string(skill), "at https://jira.example.com/jira") {
+		t.Fatalf("base URL without https:// in the skill:\n%s", skill)
 	}
 	// sbx validated a scratch copy, not the project (which it never touched).
 	if len(fs.planDirs) != 1 || strings.HasPrefix(fs.planDirs[0], project) {

@@ -59,6 +59,8 @@ Start with:
 	pf.StringVar(&a.logLevel, "log-level", "", "log level: debug, info, warn, error (default: $"+logging.EnvLevel+", -v=debug, -q=error, else warn)")
 	pf.StringVar(&a.logFormat, "log-format", "", "log format: text, json (default: $"+logging.EnvFormat+", else text)")
 	pf.StringVar(&a.logFile, "log-file", "", "append logs to this file (mode 0600) instead of stderr (default: $"+logging.EnvFile+")")
+	_ = root.MarkPersistentFlagFilename("config", "yaml", "yml")
+	_ = root.MarkPersistentFlagFilename("log-file")
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		if err := a.initLog(); err != nil {
 			return err
