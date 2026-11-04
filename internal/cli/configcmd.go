@@ -128,7 +128,7 @@ func (a *App) configCmd() *cobra.Command {
 			return usageErr("unsupported key " + args[0] + " (supported: default-instance); edit the YAML file for other settings")
 		},
 	}
-	c.AddCommand(list, show, validate, set)
+	c.AddCommand(list, show, validate, set, a.configInitCmd("init", "Create the configuration, or add or update an instance (guided)"))
 	return c
 }
 

@@ -57,6 +57,7 @@ type App struct {
 	log       *slog.Logger
 	logCloser io.Closer
 	runID     string
+	prompts   *prompter // shared by every question of a run
 }
 
 // NewApp returns an App bound to the process environment.
@@ -170,7 +171,7 @@ func (a *App) Config() (*config.Config, error) {
 			e := clierr.Wrap(clierr.LayerConfig, "config_invalid", "cannot load configuration "+p, a.cfgErr)
 			if errors.Is(a.cfgErr, os.ErrNotExist) {
 				e.Code = "config_not_found"
-				e.Hint = "create it (see examples/config.yaml) or point " + config.EnvConfig + " / --config at it"
+				e.Hint = "create it with 'jira config init' (or 'jira setup'), or point " + config.EnvConfig + " / --config at an existing file"
 			}
 			a.cfgErr = e
 		}

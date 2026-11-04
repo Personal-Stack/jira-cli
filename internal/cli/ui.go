@@ -38,8 +38,8 @@ func (u *termUI) cyan(s string) string   { return u.paint("36", s) }
 
 func (u *termUI) println(s string) { fmt.Fprintln(u.w, s) }
 
-func (u *termUI) title(sub string) {
-	u.println(u.paint("1;36", "jira setup-sbx") + " " + u.dim("· "+sub))
+func (u *termUI) title(command, sub string) {
+	u.println(u.paint("1;36", command) + " " + u.dim("· "+sub))
 }
 
 func (u *termUI) section(name string) { u.println("\n" + u.bold(u.cyan("▸ ")+name)) }
@@ -110,6 +110,16 @@ type prompter struct {
 	ctx   context.Context
 	lines chan string
 	ui    *termUI
+}
+
+// form returns a form on the App's one prompter: all questions of a run
+// read from the same reader, because a reader buffers ahead.
+func (a *App) form(ctx context.Context, ui *termUI) *form {
+	if a.prompts == nil {
+		a.prompts = newPrompter(ctx, a.In, ui)
+	}
+	a.prompts.ui = ui
+	return &form{p: a.prompts, ui: ui}
 }
 
 func newPrompter(ctx context.Context, r io.Reader, ui *termUI) *prompter {

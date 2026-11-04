@@ -140,7 +140,7 @@ func (s *sbxSetup) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.ui.title("Docker Sandbox for jira-cli")
+	s.ui.title("jira setup-sbx", "Docker Sandbox for jira-cli")
 	if !s.guided { // flags are complete: validate them before any work
 		s.applyDefaults()
 		if _, err := sbx.NewPlan(*o); err != nil {
@@ -315,7 +315,7 @@ func (s *sbxSetup) checkURL(ctx context.Context) func(string) error {
 // ask runs the guided questions; each answer is checked when given.
 func (s *sbxSetup) ask(ctx context.Context) error {
 	o, ui := s.o(), s.ui
-	q := &form{p: newPrompter(ctx, s.a.In, ui), ui: ui}
+	q := s.a.form(ctx, ui)
 	ui.note("Enter keeps the value in [brackets], '-' clears an optional one, Ctrl+C quits (nothing is written before you confirm).")
 
 	ui.section("Project")

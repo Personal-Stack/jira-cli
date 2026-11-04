@@ -5,7 +5,7 @@
 | Item | Status |
 |---|---|
 | Specification | Jira Software Data Center **10.3.26** (official, `specs/official/`) |
-| Tested against a real instance | **No.** All tests use `httptest` fakes. See PROGRESS.md, Phase 4 |
+| Tested against a real instance | **Read-only: yes**, a production Data Center (`scripts/phase4-readonly.sh`). Writes: no, `httptest` fakes only |
 | PAT | Jira DC 8.14+ |
 | OAuth 2.0 provider | Jira DC with OAuth 2.0 incoming application links (not verified against a real instance) |
 | Version check | `jira doctor` compares `serverInfo.version` (major.minor) with the profile spec version and warns on mismatch |

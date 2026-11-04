@@ -63,7 +63,8 @@ Start with:
 		return nil
 	}
 
-	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd(), a.certsCmd(), a.setupSbxCmd()} {
+	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd(), a.certsCmd(), a.setupSbxCmd(),
+		a.configInitCmd("setup", "Set up jira: create or update the configuration (same as 'config init')")} {
 		c.GroupID = "core"
 		root.AddCommand(c)
 	}
@@ -121,6 +122,13 @@ func (a *App) Execute(ctx context.Context, args []string) int {
 		// Whatever failed after Ctrl+C failed because of it.
 		e = clierr.Wrap(clierr.LayerInterrupted, "interrupted", "interrupted", err)
 	}
+	if e.Code == "config_not_found" && a.IsTerminal() && !a.dryRun && !isSetupCommand(args) {
+		a.printError(e)
+		if a.offerConfigInit(ctx) {
+			return 0
+		}
+		return e.ExitCode()
+	}
 	if e.Layer == clierr.LayerInternal && isCobraUsage(err) {
 		e = clierr.New(clierr.LayerUsage, "invalid_usage", err.Error())
 	}
@@ -128,6 +136,18 @@ func (a *App) Execute(ctx context.Context, args []string) int {
 		"error_layer", string(e.Layer), "error_code", e.Code, "http_status", e.HTTPStatus)
 	a.printError(e)
 	return e.ExitCode()
+}
+
+// isSetupCommand reports whether args run a command that creates the
+// configuration itself (no offer to create it then).
+func isSetupCommand(args []string) bool {
+	var words []string
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			words = append(words, a)
+		}
+	}
+	return len(words) > 0 && (words[0] == "setup" || words[0] == "setup-sbx" || len(words) > 1 && words[0] == "config" && words[1] == "init")
 }
 
 func isCobraUsage(err error) bool {

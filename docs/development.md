@@ -65,6 +65,8 @@ files that carry the generated header.
 
 ## Releasing
 
-Tag `vX.Y.Z`; build with `make build VERSION=vX.Y.Z` (the version is embedded
-via `-ldflags`) and `make docker VERSION=vX.Y.Z`. Release automation is not
-implemented yet (see PROGRESS.md).
+Update `CHANGELOG.md`, then push a tag `vX.Y.Z` on `main`.
+`.github/workflows/release.yml` tests, builds the archives and the multi-arch
+image, pushes and smoke-tests the image, and publishes the GitHub release last.
+Locally: `make build VERSION=vX.Y.Z` (the version is embedded via `-ldflags`)
+and `make docker VERSION=vX.Y.Z`.

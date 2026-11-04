@@ -3,7 +3,7 @@ name: installers
 # Exercises scripts/install.sh (Linux, macOS) against real release archives
 # served from a local mirror. Windows (Git Bash) uses the same script; it has
 # no CI job: Windows runners cost 2x Linux minutes, and the Windows code path
-# (zip + .exe) is small. Test it locally with a uname shim, see PROGRESS.md.
+# (zip + .exe) is small. Test it locally with a uname shim (docs/installation.md).
 
 on:
   pull_request:

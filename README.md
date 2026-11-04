@@ -12,11 +12,12 @@ authentication, TLS, retries and safety checks are implemented once, centrally.
 - Structured, redacted logging with per-run and per-request correlation IDs (`--log-level`, `--log-format json`, `--log-file`)
 - Machine-readable discovery (`commands list`, `capabilities`) and an [Agent Skill](skills/jira/SKILL.md)
 
-> **Status:** phases 1-3 and 5 are complete and tested against fakes. A Docker
-> Compose environment with real Jira Software DC 10.3 (`e2e/`) boots and passes
-> CLI diagnostics; the full scenario needs a Jira license. See
-> [PROGRESS.md](PROGRESS.md) and [e2e/README.md](e2e/README.md). See
-> [PROGRESS.md](PROGRESS.md).
+> **Status:** read-only use is verified against a production Jira Data Center
+> (`scripts/phase4-readonly.sh`). Writes and OAuth are tested against fakes
+> only: there is no Data Center license for a test instance. A Docker Compose
+> environment with real Jira Software DC 10.3 (`e2e/`) boots and passes the CLI
+> diagnostics; its full scenario needs a license ([e2e/README.md](e2e/README.md)).
+> Changes per release: [CHANGELOG.md](CHANGELOG.md).
 
 **New here? Start with [docs/getting-started.md](docs/getting-started.md)**:
 install, company certificate (exported from your browser), token, `doctor`,
@@ -113,7 +114,7 @@ docker run --rm \
 | Development and contributing | [docs/development.md](docs/development.md) |
 | Logging, tracing, CI artifacts | [docs/logging.md](docs/logging.md) |
 | Troubleshooting | [skills/jira/references/troubleshooting.md](skills/jira/references/troubleshooting.md) |
-| Progress, open items | [PROGRESS.md](PROGRESS.md) |
+| Changes per release | [CHANGELOG.md](CHANGELOG.md) |
 
 ## License
 

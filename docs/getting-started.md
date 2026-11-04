@@ -92,8 +92,20 @@ Check: `jira --version` shows the new commit (e.g. `v0.1.0-6-g84dd1a9`).
 
 ## 3. Configure
 
-Create `~/.config/jira-cli/config.yaml` (Windows: `%APPDATA%\jira-cli\config.yaml`).
-It contains no secrets:
+```bash
+jira setup
+```
+
+It asks for the Jira URL, the name for the token, read-only, and a company CA
+file if you need one (section 4). Each answer is checked when you give it: the
+URL must be reachable, and a CA file must hold certificates. The file goes to
+`~/.config/jira-cli/config.yaml` (Windows: `%APPDATA%\jira-cli\config.yaml`),
+and the folder is created if needed. Run it again to change an instance or add
+another one (`--instance staging`). Only the values it asks about change.
+`jira config init` is the same command, and flags (`--base-url`, ...) skip the
+questions. Any command run without a configuration offers to create one.
+
+The resulting file contains no secrets:
 
 ```yaml
 version: 1
