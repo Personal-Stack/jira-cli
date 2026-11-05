@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Writes the GitHub release notes for a version to stdout.
 #
-# Usage: scripts/release-notes.sh VERSION [DIST_DIR] [IMAGE] [DIGEST]
+# Usage: scripts/release-notes.sh VERSION [DIST_DIR] [IMAGE] [DIGEST] [CHANGES]
 #   VERSION   tag, e.g. v0.4.0; its "## VERSION" section of CHANGELOG.md is
-#             the "What's new" part (required for a release, see --check)
+#             the "What's new" part (required for a release, see --check).
+#             Its "### Upgrading" subsection goes to the "Upgrade" section.
 #   DIST_DIR  folder with the archives and SHA256SUMS (download table)
 #   IMAGE     image without tag (default ghcr.io/personal-stack/jira-cli)
 #   DIGEST    pushed image index digest (sha256:...)
+#   CHANGES   file with GitHub's generated notes (the merged pull requests);
+#             authors and "New Contributors" are removed
 #
 # scripts/release-notes.sh --check VERSION only checks that CHANGELOG.md has
 # a section for VERSION (the release workflow runs it before building).
@@ -24,6 +27,22 @@ changelog_section() {
   ' CHANGELOG.md | sed -e '/./,$!d' | sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}'
 }
 
+# without_upgrading / upgrading: the section without, and only, its
+# "### Upgrading..." subsection (up to the next "### ").
+without_upgrading() { awk '/^### / { skip = ($0 ~ /^### Upgrading/) } !skip'; }
+upgrading() { awk '/^### / { keep = ($0 ~ /^### Upgrading/); next } keep' | sed -e '/./,$!d'; }
+trim_end() { sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}'; }
+
+# clean_changes: GitHub's generated notes without authors ("by @x") and the
+# "New Contributors" block.
+clean_changes() {
+  sed -E -e 's/ by @[][A-Za-z0-9_.-]+ in / in /' \
+         -e "s/^## What's Changed$/## Pull requests/" |
+    awk '/^## New Contributors/ { skip = 1; next } /^(## |\*\*Full Changelog)/ { skip = 0 } !skip'
+}
+
+if [ "${1:-}" = --clean-changes ]; then clean_changes; exit 0; fi
+
 if [ "${1:-}" = --check ]; then
   v=${2:?usage: release-notes.sh --check VERSION}
   if [ -z "$(changelog_section "$v")" ]; then
@@ -38,9 +57,12 @@ VERSION=${1:?usage: release-notes.sh VERSION [DIST_DIR] [IMAGE] [DIGEST]}
 DIST=${2:-dist}
 IMAGE=${3:-ghcr.io/personal-stack/jira-cli}
 DIGEST=${4:-}
+CHANGES=${5:-}
 TAG_URL="$REPO_URL/blob/$VERSION"
 
-new=$(changelog_section "$VERSION")
+section=$(changelog_section "$VERSION")
+new=$(printf '%s\n' "$section" | without_upgrading | trim_end)
+upgrade_notes=$(printf '%s\n' "$section" | upgrading | trim_end)
 [ -n "$new" ] || new="_No CHANGELOG.md entry for $VERSION._"
 
 human_size() { awk -v b="$1" 'BEGIN { if (b >= 1048576) printf "%.1f MB", b / 1048576; else printf "%d KB", b / 1024 }'; }
@@ -75,9 +97,7 @@ Then set it up in one guided session (configuration, token, connection check):
 jiracli config setup
 \`\`\`
 
-**Upgrading:** \`jiracli upgrade\` (available from v0.4.0; it verifies the
-download and replaces the binary in place). From an older version, run the
-install command above. On Windows, run \`install.sh\` from Git Bash.
+On Windows, run \`install.sh\` from Git Bash.
 
 **Docker** (only Docker on the machine): the same command with \`--docker\`
 installs a \`jiracli\` wrapper that runs the image:
@@ -96,6 +116,22 @@ if [ -n "$DIGEST" ]; then
 Image digest, for pinning: \`$IMAGE@$DIGEST\`.
 The image is public (no login needed) and covers linux/amd64 and linux/arm64.
 EOF
+fi
+
+cat <<EOF
+
+## Upgrade
+
+| Installed with | Upgrade to $VERSION |
+|---|---|
+| the native binary, v0.4.0 or later | \`jiracli upgrade\` (\`--check\` only looks; the download is verified and the binary replaced in place) |
+| the native binary, before v0.4.0 | the install command above (those versions have no \`upgrade\`) |
+| the Docker wrapper | the Docker install command above (\`upgrade\` does not apply to the wrapper) |
+
+The configuration (\`~/.config/jira-cli\`) and stored tokens are kept.
+EOF
+if [ -n "$upgrade_notes" ]; then
+  printf '\n**For this version:**\n\n%s\n' "$upgrade_notes"
 fi
 
 if compgen -G "$DIST/jira-cli_${VERSION#v}_*" > /dev/null; then
@@ -130,6 +166,11 @@ this release was published:
 docker buildx imagetools inspect $IMAGE@$DIGEST --format '{{json .Provenance}}'
 \`\`\`
 EOF
+fi
+
+if [ -n "$CHANGES" ] && [ -s "$CHANGES" ]; then
+  printf '\n'
+  clean_changes < "$CHANGES"
 fi
 
 cat <<EOF

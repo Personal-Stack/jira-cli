@@ -2,13 +2,18 @@
 
 ## v0.4.1 (2026-11-05)
 
-Installer fixes, found installing the Docker wrapper on macOS.
+Installer fixes, found installing the Docker wrapper on macOS, and clearer release pages.
 
-### Install
+### Installer fixes
 - **`curl … | sh -s -- --docker` installed nothing on macOS.** macOS's `sh` is bash, which reads a piped script line by line; the installer's check of the new wrapper runs `docker run -i`, which read the rest of the script from the same pipe, so the install stopped silently before replacing anything. The installer is now read to the end before it runs, and the commands it starts no longer read its stdin. Linux (dash) was not affected; the installer tests now also run it piped through bash.
 - **When the new command fails its check, its error is shown.** It was hidden behind "does not run on this machine", which made a Docker or image problem look like a platform problem.
 - **Reinstalling right after `--uninstall` in the same terminal** skipped the PATH block (the folder was still on that terminal's PATH), so new terminals did not find `jiracli`. The block is now written whenever no startup or profile file adds the folder.
 - **Accurate error messages:** a failed image pull says that the image is public and points to `docker logout ghcr.io` and Docker Desktop's proxy settings, instead of asking to log in to a "private registry"; failed downloads no longer mention a private repository. The Docker wrapper's own errors say `jiracli:`, not `jira:`.
+
+### Releases
+- **Titled `jiracli vX.Y.Z`**, without "Personal Stack" in front.
+- **An Upgrade section** in every release's notes: what to run for the native binary (v0.4.0 or later: `jiracli upgrade`; older: the install command) and for the Docker wrapper, plus this file's "Upgrading" notes for the version.
+- **The list of merged pull requests no longer names their authors**, and the "New Contributors" block is gone; the full-changelog link stays.
 
 ### Upgrading
 `jiracli upgrade` from v0.4.0. With the Docker wrapper on macOS, run the installer again: the v0.4.0 installer is the one that stopped.
