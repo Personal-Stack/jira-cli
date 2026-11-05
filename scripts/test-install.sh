@@ -85,8 +85,22 @@ fresh_home bash
 run_piped() { (cd "$(dirname "$INSTALL")" && env -u GITHUB_TOKEN PATH="$PATH:/nonexistent-gh" "$SH" -s -- "$@" < "$INSTALL" > "$WORK/out" 2>&1); }
 if run_piped --base-url "$BASE"; then ok "piped install"; else ko "piped install"; cat "$WORK/out"; fi
 [ -x "$HOME/.local/bin/jiracli" ] && ok "piped: binary installed" || ko "piped: binary missing"
+# macOS's sh is bash, which reads a piped script line by line.
+fresh_home bash
+(cd "$WORK" && env -u GITHUB_TOKEN PATH="$PATH:/nonexistent-gh" bash --posix -s -- --base-url "$BASE" < "$INSTALL" > "$WORK/out" 2>&1) &&
+  [ -x "$HOME/.local/bin/jiracli" ] && grep -q "Next steps" "$WORK/out" && ok "piped through bash --posix (macOS sh)" || { ko "piped bash"; cat "$WORK/out"; }
 # Run from inside the clone, piped: the clone must not be used.
 if run_piped --from-source; then ko "piped --from-source used the current directory"; else grep -q "needs a clone" "$WORK/out" && ok "piped: the current directory is not taken for a clone" || { ko "piped --from-source message"; cat "$WORK/out"; }; fi
+
+echo "== reinstall in the shell where --uninstall just ran"
+fresh_home bash
+run --base-url "$BASE" && run --base-url "$BASE" --uninstall && [ "$(blocks "$HOME/.bashrc")" = 0 ] || ko "setup"
+PATH="$HOME/.local/bin:$PATH"   # this shell still has it from the removed block
+run --base-url "$BASE" && [ "$(blocks "$HOME/.bashrc")" = 1 ] && ok "PATH block written again (new terminals find it)" || { ko "no PATH block after reinstall"; cat "$WORK/out"; }
+fresh_home bash
+# shellcheck disable=SC2016 # literal $HOME in the startup file
+printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.bashrc"; PATH="$HOME/.local/bin:$PATH"
+run --base-url "$BASE" && [ "$(blocks "$HOME/.bashrc")" = 0 ] && ok "no block when the startup file already adds the folder" || { ko "needless block"; cat "$WORK/out"; }
 
 echo "== upgrade from 'jira' (renamed in v0.3.0)"
 fresh_home bash
@@ -116,10 +130,12 @@ echo "== fish"
 fresh_home fish
 run --base-url "$BASE" && grep -q "fish_add_path -g $HOME/.local/bin" "$HOME/.config/fish/conf.d/jira-cli.fish" && ok "fish conf.d snippet" || { ko "fish"; cat "$WORK/out"; }
 
-echo "== already on PATH: no rc edits"
-fresh_home sh
+echo "== already on PATH through a profile file: no rc edits"
+fresh_home bash
 mkdir -p "$HOME/bin"; PATH="$HOME/bin:$PATH"
-run --base-url "$BASE" --dir "$HOME/bin" && [ ! -f "$HOME/.profile" ] && ok "no rc change when dir already on PATH" || { ko "rc modified"; cat "$WORK/out"; }
+# shellcheck disable=SC2016 # literal $HOME in the profile, like Ubuntu's default ~/.profile
+printf 'if [ -d "$HOME/bin" ] ; then\n    PATH="$HOME/bin:$PATH"\nfi\n' > "$HOME/.profile"
+run --base-url "$BASE" --dir "$HOME/bin" && [ "$(blocks "$HOME/.bashrc")" = 0 ] && ok "no rc change when ~/.profile already adds the folder" || { ko "rc modified"; cat "$WORK/out"; }
 
 echo "== --no-completions"
 fresh_home bash
@@ -162,9 +178,9 @@ mkdir -p "$WORK/broken/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}" "$WORK/bro
 printf 'not a program\n' > "$WORK/broken/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}/jiracli"; chmod +x "$WORK/broken/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}/jiracli"
 tar -czf "$WORK/brokenpkg/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}.tar.gz" -C "$WORK/broken" "jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}"
 if run --archive "$WORK/brokenpkg/jira-cli_${VERSION#v}_${HOST_OS}_${HOST_ARCH}.tar.gz"; then ko "non-running binary installed"
-else grep -q "does not run on this machine" "$WORK/out" && ok "non-running binary refused before replacing anything" || { ko "wrong message"; cat "$WORK/out"; }; fi
+else grep -q "did not run" "$WORK/out" && grep -q "  | .*not found" "$WORK/out" && ok "non-running binary refused with its error, before replacing anything" || { ko "wrong message"; cat "$WORK/out"; }; fi
 "$HOME/.local/bin/jiracli" --version > /dev/null 2>&1 && ok "existing installation still working" || ko "existing installation replaced by a broken binary"
-staged=$(find "$HOME/.local/bin" -maxdepth 1 -name '.jira.tmp*' | head -n1)
+staged=$(find "$HOME/.local/bin" -maxdepth 1 -name '.jiracli.tmp*' | head -n1)
 [ -z "$staged" ] && ok "no staged temp file left behind" || ko "staged temp file left behind: $staged"
 
 echo "== integrity and transport failures"
@@ -202,6 +218,18 @@ if command -v docker > /dev/null && docker image inspect "$DIMG" > /dev/null 2>&
   if ( cd "$WORK" && env -u GITHUB_TOKEN "$SH" "$WORK/install-copy.sh" --docker --image "$DIMG" --base-url "$BASE" > "$WORK/out" 2>&1 ); then
     grep -q "sha256 verified" "$WORK/out" && ok "wrapper downloaded and verified" || { ko "no verification"; cat "$WORK/out"; }
   else ko "mirror --docker install"; cat "$WORK/out"; fi
+  # The macOS case: piped through bash, the wrapper's `docker run -i` must not
+  # swallow the rest of the script.
+  fresh_home bash
+  if ( cd "$WORK" && env -u GITHUB_TOKEN bash --posix -s -- --docker --image "$DIMG" --base-url "$BASE" < "$WORK/install-copy.sh" > "$WORK/out" 2>&1 ) &&
+     head -1 "$HOME/.local/bin/jiracli" | grep -q '^#!/bin/sh' && grep -q "Next steps" "$WORK/out"; then ok "--docker piped through bash --posix installs the wrapper"
+  else ko "--docker piped through bash"; cat "$WORK/out"; fi
+  # A wrapper whose container fails: its error is shown, nothing is installed.
+  printf 'FROM %s\nENTRYPOINT ["/usr/local/bin/jiracli", "--no-such-flag"]\n' "$DIMG" | docker build -q -t jira-cli:broken - > /dev/null
+  fresh_home bash
+  if ( cd "$WORK" && env -u GITHUB_TOKEN "$SH" "$WORK/install-copy.sh" --docker --image jira-cli:broken --base-url "$BASE" > "$WORK/out" 2>&1 ); then ko "a failing wrapper was installed"
+  else grep -q "  | .*no-such-flag" "$WORK/out" && grep -q "did not run" "$WORK/out" && [ ! -e "$HOME/.local/bin/jiracli" ] && ok "a failing wrapper's error is shown; nothing installed" || { ko "failing wrapper"; cat "$WORK/out"; }; fi
+  docker rmi jira-cli:broken > /dev/null 2>&1 || true
   sed "s/^#!/# tampered\n#!/" "$MIRROR/$VERSION/jira-docker.sh" > "$WORK/t" && cp "$WORK/t" "$MIRROR/v9.9.9/jira-docker.sh" && grep -v jira-docker.sh "$MIRROR/v9.9.9/SHA256SUMS" > "$WORK/s" && grep jira-docker.sh "$MIRROR/$VERSION/SHA256SUMS" >> "$WORK/s" && cp "$WORK/s" "$MIRROR/v9.9.9/SHA256SUMS"
   fresh_home bash
   if ( cd "$WORK" && env -u GITHUB_TOKEN "$SH" "$WORK/install-copy.sh" --docker --image "$DIMG" --base-url "$BASE" --version v9.9.9 > "$WORK/out" 2>&1 ); then ko "tampered wrapper accepted"
