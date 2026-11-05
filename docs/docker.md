@@ -44,6 +44,11 @@ jiracli auth login          # token stored in ~/.config/jira-cli/credentials/<re
 jiracli doctor
 ```
 
+If the install stops at `cannot pull`: the image is public, so a stale
+`docker login ghcr.io` (for example from an older version of these docs) is
+the usual cause; `docker logout ghcr.io` fixes it. Behind a proxy or VPN,
+Docker Desktop needs the proxy as well (Settings > Resources > Proxies).
+
 Uninstall with `sh install.sh --uninstall`. The image stays; remove it with
 `docker rmi`.
 

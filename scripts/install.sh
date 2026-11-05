@@ -20,6 +20,13 @@
 # the PATH entry it adds applies to Git Bash only (see docs/installation.md).
 set -eu
 
+# The whole script is one block: the shell reads it to the end before running
+# anything. Piped (curl ... | sh), the script arrives on stdin, and bash (sh on
+# macOS) reads it line by line; a command that reads stdin, such as the
+# wrapper's `docker run -i`, would swallow the rest and the install would stop
+# silently half way.
+{
+
 REPO="Personal-Stack/jira-cli"
 VERSION="${JIRA_CLI_VERSION:-}"
 INSTALL_DIR="${JIRA_CLI_INSTALL_DIR:-$HOME/.local/bin}"
@@ -129,6 +136,18 @@ remove_block() { # remove_block FILE
   fi
 }
 
+# rc_mentions_dir: whether a startup or profile file names $INSTALL_DIR
+# (literally, or as $HOME/... or ~/...), so new terminals get it on PATH.
+rc_mentions_dir() {
+  rel=${INSTALL_DIR#"$HOME"/}
+  for f in $(rc_files) "$HOME/.profile" "$HOME/.bash_profile" "$HOME/.bash_login" "${ZDOTDIR:-$HOME}/.zprofile" "${ZDOTDIR:-$HOME}/.zshenv"; do
+    [ -f "$f" ] || continue
+    grep -qF "$INSTALL_DIR" "$f" && return 0
+    [ "$rel" != "$INSTALL_DIR" ] && grep -qE "(\\\$HOME|\\\$\{HOME\}|~)/$rel" "$f" && return 0
+  done
+  return 1
+}
+
 add_block() { # add_block FILE
   f="$1"
   mkdir -p "$(dirname "$f")"
@@ -171,7 +190,7 @@ completion_paths() {
 install_completions() {
   completion_paths | while read -r sh path; do
     mkdir -p "$(dirname "$path")"
-    if "$TARGET" completion "$sh" > "$path.tmp" 2>/dev/null; then
+    if "$TARGET" completion "$sh" > "$path.tmp" 2>/dev/null < /dev/null; then
       mv "$path.tmp" "$path"; info "$sh completion: $path"
     else
       rm -f "$path.tmp"; warn "could not generate $sh completion"
@@ -259,7 +278,7 @@ resolve_version() {
   else
     auth=""; [ -n "${GITHUB_TOKEN:-}" ] && auth="Authorization: Bearer $GITHUB_TOKEN"
     http_get "https://api.github.com/repos/$REPO/releases/latest" "$TMP/latest.json" ${auth:+-H "$auth"} \
-      || die "cannot query releases (private repository: run 'gh auth login' or set GITHUB_TOKEN)"
+      || die "cannot query the latest release from api.github.com (network or proxy; GitHub's anonymous rate limit is 60 per hour: set GITHUB_TOKEN, or pass --version)"
     VERSION=$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' "$TMP/latest.json" | head -n1)
   fi
   [ -n "$VERSION" ] || die "could not determine the latest release; pass --version"
@@ -283,7 +302,7 @@ fetch_release() {
   else
     for f in "$@"; do
       http_get "https://github.com/$REPO/releases/download/$VERSION/$f" "$TMP/$f" \
-        || die "download failed (private repository: run 'gh auth login' or set GITHUB_TOKEN)"
+        || die "cannot download $f of $VERSION from github.com (check the version and the network or proxy)"
     done
   fi
 }
@@ -323,7 +342,7 @@ if [ "$DOCKER" = 1 ]; then
   fi
   if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     say "Pulling $IMAGE"
-    docker pull "$IMAGE" || die "cannot pull $IMAGE (private registry: gh auth refresh -h github.com -s read:packages && gh auth token | docker login ghcr.io -u <github-user> --password-stdin)"
+    docker pull "$IMAGE" < /dev/null || die "cannot pull $IMAGE. The image is public: if you logged in to ghcr.io before, an expired login is refused even for public images (docker logout ghcr.io); behind a proxy or VPN, Docker Desktop needs the proxy too (Settings > Resources > Proxies)"
   fi
   sed "s|__JIRA_CLI_IMAGE__|$IMAGE|" "$TMP/jira-docker.sh" > "$TMP/jira-wrapper"
   BIN_SRC="$TMP/jira-wrapper"
@@ -385,9 +404,10 @@ if [ "$os" = darwin ] && [ "$DOCKER" = 0 ] && command -v xattr >/dev/null 2>&1; 
 fi
 # Run the new binary BEFORE replacing the installed one, so a broken or
 # wrong-platform binary never replaces a working installation.
-if ! installed=$("$STAGED" --version 2>/dev/null); then
+if ! installed=$("$STAGED" --version 2>"$TMP/run.err" < /dev/null); then
   rm -f "$STAGED"
-  die "the new binary does not run on this machine ($os/$arch); the existing installation (if any) was left unchanged"
+  sed 's/^/  | /' "$TMP/run.err" >&2
+  die "the new $BIN_NAME did not run ($os/$arch; its error is above); the existing installation (if any) was left unchanged"
 fi
 mv -f "$STAGED" "$TARGET"   # atomic replace
 if [ "$DOCKER" = 1 ]; then
@@ -429,8 +449,10 @@ if [ "$on_path" = 0 ]; then
   else
     say "$INSTALL_DIR is not on PATH; add it to use '$BIN_NAME' directly."
   fi
-elif [ "$MODIFY_PATH" = 1 ] && [ "$COMPLETIONS" = 1 ] && [ "$(basename "${SHELL:-sh}")" = zsh ]; then
-  # Already on PATH, but zsh only finds completions through fpath.
+elif [ "$MODIFY_PATH" = 1 ] && { ! rc_mentions_dir || { [ "$COMPLETIONS" = 1 ] && [ "$(basename "${SHELL:-sh}")" = zsh ]; }; }; then
+  # On PATH in this shell only (e.g. left from a block that --uninstall just
+  # removed): new terminals would not find it. Or zsh, which only finds
+  # completions through fpath. The block is guarded, so PATH never doubles.
   for f in $(rc_files); do add_block "$f"; done
 fi
 if [ "$COMPLETIONS" = 1 ]; then
@@ -461,3 +483,4 @@ if [ "$DOCKER" = 1 ]; then
 else
   say "Upgrade later with:  $BIN_NAME upgrade"
 fi
+}

@@ -1,5 +1,5 @@
 #!/bin/sh
-# jira: runs jira-cli from its Docker image as if it were installed natively.
+# jiracli: runs jira-cli from its Docker image as if it were installed natively.
 #
 # Installed as `jiracli` by `install.sh --docker`. Every invocation is a
 # `docker run --rm` of the CLI image with:
@@ -28,7 +28,7 @@ set -eu
 IMAGE="${JIRA_CLI_IMAGE:-__JIRA_CLI_IMAGE__}"
 case "$IMAGE" in __*) IMAGE="jira-cli:local" ;; esac
 
-command -v docker >/dev/null 2>&1 || { echo "jira: docker is not installed or not on PATH" >&2; exit 127; }
+command -v docker >/dev/null 2>&1 || { echo "jiracli: docker is not installed or not on PATH" >&2; exit 127; }
 
 CFG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 CFG_DIR="$CFG_HOME/jira-cli"
