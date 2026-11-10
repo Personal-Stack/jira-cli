@@ -247,7 +247,7 @@ func (a *App) execute(cmd *cobra.Command, p *operation.Profile, op *operation.Op
 		maxPages, _ = cmd.Flags().GetInt("max-pages")
 	}
 	if a.dryRun {
-		return a.printDryRun(in.BaseURL, p, op, req, all, format)
+		return a.printDryRun(a.Out, in.BaseURL, p, op, req, all, format)
 	}
 	client, err := a.Client(in, p)
 	if err != nil {
@@ -275,28 +275,28 @@ func (a *App) execute(cmd *cobra.Command, p *operation.Profile, op *operation.Op
 		}
 		body = resp.Body
 	}
-	return a.printResponse(resp, body, format)
+	return a.printResponse(a.Out, resp, body, format)
 }
 
-func (a *App) printResponse(resp *api.Response, body []byte, f output.Format) error {
+func (a *App) printResponse(w io.Writer, resp *api.Response, body []byte, f output.Format) error {
 	trimmed := bytes.TrimSpace(body)
 	if len(trimmed) == 0 {
 		// Explicit success record so callers can verify writes (e.g. 204).
-		return output.Write(a.Out, map[string]any{"ok": true, "status": resp.Status}, f)
+		return output.Write(w, map[string]any{"ok": true, "status": resp.Status}, f)
 	}
 	if resp.IsJSON() || json.Valid(trimmed) {
-		if err := output.WriteRaw(a.Out, trimmed, f); err != nil {
+		if err := output.WriteRaw(w, trimmed, f); err != nil {
 			return clierr.Wrap(clierr.LayerResponse, "render_failed", "cannot render response", err)
 		}
 		return nil
 	}
-	_, err := a.Out.Write(body)
+	_, err := w.Write(body)
 	return err
 }
 
 // printDryRun shows exactly what would be sent, without loading credentials
 // or opening a connection.
-func (a *App) printDryRun(baseURL string, p *operation.Profile, op *operation.Operation, r api.Request, all bool, f output.Format) error {
+func (a *App) printDryRun(w io.Writer, baseURL string, p *operation.Profile, op *operation.Operation, r api.Request, all bool, f output.Format) error {
 	u, err := url.Parse(strings.TrimRight(baseURL, "/"))
 	if err != nil {
 		return clierr.Wrap(clierr.LayerConfig, "invalid_base_url", "invalid base_url", err)
@@ -329,5 +329,5 @@ func (a *App) printDryRun(baseURL string, p *operation.Profile, op *operation.Op
 	if all {
 		req["paginate"] = true
 	}
-	return output.Write(a.Out, out, f)
+	return output.Write(w, out, f)
 }

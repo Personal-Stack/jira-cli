@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Local MCP server: `jiracli mcp`
+- **New command `jiracli mcp`**: a Model Context Protocol server over stdin/stdout for AI agents (Claude Code, OpenCode, Claude Desktop, ...). Local only: the client starts it; nothing listens on the network. See `docs/mcp.md`.
+- **Every API command is reachable** through three tools: `jira_commands` (list), `jira_describe` (parameters and body) and `jira_run` (run one command).
+- **Read-only by default.** `--allow-writes` adds write operations; `--allow-destructive` (with `--allow-writes`) adds destructive and administrative ones, which also need `confirm` set to the command's name. An instance with `read_only`, `JIRA_READ_ONLY=1` or `--read-only` stays read-only. Dry runs work in every mode.
+- **No file access for the model**: request bodies are inline, and file uploads are not available. Path values `.` and `..` are refused; unknown parameters are errors. Results are capped (`--max-output`, `--max-pages`).
+- Not a boundary against an agent that can also run shell commands as you: it can run `jiracli` directly. `docs/mcp.md` says when it is one.
+
 ### Docker Sandboxes: `jiracli setup-sbx`
 - **The skill's folder is configurable**: `--skills-dir` (relative to the project), and a "Skills folder" question in the guided setup. The default stays `.opencode/skills`; give e.g. `.opencode/local/skills` if your agent reads skills there. The choice is saved for the next project, and the agent instructions in the kit name the folder actually used.
 - When the folder changes, the unedited copy at the old place is removed; an edited one is kept, with a warning.
