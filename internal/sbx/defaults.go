@@ -18,6 +18,7 @@ const DefaultsFile = "setup.yaml"
 type Defaults struct {
 	Agent, Secret   string
 	KitPath         string // where the jira-cli kit is (or goes)
+	SkillsPath      string // the skills folder the jira skill goes into
 	ReadOnly, Skill *bool
 
 	Name    string // the project's own sandbox name (only when Project)
@@ -29,13 +30,14 @@ type Defaults struct {
 // (agent_kit, or a reference in agent with the name in agent_name); only
 // the name is used now.
 type saved struct {
-	Agent     string `yaml:"agent,omitempty"`
-	AgentName string `yaml:"agent_name,omitempty"`
-	AgentKit  string `yaml:"agent_kit,omitempty"`
-	KitPath   string `yaml:"kit_path,omitempty"`
-	Secret    string `yaml:"secret,omitempty"` // also read by scripts/jira-docker.sh
-	ReadOnly  *bool  `yaml:"read_only,omitempty"`
-	Skill     *bool  `yaml:"skill,omitempty"`
+	Agent      string `yaml:"agent,omitempty"`
+	AgentName  string `yaml:"agent_name,omitempty"`
+	AgentKit   string `yaml:"agent_kit,omitempty"`
+	KitPath    string `yaml:"kit_path,omitempty"`
+	SkillsPath string `yaml:"skills_path,omitempty"`
+	Secret     string `yaml:"secret,omitempty"` // also read by scripts/jira-docker.sh
+	ReadOnly   *bool  `yaml:"read_only,omitempty"`
+	Skill      *bool  `yaml:"skill,omitempty"`
 }
 
 // LoadDefaults reads the defaults for project.
@@ -51,7 +53,7 @@ func LoadDefaults(project, settings string) Defaults {
 		if ValidAgent(agent) != nil {
 			agent = ""
 		}
-		d = Defaults{Agent: agent, KitPath: s.KitPath, Secret: s.Secret, ReadOnly: s.ReadOnly, Skill: s.Skill, From: "your last setup (" + path + ")"}
+		d = Defaults{Agent: agent, KitPath: s.KitPath, SkillsPath: s.SkillsPath, Secret: s.Secret, ReadOnly: s.ReadOnly, Skill: s.Skill, From: "your last setup (" + path + ")"}
 	}
 	b, err := os.ReadFile(filepath.Join(project, "sbxenv.yaml"))
 	if err != nil || !IsGenerated(b) {
@@ -97,6 +99,9 @@ func (p *Plan) SaveDefaults() error {
 	s := saved{Agent: p.Agent, KitPath: p.KitPath, Secret: p.Secret, ReadOnly: &ro, Skill: &skill}
 	if s.KitPath == DefaultKitPath {
 		s.KitPath = ""
+	}
+	if p.SkillsPath != DefaultSkillsPath {
+		s.SkillsPath = p.SkillsPath
 	}
 	b, err := yaml.Marshal(s)
 	if err != nil {

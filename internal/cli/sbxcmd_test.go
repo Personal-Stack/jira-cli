@@ -192,13 +192,15 @@ func TestSetupSbxInteractiveValidatesEachAnswer(t *testing.T) {
 		"devex-opencode",                       //
 		"",                                     // sandbox name: the default
 		"",                                     // read-only: yes
+		"../skills",                            // outside the project: asked again
+		".opencode/local/skills",               //
 		"",                                     // proceed
 		"",                                     // start: no
 	), "-i")
 	if code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	for _, want := range []string{"not a directory", "must be https://", "cannot reach down.example.com:443", "looks like an image or kit reference"} {
+	for _, want := range []string{"not a directory", "must be https://", "cannot reach down.example.com:443", "looks like an image or kit reference", "skills folder must be inside the project"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("stderr lacks %q", want)
 		}
@@ -207,11 +209,26 @@ func TestSetupSbxInteractiveValidatesEachAnswer(t *testing.T) {
 	if !strings.Contains(string(env), "agent: devex-opencode\nkits:\n  - ./tmp/.sbx/jira-cli\nworkspace:") {
 		t.Fatalf("sbxenv.yaml:\n%s", env)
 	}
+	if _, err := os.Stat(filepath.Join(project, ".opencode/local/skills/jira/SKILL.md")); err != nil {
+		t.Fatalf("skill not in the chosen folder: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(project, ".opencode/skills/jira")); err == nil {
+		t.Fatal("skill also written to the default folder")
+	}
+	if kit, _ := os.ReadFile(filepath.Join(project, "tmp/.sbx/jira-cli/jira-cli.yaml")); !strings.Contains(string(kit), "(.opencode/local/skills/jira)") {
+		t.Fatalf("agent context does not name the chosen skill folder:\n%s", kit)
+	}
 
 	// The same project again: one confirmation instead of every question.
 	code, _, errOut = runSbx(t, fs, answers(project, "", ""), "-i")
 	if code != 0 || !strings.Contains(errOut, "Use these settings") || strings.Contains(errOut, "Jira base URL (https://") {
 		t.Fatalf("exit %d:\n%s", code, errOut)
+	}
+	if !strings.Contains(errOut, ".opencode/local/skills/jira") {
+		t.Fatalf("the saved skills folder is not the default:\n%s", errOut)
+	}
+	if _, err := os.Stat(filepath.Join(project, ".opencode/local/skills/jira/SKILL.md")); err != nil {
+		t.Fatalf("skill moved on the re-run: %v", err)
 	}
 }
 
@@ -339,7 +356,7 @@ func TestSetupSbxAgentFromBaseLayerAndReservedNames(t *testing.T) {
 	}
 	// Guided (a fresh HOME: every question is asked): a reserved name is asked again.
 	isolateHome(t)
-	code, _, errOut = runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, answers(t.TempDir(), "https://jira.example.com", "devex-opencode", "codex", "team-sbx", "", "", ""), "-i", "--force")
+	code, _, errOut = runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, answers(t.TempDir(), "https://jira.example.com", "devex-opencode", "codex", "team-sbx", "", "", "", ""), "-i", "--force")
 	if code != 0 || !strings.Contains(errOut, `"codex" is reserved by sbx`) {
 		t.Fatalf("guided: exit %d\n%s", code, errOut)
 	}
@@ -368,7 +385,7 @@ func TestSetupSbxMissingSecret(t *testing.T) {
 	empty(t, project)
 	// Guided: sbx stores it (it prompts), before the files are written.
 	fs = &fakeSbx{secrets: "NAME  TYPE\n"}
-	code, _, _ = runSbx(t, fs, answers(project, "https://jira.example.com", "", "", "", "", ""), "-i")
+	code, _, _ = runSbx(t, fs, answers(project, "https://jira.example.com", "", "", "", "", "", ""), "-i")
 	if code != 0 || !fs.setSecret {
 		t.Fatalf("exit %d, secret set %v", code, fs.setSecret)
 	}
@@ -392,7 +409,7 @@ func TestSetupSbxExistingSetupKeepsItsSandboxName(t *testing.T) {
 func TestSetupSbxDeclined(t *testing.T) {
 	isolateHome(t)
 	project := t.TempDir()
-	code, _, errOut := runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, answers(project, "https://jira.example.com", "", "", "", "n"), "-i")
+	code, _, errOut := runSbx(t, &fakeSbx{secrets: "jira apiKey\n"}, answers(project, "https://jira.example.com", "", "", "", "", "n"), "-i")
 	if code == 0 || !strings.Contains(errOut, "nothing was written") {
 		t.Fatalf("declining: exit %d\n%s", code, errOut)
 	}
@@ -426,7 +443,7 @@ func TestSetupSbxInContainer(t *testing.T) {
 	// (A fresh HOME: no saved defaults, so every question is asked.)
 	isolateHome(t)
 	project2 := t.TempDir()
-	code, _, errOut = runSbx(t, &fakeSbx{}, answers("https://jira.example.com", "", "", "", "", ""), "-i", "--project", project2)
+	code, _, errOut = runSbx(t, &fakeSbx{}, answers("https://jira.example.com", "", "", "", "", "", ""), "-i", "--project", project2)
 	if code != 0 || strings.Contains(errOut, "Project the agent works in") || !strings.Contains(errOut, "project    "+project2) {
 		t.Fatalf("exit %d:\n%s", code, errOut)
 	}

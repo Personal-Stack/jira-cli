@@ -16,6 +16,7 @@ Run it without flags in a terminal and it asks:
 - **Agent:** its sbx name, e.g. `opencode`. If your `~/.sbxenv.yaml` sets an agent, that one is used: sbx merges that file into every environment and accepts no other. A name only: an image or kit reference is refused, so it can never end up as a kit.
 - **Sandbox name:** a new project gets `<agent>-<folder>-jira`. sbx's agent and command names (`opencode`, `claude`, `codex`, `cursor`, `env`, `run`, …) are refused: sbx resolves those words itself.
 - **Read-only:** default yes.
+- **Skills folder:** where the `jira` skill goes, relative to the project (default `.opencode/skills`, where OpenCode looks for project skills). If your agent reads skills from elsewhere, e.g. `.opencode/local/skills`, give that. The answer is saved for the next project.
 
 After a summary and **Proceed**, it writes the files and prints the next
 steps. From a jira-cli clone, `make sbx` runs the same thing with the clone's
@@ -27,13 +28,15 @@ one question: **Use these settings?**
 For scripts, use flags instead:
 
 ```bash
-jiracli setup-sbx --project ~/Projects/my-work --base-url https://jira.company.internal --agent devex-opencode
+jiracli setup-sbx --project ~/Projects/my-work --base-url https://jira.company.internal --agent devex-opencode \
+  --skills-dir .opencode/local/skills
 ```
 
 | Flag | Use |
 |---|---|
 | `--agent` | The agent's sbx name (default `opencode`) |
 | `--kit-dir` | Where jira-cli's kit goes in the project (default `tmp/.sbx/jira-cli`) |
+| `--skills-dir` | Skills folder the `jira` skill goes into, relative to the project (default `.opencode/skills`) |
 | `--name` | Sandbox name |
 | `--secret` | sbx secret holding the PAT (default `jira`) |
 | `--allow-writes` | Let the agent write to Jira (default: read-only) |
@@ -72,7 +75,7 @@ and nothing is written before everything has passed:
 |---|---|
 | Kit: the Linux `jira` (`bin/jiracli`), egress to your Jira host, the credential, a `bashrc` hook | `<project>/tmp/.sbx/jira-cli/` (`--kit-dir`; binary gitignored) |
 | Environment: agent, jira-cli's kit (the only kit), name, settings mount, `JIRA_*` variables, credential binding | `<project>/sbxenv.yaml` |
-| The agent skill, with a "This sandbox" section naming the binary's path | `<project>/.opencode/skills/jira/` |
+| The agent skill, with a "This sandbox" section naming the binary's path | `<project>/.opencode/skills/jira/` (`--skills-dir`) |
 | `config.yaml` and `bashrc`: created once, then yours to edit | `~/.config/jira-cli-sbx/` (mounted read-only at the same path) |
 | Your answers, for the next run | `~/.config/jira-cli-sbx/setup.yaml` |
 
@@ -84,6 +87,11 @@ as the agent). Saved defaults of those versions keep only the agent's name.
 `--kit-dir` points, inside the project. If it moves, the copy setup-sbx
 generated at the old location is removed, including `.sbx/jira-cli` and
 `temp/.sbx/jira-cli` from earlier versions.
+
+**The skill folder.** If the skills folder changes, the copy an earlier
+setup put at the old place (or at the default `.opencode/skills/jira`) is
+removed when it is unedited. An edited one is kept, with a warning: remove it
+yourself if the agent should not see two `jira` skills.
 
 **The binary.** The project is mounted in the sandbox at the same path, so
 the agent runs `<project>/tmp/.sbx/jira-cli/bin/jiracli`. The skill and the agent
@@ -140,7 +148,7 @@ an error. sbx asks again only if those change.
 |---|---|
 | `~/.config/jira-cli-sbx/config.yaml` or `bashrc` | Nothing: it is a live mount |
 | The jira-cli version | Re-run `jiracli setup-sbx` (one confirmation), then `sbx env rm; sbx env run` (`env rm` says "not found" when there is no sandbox yet; that's fine) |
-| The skill | Edit `.opencode/skills/jira`; re-runs keep your edits (`--force` replaces them) |
+| The skill | Edit `<skills folder>/jira`; re-runs keep your edits (`--force` replaces them) |
 | The token | `sbx secret set jira` |
 
 ## If the sandbox does not start

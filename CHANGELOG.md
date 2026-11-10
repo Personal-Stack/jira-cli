@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Docker Sandboxes: `jiracli setup-sbx`
+- **The skill's folder is configurable**: `--skills-dir` (relative to the project), and a "Skills folder" question in the guided setup. The default stays `.opencode/skills`; give e.g. `.opencode/local/skills` if your agent reads skills there. The choice is saved for the next project, and the agent instructions in the kit name the folder actually used.
+- When the folder changes, the unedited copy at the old place is removed; an edited one is kept, with a warning.
+
 ## v0.4.1 (2026-11-05)
 
 Installer fixes, found installing the Docker wrapper on macOS, and clearer release pages.
