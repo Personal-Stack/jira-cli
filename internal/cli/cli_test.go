@@ -72,6 +72,7 @@ type env struct {
 	jira *fakeJira
 	vars map[string]string
 	dir  string
+	sent []string // requests Jira received during the last mcp session
 }
 
 func setup(t *testing.T, extra string) *env {

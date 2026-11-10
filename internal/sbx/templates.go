@@ -81,7 +81,7 @@ capabilities:
 
         The CLI is {{code .BinPath}} (in the mounted project; it may also be on PATH as
         {{code "jiracli"}}). Use the {{code "jira"}} skill
-        (.opencode/skills/jira): discover commands with {{code "jiracli commands list"}} and
+        ({{.SkillPath}}): discover commands with {{code "jiracli commands list"}} and
         {{code "jiracli commands describe <group> <command>"}} instead of guessing them.
 
         - Authentication is proxy-managed: {{code .CredEnv}} is a sentinel and the

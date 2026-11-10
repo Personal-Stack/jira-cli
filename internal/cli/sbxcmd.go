@@ -65,11 +65,11 @@ It stops at the first problem, and writes nothing before everything passed:
   5. files are written, and the next steps printed.
 
 Files: <project>/tmp/.sbx/jira-cli (kit; --kit-dir), <project>/sbxenv.yaml,
-<project>/.opencode/skills/jira, and <settings>/config.yaml and bashrc
+<project>/.opencode/skills/jira (--skills-dir), and <settings>/config.yaml and bashrc
 (created once, yours to edit). See docs/sandbox.md.`,
 		Example: `  jiracli setup-sbx
   jiracli setup-sbx --project ~/Projects/my-work --base-url https://jira.company.internal \
-    --agent devex-opencode`,
+    --agent devex-opencode --skills-dir .opencode/local/skills`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s := &sbxSetup{a: a, f: f, set: cmd.Flags().Changed, ui: a.newTermUI(),
@@ -90,11 +90,12 @@ Files: <project>/tmp/.sbx/jira-cli (kit; --kit-dir), <project>/sbxenv.yaml,
 	fl.StringVar(&f.o.Name, "name", "", "sandbox name (default for a new project: <agent>-<folder>-jira)")
 	fl.StringVar(&f.o.Secret, "secret", "jira", "sbx secret that holds the PAT")
 	fl.BoolVar(&f.allowWrites, "allow-writes", false, "let the agent write to Jira (default: read-only)")
-	fl.BoolVar(&f.noSkill, "no-skill", false, "do not install the skill in <project>/.opencode/skills/jira")
+	fl.StringVar(&f.o.SkillsPath, "skills-dir", sbx.DefaultSkillsPath, "skills folder the jira skill goes into, relative to the project (e.g. .opencode/local/skills)")
+	fl.BoolVar(&f.noSkill, "no-skill", false, "do not install the skill in <project>/<skills-dir>/jira")
 	fl.StringVar(&f.o.Settings, "settings", filepath.Join(cfgHome, "jira-cli-sbx"), "folder for config.yaml and bashrc")
 	fl.StringVar(&f.binaryFile, "binary-file", "", "linux jiracli binary for the kit (default: this jiracli, a build from a clone, or the release)")
 	fl.StringVar(&f.sourceDir, "source-dir", "", "jira-cli clone to build the linux binary from (default: the clone containing the current directory)")
-	for _, d := range []string{"project", "settings", "kit-dir", "source-dir"} {
+	for _, d := range []string{"project", "settings", "kit-dir", "skills-dir", "source-dir"} {
 		_ = c.MarkFlagDirname(d)
 	}
 	_ = c.MarkFlagFilename("binary-file")
@@ -267,6 +268,10 @@ func (s *sbxSetup) applyDefaults() bool {
 	if !s.set("kit-dir") && d.KitPath != "" {
 		o.KitPath = d.KitPath
 	}
+	o.PrevSkillsPath = d.SkillsPath // an unedited copy there is removed if the skill moves
+	if !s.set("skills-dir") && d.SkillsPath != "" {
+		o.SkillsPath = d.SkillsPath
+	}
 	if d.ReadOnly != nil && !s.set("allow-writes") {
 		o.ReadOnly = *d.ReadOnly
 	}
@@ -363,6 +368,9 @@ func (s *sbxSetup) ask(ctx context.Context) error {
 	}
 	q.text(&o.Name, "Sandbox name", optional(sbx.ValidSandboxName))
 	q.yesno(&o.ReadOnly, "Read-only (the agent cannot change anything in Jira)")
+	if o.Skill {
+		q.text(&o.SkillsPath, "Skills folder for the jira skill, relative to the project (e.g. .opencode/local/skills)", sbx.ValidSkillsPath)
+	}
 	if q.err != nil {
 		return q.err
 	}
@@ -385,6 +393,11 @@ func (s *sbxSetup) summary() {
 	ui.kv("jira", o.BaseURL)
 	ui.kv("agent", o.Agent)
 	ui.kv("kit folder", o.KitPath)
+	if o.Skill {
+		ui.kv("skill", o.SkillsPath+"/jira")
+	} else {
+		ui.kv("skill", "not installed")
+	}
 	ui.kv("name", or(o.Name, "sbx default"))
 	ui.kv("read-only", map[bool]string{true: "yes", false: "no"}[o.ReadOnly])
 	ui.kv("token", fmt.Sprintf("sbx secret %q", o.Secret))

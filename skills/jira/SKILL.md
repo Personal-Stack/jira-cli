@@ -25,7 +25,7 @@ non-zero exit code (see "Exit codes").
 8. **Respect permissions.** Exit 5 (HTTP 403) means the account lacks the Jira permission. Do not look for workarounds.
 9. **Handle pagination.** Collections are paged. Use `--all` (bounded by `--max-pages`) or page explicitly with `--start-at`/`--max-results`. Never claim "there are N results" from a single page; use `total` when present.
 10. **Respect read-only mode.** If `jiracli capabilities` shows `"read_only": true`, do not attempt writes; tell the user.
-11. **Leave the installation to the user.** Do not run `jiracli upgrade`, `jiracli config setup`, `jiracli auth login` or `jiracli setup-sbx`; they change the user's machine or credentials. If one is needed, say so and stop.
+11. **Leave the installation to the user.** Do not run `jiracli upgrade`, `jiracli config setup`, `jiracli auth login`, `jiracli setup-sbx` or `jiracli mcp`; they change the user's machine or credentials. If one is needed, say so and stop.
 
 ## 1. Identify the CLI and the instance
 

@@ -18,6 +18,7 @@ authentication, TLS, retries and safety checks are implemented once, centrally.
 - Risk-aware execution: read-only mode, confirmation for destructive/administrative operations, `--dry-run`
 - Structured, redacted logging with per-run and per-request correlation IDs (`--log-level`, `--log-format json`, `--log-file`)
 - Machine-readable discovery (`commands list`, `capabilities`) and an [Agent Skill](skills/jira/SKILL.md)
+- A local MCP server (`jiracli mcp`, stdio) exposing every command to AI agents, read-only by default
 
 > **Status:** read-only use is verified against a production Jira Data Center
 > (`scripts/phase4-readonly.sh`). Writes and OAuth are tested against fakes
@@ -118,6 +119,7 @@ docker run --rm \
 | Installation | [docs/installation.md](docs/installation.md) |
 | Docker wrapper (no Go/binary on the machine) | [docs/docker.md](docs/docker.md) |
 | Agents in Docker Sandboxes (sbx), token kept on the host: `jiracli setup-sbx` | [docs/sandbox.md](docs/sandbox.md) |
+| Local MCP server for AI agents (stdio, read-only by default): `jiracli mcp` | [docs/mcp.md](docs/mcp.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
 | OpenAPI generation, overlays, spec updates | [docs/openapi-generation.md](docs/openapi-generation.md) |
 | Authentication (PAT, OAuth) | [docs/authentication.md](docs/authentication.md) |

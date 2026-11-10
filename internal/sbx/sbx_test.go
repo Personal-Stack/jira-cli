@@ -253,9 +253,54 @@ func TestSkillKeepsLocalEditsUnlessForced(t *testing.T) {
 	}
 }
 
+func TestSkillsDir(t *testing.T) {
+	skill := fstest.MapFS{"SKILL.md": {Data: []byte("# Jira\n")}}
+	o := testOptions(t)
+	p := mustPlan(t, o)
+	if want := filepath.Join(p.Project, ".opencode", "skills", "jira"); p.SkillDir != want {
+		t.Fatalf("default SkillDir %s, want %s", p.SkillDir, want)
+	}
+	if _, err := p.WriteSkill(skill); err != nil {
+		t.Fatal(err)
+	}
+	old := p.SkillDir
+
+	// Moved: the unedited copy at the old place goes.
+	o.SkillsPath = ".opencode/local/skills"
+	p = mustPlan(t, o)
+	if p.SkillDir != filepath.Join(p.Project, ".opencode", "local", "skills", "jira") || p.SkillPath() != ".opencode/local/skills/jira" {
+		t.Fatalf("SkillDir %s, SkillPath %s", p.SkillDir, p.SkillPath())
+	}
+	if n, err := p.WriteSkill(skill); err != nil || n.Warn {
+		t.Fatalf("note %+v err %v", n, err)
+	}
+	if _, err := os.Stat(old); err == nil {
+		t.Fatal("unedited old copy kept")
+	}
+
+	// Moved back, with the copy edited meanwhile: it stays, with a warning.
+	write(t, filepath.Join(p.SkillDir, "SKILL.md"), "edited")
+	o.SkillsPath, o.PrevSkillsPath = "", ".opencode/local/skills"
+	p = mustPlan(t, o)
+	if n, err := p.WriteSkill(skill); err != nil || !n.Warn || !strings.Contains(n.Text, "local/skills/jira") {
+		t.Fatalf("note %+v err %v", n, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(p.Project, ".opencode/local/skills/jira/SKILL.md")); string(b) != "edited" {
+		t.Fatal("edited old copy removed")
+	}
+
+	for _, bad := range []string{"../skills", "/abs/skills", "a/./b", "a b"} {
+		o.SkillsPath = bad
+		if _, err := NewPlan(o); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
 func TestDefaults(t *testing.T) {
 	o := testOptions(t)
 	o.Agent, o.Secret, o.ReadOnly, o.KitPath = "devex-opencode", "team-jira", false, "build/jira-kit"
+	o.SkillsPath = ".opencode/local/skills"
 	p := mustPlan(t, o)
 	if err := os.MkdirAll(p.Settings, 0o755); err != nil {
 		t.Fatal(err)
@@ -265,7 +310,7 @@ func TestDefaults(t *testing.T) {
 	}
 	other := t.TempDir() // a project without a setup gets the saved defaults
 	d := LoadDefaults(other, p.Settings)
-	if d.Project || d.Agent != "devex-opencode" || d.Secret != "team-jira" || d.KitPath != "build/jira-kit" || *d.ReadOnly || !*d.Skill {
+	if d.Project || d.Agent != "devex-opencode" || d.Secret != "team-jira" || d.KitPath != "build/jira-kit" || d.SkillsPath != ".opencode/local/skills" || *d.ReadOnly || !*d.Skill {
 		t.Fatalf("saved: %+v", d)
 	}
 	// Earlier versions saved an agent kit (an image given as the agent ended

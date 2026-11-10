@@ -69,7 +69,7 @@ Start with:
 		return nil
 	}
 
-	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd(), a.certsCmd(), a.setupSbxCmd(), a.upgradeCmd()} {
+	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd(), a.certsCmd(), a.setupSbxCmd(), a.upgradeCmd(), a.mcpCmd()} {
 		c.GroupID = "core"
 		root.AddCommand(c)
 	}

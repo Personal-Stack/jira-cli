@@ -1,6 +1,7 @@
 # Agent integration
 
-Agents use the CLI through the Agent Skill in `skills/jira/` (no MCP server).
+Agents use the CLI through the Agent Skill in `skills/jira/`, or through the
+local MCP server `jiracli mcp` (read-only by default; see [mcp.md](mcp.md)).
 The CLI is the execution layer; the skill is the operating manual.
 
 ## Install the skill

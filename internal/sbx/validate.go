@@ -88,10 +88,15 @@ var kitPathRe = regexp.MustCompile(`^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
 
 // ValidKitPath checks the kit's folder: relative and inside the project
 // (the sandbox only sees the project).
-func ValidKitPath(v string) error {
+func ValidKitPath(v string) error { return validProjectPath("kit", v) }
+
+// ValidSkillsPath checks the skills folder: relative and inside the project.
+func ValidSkillsPath(v string) error { return validProjectPath("skills", v) }
+
+func validProjectPath(what, v string) error {
 	for _, seg := range strings.Split(v, "/") {
 		if seg == "." || seg == ".." {
-			return fmt.Errorf("%q: the kit folder must be inside the project (no '.' or '..')", v)
+			return fmt.Errorf("%q: the %s folder must be inside the project (no '.' or '..')", v, what)
 		}
 	}
 	if !kitPathRe.MatchString(v) {
