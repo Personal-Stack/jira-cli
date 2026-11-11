@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.5.0 (2026-11-11)
+
+A local MCP server, so AI agents can use every jira-cli command, read-only by default; and a choice of where `setup-sbx` installs the skill.
 
 ### Local MCP server: `jiracli mcp`
 - **New command `jiracli mcp`**: a Model Context Protocol server over stdin/stdout for AI agents (Claude Code, OpenCode, Claude Desktop, ...). Local only: the client starts it; nothing listens on the network. See `docs/mcp.md`.
@@ -12,6 +14,9 @@
 ### Docker Sandboxes: `jiracli setup-sbx`
 - **The skill's folder is configurable**: `--skills-dir` (relative to the project), and a "Skills folder" question in the guided setup. The default stays `.opencode/skills`; give e.g. `.opencode/local/skills` if your agent reads skills there. The choice is saved for the next project, and the agent instructions in the kit name the folder actually used.
 - When the folder changes, the unedited copy at the old place is removed; an edited one is kept, with a warning.
+
+### Upgrading
+`jiracli upgrade` (Docker wrapper: run the installer again with `--docker`). Nothing changes for existing setups: configuration, tokens and `setup-sbx` defaults keep working. To use the MCP server, add `jiracli mcp` to your agent's client (see `docs/mcp.md`).
 
 ## v0.4.1 (2026-11-05)
 
