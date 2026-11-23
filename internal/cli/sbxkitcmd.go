@@ -38,6 +38,7 @@ type sbxKitFlags struct {
 	skipChecks            bool
 	print, remove         bool
 	agent                 string
+	kitSchema             int
 }
 
 func (a *App) sbxKitCmd() *cobra.Command {
@@ -93,6 +94,7 @@ kit entry, or that sbxenv.yaml, when you use this kit.`,
 	fl.StringVar(&f.binaryFile, "binary-file", "", "linux jiracli binary for the kit (default: this jiracli, a build from a clone, or the release)")
 	fl.StringVar(&f.sourceDir, "source-dir", "", "jira-cli clone to build the linux binary from (default: the clone containing the current directory)")
 	fl.StringVar(&f.agent, "agent", "shell", "agent for the 'sbx env plan' check when ~/.sbxenv.yaml sets none")
+	fl.IntVar(&f.kitSchema, "kit-schema", 0, "kit format: 3 (built-in agents) or 2 (agent kits in the v1/v2 format; sbx does not mix them with v3); default: 3, or 2 if sbx refuses 3")
 	fl.BoolVar(&f.print, "print", false, "write the kit but not ~/.sbxenv.yaml: print the entries to add yourself")
 	fl.BoolVar(&f.remove, "remove", false, "remove the kit and its mount from ~/.sbxenv.yaml (bindings are kept)")
 	fl.BoolVar(&f.skipChecks, "skip-checks", false, "only write the files: no sbx, reachability or secret checks")
@@ -138,6 +140,7 @@ func (k *sbxKit) run(ctx context.Context) error {
 	if d := sbx.LoadDefaults(o.Settings, o.Settings); !k.set("secret") && d.Secret != "" {
 		o.Secret = d.Secret // the secret setup-sbx stored the PAT in
 	}
+	o.Schema = k.f.kitSchema
 	plan, err := sbx.NewKitPlan(*o)
 	if err != nil {
 		return k.fail(clierr.LayerUsage, "invalid_setup", err, "")
@@ -251,6 +254,7 @@ func (k *sbxKit) summary(p *sbx.KitPlan) {
 	ui.kv("env file", p.EnvFile+map[bool]string{true: " (not changed: --print)"}[k.f.print])
 	ui.kv("read-only", map[bool]string{true: "yes", false: "no"}[p.ReadOnly])
 	ui.kv("skill", map[bool]string{true: "bundled (jira)", false: "not bundled"}[p.Skill])
+	ui.kv("format", map[bool]string{true: fmt.Sprintf("v%d (--kit-schema)", p.Schema), false: "v3, or v2 if sbx refuses v3"}[k.f.kitSchema != 0])
 	ui.kv("token", fmt.Sprintf("sbx secret %q", p.Secret))
 }
 
@@ -283,30 +287,35 @@ func (k *sbxKit) validate(ctx context.Context, plan *sbx.KitPlan, existing []byt
 	if err := os.MkdirAll(plan.Settings, 0o755); err != nil { // the environment mounts it
 		return err
 	}
-	dir := filepath.Join(k.s.tmp, "plan")
-	kitDir := filepath.Join(k.s.tmp, "kit")
-	if err := plan.WriteKit(kitDir, k.s.bin, k.a.Version, k.skill()); err != nil {
-		return err
-	}
 	agent := sbx.BaseAgent(plan.Home)
 	if agent == "" {
 		agent = k.f.agent
 	}
-	env, err := plan.ValidationEnv(existing, kitDir, agent)
-	if err != nil {
-		return err
+	// Without --kit-schema: v3, and v2 if sbx refuses v3 (it does not mix
+	// v3 kits with an agent's v1/v2 kits).
+	schemas := []int{plan.Schema}
+	if k.f.kitSchema == 0 {
+		schemas = []int{3, 2}
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+	var out, firstOut []byte
+	for i, schema := range schemas {
+		plan.Schema = schema
+		var err error
+		if out, err = k.planWith(ctx, plan, existing, agent, fmt.Sprintf("plan-v%d", schema)); err == nil {
+			if i > 0 {
+				k.ui.warn(fmt.Sprintf("sbx refused the v%d kit, and accepts the v%d one: your agent's kits use the older format, which sbx does not mix with v3", schemas[0], schema))
+			}
+			k.ui.ok(fmt.Sprintf("sbx accepts the environment with the kit (v%d format)", schema))
+			return nil
+		}
+		if i == 0 {
+			firstOut = out // reported if every format is refused
+		}
+		if i+1 < len(schemas) {
+			k.ui.note(fmt.Sprintf("sbx refused the v%d kit; trying the v%d format", schema, schemas[i+1]))
+		}
 	}
-	if err := os.WriteFile(filepath.Join(dir, "sbxenv.yaml"), env, 0o644); err != nil {
-		return err
-	}
-	out, err := sbxRun(ctx, dir, false, "env", "plan", dir)
-	if err == nil {
-		k.ui.ok("sbx accepts the environment with the kit")
-		return nil
-	}
+	plan.Schema, out = schemas[0], firstOut
 	k.ui.warn("sbx rejected the environment; nothing was written. sbx said:")
 	for _, l := range bytes.Split(bytes.TrimSpace(out), []byte("\n")) {
 		k.ui.println("    " + string(l))
@@ -314,6 +323,24 @@ func (k *sbxKit) validate(ctx context.Context, plan *sbx.KitPlan, existing []byt
 	first, _, _ := bytes.Cut(bytes.TrimSpace(out), []byte("\n"))
 	return k.fail(clierr.LayerConfig, "sbx_rejected", errors.New("sbx rejected the environment: "+string(first)),
 		"fix what it refers to in "+plan.EnvFile+" and run jiracli sbx kit again, or use --print")
+}
+
+// planWith runs 'sbx env plan' on the user's file with the kit (in plan's
+// format) in the scratch folder sub.
+func (k *sbxKit) planWith(ctx context.Context, plan *sbx.KitPlan, existing []byte, agent, sub string) ([]byte, error) {
+	dir := filepath.Join(k.s.tmp, sub)
+	kitDir := filepath.Join(dir, "kit")
+	if err := plan.WriteKit(kitDir, k.s.bin, k.a.Version, k.skill()); err != nil {
+		return nil, err
+	}
+	env, err := plan.ValidationEnv(existing, kitDir, agent)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sbxenv.yaml"), env, 0o644); err != nil {
+		return nil, err
+	}
+	return sbxRun(ctx, dir, false, "env", "plan", dir)
 }
 
 func (k *sbxKit) removeKit(ctx context.Context, plan *sbx.KitPlan, existing []byte, format output.Format) error {
@@ -389,7 +416,7 @@ func (k *sbxKit) finish(p *sbx.KitPlan, notes []sbx.Note, env []byte, format out
 		return nil
 	}
 	res := map[string]any{"kit_dir": p.KitDir, "env_file": p.EnvFile, "env_file_changed": k.envChanged, "binary_source": k.s.binSrc,
-		"jira_host": p.Host, "secret": p.Secret, "read_only": p.ReadOnly, "credential_env": p.CredEnv,
+		"jira_host": p.Host, "secret": p.Secret, "read_only": p.ReadOnly, "credential_env": p.CredEnv, "kit_schema": p.Schema,
 		"checked_with_sbx": k.s.haveSbx, "notes": texts, "next": cmds}
 	if k.f.print {
 		snippet, _ := p.UserEnvContent(nil, p.KitDir)

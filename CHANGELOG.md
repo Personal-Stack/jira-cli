@@ -2,9 +2,10 @@
 
 ## v0.6.1 (2026-11-23)
 
-Fixes for `jiracli sbx kit` found in first use: settings in `~/.sbxenv.yml` were silently ignored, and `jiracli` was not always on PATH in the sandbox.
+Fixes for `jiracli sbx kit` found in first use: the kit did not work with agents whose kits use the v2 format, settings in `~/.sbxenv.yml` were silently ignored, and `jiracli` was not always on PATH in the sandbox.
 
 ### Docker Sandboxes
+- **Agents with v2 kits** (e.g. a company agent kit in `spec.yaml` format): sbx does not combine v3 kits with v1/v2 kits, and the kit was v3 only. `jiracli sbx kit` now writes the kit in the v2 format when sbx refuses the v3 one (checked with `sbx env plan`), or as chosen with `--kit-schema 2|3`. Same args, credential, network rule, variables and agent instructions; the v2 kit has no image layer (the startup link puts `jiracli` on PATH).
 - **Warning for `~/.sbxenv.yml`**: sbx reads only `~/.sbxenv.yaml`, so settings in a `.yml` file were never applied, and `jiracli sbx kit` wrote to a different file than the one you were looking at. `jiracli sbx kit` and `setup-sbx` now say so when a `~/.sbxenv.yml` exists.
 - **`jiracli` on PATH in every sandbox**: a startup hook links `/usr/bin/jiracli` to the mounted binary when the kit's image layer did not install it.
 - **Clearer next steps**: `~/.sbxenv.yaml` applies to `sbx env run` (not `sbx run <agent>`), and a sandbox created before the kit gets it only when recreated (`sbx env rm`, `sbx env run`).

@@ -28,6 +28,7 @@ type fakeSbx struct {
 	reject    string // env plan fails with this output
 	baseKit   string // an agent kit from ~/.sbxenv.yaml: env plan requires it as the agent
 	unreach   string // host the Jira reachability probe cannot reach
+	rejectV3  bool   // env plan refuses a v3 jira-cli kit (an agent with v2 kits)
 	calls     []sbxCall
 	planDirs  []string
 	setSecret bool
@@ -80,6 +81,9 @@ func runJiraSbx(t *testing.T, fs *fakeSbx, stdin string, full ...string) (int, s
 			fs.planDirs = append(fs.planDirs, dir)
 			if fs.reject != "" {
 				return []byte(fs.reject), errors.New("exit status 1")
+			}
+			if _, err := os.Stat(filepath.Join(dir, "kit", "jira-cli.yaml")); fs.rejectV3 && err == nil {
+				return []byte("error: kit jira-cli (v3) cannot be composed with v2 kits\n"), errors.New("exit status 1")
 			}
 			env, _ := os.ReadFile(filepath.Join(dir, "sbxenv.yaml"))
 			if a := agentOf(string(env)); fs.baseKit != "" && a != fs.baseKit {

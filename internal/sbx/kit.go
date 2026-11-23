@@ -50,6 +50,11 @@ type KitOptions struct {
 	ReadOnly bool   // the readOnly kit arg (JIRA_READ_ONLY)
 	Skill    bool   // bundle the jira skill
 	Home     string // folder of the user's .sbxenv.yaml
+
+	// Schema is the kit format: 3 (default) or 2. sbx composes a v3 kit only
+	// with v3 kits (the built-in agents) and a v2 kit only with v1/v2 kits
+	// (e.g. a company agent kit in spec.yaml format).
+	Schema int
 }
 
 // KitPlan is validated KitOptions plus what follows from them.
@@ -67,6 +72,12 @@ type KitPlan struct {
 func NewKitPlan(o KitOptions) (*KitPlan, error) {
 	k := &KitPlan{KitOptions: o, CredRef: "jira-prod"}
 	k.Settings, k.Home = filepath.Clean(o.Settings), filepath.Clean(o.Home)
+	if k.Schema == 0 {
+		k.Schema = 3
+	}
+	if k.Schema != 2 && k.Schema != 3 {
+		return nil, fmt.Errorf("kit schema %d: use 2 or 3", k.Schema)
+	}
 	if k.BaseURL == "" {
 		k.BaseURL = BaseURLFromConfig(k.Settings)
 	}
@@ -154,6 +165,15 @@ func (k *KitPlan) WriteKit(dir, binary, version string, skill fs.FS) error {
 		*KitPlan
 		KitVersion string
 	}{k, KitVersion(version)}
+	if k.Schema == 2 {
+		// A v2 kit is a folder with spec.yaml; no image layer (the binary
+		// comes from the mount, linked onto PATH at start).
+		spec, err := render(globalKitV2Tmpl, data)
+		if err != nil {
+			return err
+		}
+		return writeFiles(dir, map[string]string{"spec.yaml": spec})
+	}
 	kit, err := render(globalKitTmpl, data)
 	if err != nil {
 		return err
@@ -231,8 +251,12 @@ func configReadOnly(path string) bool {
 
 // IsGlobalKit reports whether dir holds a kit `jiracli sbx kit` generated.
 func IsGlobalKit(dir string) bool {
-	b, err := os.ReadFile(filepath.Join(dir, "jira-cli.yaml"))
-	return err == nil && bytes.Contains(b, []byte(globalKitMarker))
+	for _, f := range []string{"jira-cli.yaml", "spec.yaml"} {
+		if b, err := os.ReadFile(filepath.Join(dir, f)); err == nil && bytes.Contains(b, []byte(globalKitMarker)) {
+			return true
+		}
+	}
+	return false
 }
 
 // StrayUserEnv returns the path of a ~/.sbxenv.yml (in home), which sbx

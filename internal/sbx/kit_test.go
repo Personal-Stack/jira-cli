@@ -318,3 +318,48 @@ func TestStrayUserEnv(t *testing.T) {
 		t.Fatalf("%q", StrayUserEnv(home))
 	}
 }
+
+func TestWriteGlobalKitV2(t *testing.T) {
+	k := kitPlan(t, true)
+	k.Schema = 2
+	bin := filepath.Join(t.TempDir(), "jiracli")
+	if err := os.WriteFile(bin, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skill := fstest.MapFS{"SKILL.md": {Data: []byte("# Jira\n")}}
+	if err := k.WriteKit(k.KitDir, bin, "v1.2.3", skill); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(k.KitDir, "spec.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := string(b)
+	for _, want := range []string{globalKitMarker, `schemaVersion: "2"`, "kind: mixin", "name: jira-cli",
+		`- "${{ kit.args.host }}:${{ kit.args.port }}"`, `service: "${{ kit.args.secret }}"`, `domain: "${{ kit.args.host }}"`,
+		`JIRA_READ_ONLY: "${{ kit.args.readOnly }}"`, `JIRA_CONFIG: "${{ kit.args.config }}"`, "proxyManaged: true",
+		"ln -sf '" + k.BinPath() + "' /usr/bin/jiracli", k.SkillPath() + "/SKILL.md"} {
+		if !strings.Contains(spec, want) {
+			t.Errorf("spec.yaml lacks %q", want)
+		}
+	}
+	var d struct {
+		SchemaVersion string                    `yaml:"schemaVersion"`
+		Args          map[string]map[string]any `yaml:"args"`
+	}
+	if err := yaml.Unmarshal(b, &d); err != nil || d.SchemaVersion != "2" || len(d.Args) != 5 {
+		t.Fatalf("spec.yaml: %v %+v", err, d)
+	}
+	for _, f := range []string{"jira-cli.yaml", "jira-cli.dockerfile"} {
+		if _, err := os.Stat(filepath.Join(k.KitDir, f)); err == nil {
+			t.Errorf("%s in a v2 kit", f)
+		}
+	}
+	if !IsGlobalKit(k.KitDir) {
+		t.Fatal("IsGlobalKit: v2 kit not recognized")
+	}
+	k.Schema = 7
+	if _, err := NewKitPlan(k.KitOptions); err == nil {
+		t.Fatal("schema 7 accepted")
+	}
+}

@@ -207,6 +207,13 @@ environment files. A sandbox gets its kits when it is created: recreate one
 that existed before (`sbx env rm; sbx env run`). sbx reads `~/.sbxenv.yaml`
 only: a `~/.sbxenv.yml` is ignored, and both commands warn about one.
 
+**v2 and v3 kits.** sbx does not combine v3 kits with v1/v2 kits. The built-in
+agents (`opencode`, `claude`, ...) are v3; an agent kit of your own or your
+company's may be v2 (`spec.yaml` with `schemaVersion: "2"`). `jiracli sbx kit`
+writes the kit as v3 (`jira-cli.yaml`) and, if `sbx env plan` refuses it, as v2
+(`spec.yaml`, same args and behavior, no image layer); `--kit-schema 2|3` picks
+one. `setup-sbx`'s per-project kit is v3 only.
+
 **On PATH.** A startup hook links `/usr/bin/jiracli` to the mounted binary when
 the image layer did not install it, so `jiracli` works in every shell of the
 sandbox either way.
