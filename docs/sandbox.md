@@ -201,6 +201,16 @@ layer also installs `/usr/bin/jiracli` and the skill
 (`agent-skill@1`, optional), but earlier tests found that layer not applied,
 so the agent instructions name the mounted path.
 
+**Starting a sandbox.** `~/.sbxenv.yaml` applies to the `sbx env` commands
+(`sbx env run`, `sbx env create`, ...); `sbx run <agent>` does not apply
+environment files. A sandbox gets its kits when it is created: recreate one
+that existed before (`sbx env rm; sbx env run`). sbx reads `~/.sbxenv.yaml`
+only: a `~/.sbxenv.yml` is ignored, and both commands warn about one.
+
+**On PATH.** A startup hook links `/usr/bin/jiracli` to the mounted binary when
+the image layer did not install it, so `jiracli` works in every shell of the
+sandbox either way.
+
 **Read-only.** The `readOnly` arg sets `JIRA_READ_ONLY`. A `config.yaml`
 created by `sbx kit` leaves `read_only: false` so that the arg decides. An
 existing one is kept, and its `read_only: true` still wins; the command warns

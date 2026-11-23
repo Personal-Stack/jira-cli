@@ -211,6 +211,9 @@ func (k *sbxKit) run(ctx context.Context) error {
 	default:
 		notes = append(notes, sbx.Note{Text: plan.EnvFile + " already lists the kit"})
 	}
+	if stray := sbx.StrayUserEnv(plan.Home); stray != "" {
+		notes = append(notes, sbx.Note{Warn: true, Text: sbx.StrayUserEnvNote(stray)})
+	}
 	if cwd, err := os.Getwd(); err == nil {
 		if b, err := os.ReadFile(filepath.Join(cwd, "sbxenv.yaml")); err == nil && sbx.IsGenerated(b) {
 			notes = append(notes, sbx.Note{Warn: true, Text: filepath.Join(cwd, "sbxenv.yaml") +
@@ -372,7 +375,8 @@ func (k *sbxKit) finish(p *sbx.KitPlan, notes []sbx.Note, env []byte, format out
 		step(n, "Store the Jira PAT, if 'sbx secret ls' does not list "+p.Secret+" (sbx prompts for it):", "sbx secret ls", "sbx secret set "+p.Secret)
 		n++
 	}
-	step(n, "In any project, start (or recreate) an environment sandbox; existing sandboxes get the kit only when recreated:", "sbx env run")
+	step(n, "In any project, start an environment sandbox with 'sbx env run': ~/"+sbx.UserEnvName+" applies to 'sbx env' commands, not to 'sbx run <agent>'. "+
+		"A sandbox created before this gets the kit only when recreated:", "sbx env rm", "sbx env run")
 	step(n+1, "Check jiracli in it (from another terminal):", "sbx env exec -- "+shellQuote(p.BinPath())+" doctor")
 	step(n+2, "To allow writes in one project only, list the same kit in its sbxenv.yaml with that arg (later args win):")
 	ui.println("       " + ui.dim("kits: [{source: "+p.KitDir+", args: {readOnly: \"0\"}}]"))

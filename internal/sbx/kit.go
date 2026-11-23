@@ -235,6 +235,22 @@ func IsGlobalKit(dir string) bool {
 	return err == nil && bytes.Contains(b, []byte(globalKitMarker))
 }
 
+// StrayUserEnv returns the path of a ~/.sbxenv.yml (in home), which sbx
+// does not read (it reads ~/.sbxenv.yaml only), or "" if there is none.
+func StrayUserEnv(home string) string {
+	p := filepath.Join(home, ".sbxenv.yml")
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	return p
+}
+
+// StrayUserEnvNote is the warning for StrayUserEnv's file.
+func StrayUserEnvNote(path string) string {
+	return path + " exists, but sbx reads only ~/" + UserEnvName +
+		": its settings are not applied. Move them into ~/" + UserEnvName + " and remove it."
+}
+
 // UserEnvKit returns the source of the jira-cli kit that the user's
 // ~/.sbxenv.yaml (in home) lists, or "" if it lists none.
 func UserEnvKit(home string) string {

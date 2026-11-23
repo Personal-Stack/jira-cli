@@ -137,3 +137,24 @@ func TestSbxKitStoresMissingSecret(t *testing.T) {
 		t.Fatalf("exit %d, set %v", code, fs.setSecret)
 	}
 }
+
+func TestSbxKitWarnsAboutSbxenvYml(t *testing.T) {
+	isolateHome(t)
+	home := os.Getenv("HOME")
+	if err := os.WriteFile(filepath.Join(home, ".sbxenv.yml"), []byte("agent: opencode\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fs := &fakeSbx{secrets: "jira  apiKey\n"}
+	code, out, errOut := runKit(t, fs, "--base-url", "jira.example.com", "--yes")
+	if code != 0 || !strings.Contains(errOut, ".sbxenv.yml exists, but sbx reads only ~/.sbxenv.yaml") || !strings.Contains(out, "sbx reads only") {
+		t.Fatalf("exit %d\n%s\n%s", code, errOut, out)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".sbxenv.yaml")); err != nil {
+		t.Fatal("~/.sbxenv.yaml not written")
+	}
+	// setup-sbx warns too.
+	_, _, errOut = runSbx(t, &fakeSbx{secrets: "jira  apiKey\n"}, "", "--project", t.TempDir(), "--base-url", "jira.example.com")
+	if !strings.Contains(errOut, ".sbxenv.yml exists") {
+		t.Fatalf("setup-sbx:\n%s", errOut)
+	}
+}

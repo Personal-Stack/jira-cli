@@ -171,7 +171,8 @@ PROBE='
 k='"'$KIT'"'
 echo "mount_bin=$(test -x "$k/bin/jiracli" && echo yes || echo no)"
 echo "mount_ro=$( (touch "$k/.w" 2>/dev/null && rm -f "$k/.w" && echo no) || echo yes)"
-echo "layer_bin=$(test -x /usr/bin/jiracli && echo yes || echo no)"
+echo "layer_bin=$(test -x /usr/bin/jiracli && ! test -L /usr/bin/jiracli && echo yes || echo no)"
+echo "link_bin=$(test -L /usr/bin/jiracli && echo yes || echo no)"
 echo "layer_skill=$(test -f /usr/share/jira-cli/skills/jira/SKILL.md && echo yes || echo no)"
 echo "path_jiracli=$(command -v jiracli || echo none)"
 echo "env_read_only=${JIRA_READ_ONLY-unset}"
@@ -192,7 +193,9 @@ v() { sed -n "s/^$1=//p" "$WORK/probe-$2.txt" | tail -1; }
 
 [ "$(v mount_bin a)" = yes ] && ok "Q1 the settings mount is in the sandbox: $KIT/bin/jiracli" || ko "Q1 $KIT/bin/jiracli is not in the sandbox (mount not applied)"
 [ "$(v mount_ro a)" = yes ] && ok "the settings mount is read-only" || ko "the settings mount is writable"
-[ "$(v layer_bin a)" = yes ] && ok "Q2 image layer applied: /usr/bin/jiracli" || info "Q2 image layer NOT applied: no /usr/bin/jiracli (the mounted path is used instead)"
+[ "$(v layer_bin a)" = yes ] && ok "Q2 image layer applied: /usr/bin/jiracli" || info "Q2 image layer NOT applied: no /usr/bin/jiracli from the image"
+[ "$(v layer_bin a)" = yes ] || [ "$(v link_bin a)" = yes ] && ok "jiracli is on PATH (/usr/bin/jiracli: $( [ "$(v link_bin a)" = yes ] && echo "link to the mount, startup hook" || echo "image layer"))" \
+  || ko "jiracli is not on PATH: neither the image layer nor the startup link"
 [ "$(v layer_skill a)" = yes ] && ok "Q2 image layer applied: /usr/share/jira-cli/skills/jira" || info "Q2 no bundled skill in the image layer"
 if [ "$AGENT" = shell ]; then
   info "Q2/Q3 agent 'shell': skill exposure and agent guidance not checked (re-run with --agent <your agent>)"

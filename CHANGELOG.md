@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.6.1 (2026-11-23)
+
+Fixes for `jiracli sbx kit` found in first use: settings in `~/.sbxenv.yml` were silently ignored, and `jiracli` was not always on PATH in the sandbox.
+
+### Docker Sandboxes
+- **Warning for `~/.sbxenv.yml`**: sbx reads only `~/.sbxenv.yaml`, so settings in a `.yml` file were never applied, and `jiracli sbx kit` wrote to a different file than the one you were looking at. `jiracli sbx kit` and `setup-sbx` now say so when a `~/.sbxenv.yml` exists.
+- **`jiracli` on PATH in every sandbox**: a startup hook links `/usr/bin/jiracli` to the mounted binary when the kit's image layer did not install it.
+- **Clearer next steps**: `~/.sbxenv.yaml` applies to `sbx env run` (not `sbx run <agent>`), and a sandbox created before the kit gets it only when recreated (`sbx env rm`, `sbx env run`).
+- `scripts/test-sbx-real.sh` tells the image layer apart from the startup link.
+
+### Upgrading
+`jiracli upgrade`, then run `jiracli sbx kit` again: it rewrites the kit with the PATH link. Recreate your sandboxes (`sbx env rm`, `sbx env run`). If you have a `~/.sbxenv.yml`, move its settings into `~/.sbxenv.yaml` and remove it.
+
 ## v0.6.0 (2026-11-23)
 
 jira-cli in every Docker Sandbox on your machine with one command, `jiracli sbx kit`, without a `sbxenv.yaml` per project.

@@ -216,7 +216,8 @@ func TestWriteGlobalKitAndUserEnvKit(t *testing.T) {
 	kit, _ := os.ReadFile(filepath.Join(k.KitDir, "jira-cli.yaml"))
 	for _, want := range []string{globalKitMarker, `version: "1.2.3"`, "- ${{ kit.args.host }}:${{ kit.args.port }}",
 		"service: ${{ kit.args.secret }}", `domain: "${{ kit.args.host }}"`, "env: JIRA_READ_ONLY", "env: JIRA_CONFIG",
-		`default: "` + k.ConfigFile + `"`, "agent-skill@1", "path: " + globalSkillPath, k.BinPath()} {
+		`default: "` + k.ConfigFile + `"`, "agent-skill@1", "path: " + globalSkillPath, k.BinPath(),
+		"[ -e /usr/bin/jiracli ] || ln -sf '" + k.BinPath() + "' /usr/bin/jiracli"} {
 		if !strings.Contains(string(kit), want) {
 			t.Errorf("kit lacks %q", want)
 		}
@@ -301,5 +302,19 @@ func TestValidationEnv(t *testing.T) {
 	b, _ = k.ValidationEnv([]byte("schemaVersion: \"1\"\nagent: opencode\n"), "/tmp/scratch/kit", "shell")
 	if !strings.Contains(string(b), "agent: opencode") || strings.Contains(string(b), "shell") {
 		t.Fatalf("%s", b)
+	}
+}
+
+func TestStrayUserEnv(t *testing.T) {
+	home := t.TempDir()
+	if StrayUserEnv(home) != "" {
+		t.Fatal("no .sbxenv.yml: nothing to report")
+	}
+	p := filepath.Join(home, ".sbxenv.yml")
+	if err := os.WriteFile(p, []byte("agent: opencode\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if StrayUserEnv(home) != p || !strings.Contains(StrayUserEnvNote(p), "sbx reads only ~/.sbxenv.yaml") {
+		t.Fatalf("%q", StrayUserEnv(home))
 	}
 }

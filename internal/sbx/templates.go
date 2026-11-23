@@ -267,6 +267,15 @@ capabilities:
               printf '\n# jira-cli sbx kit\n[ -r {{.BashrcFile}} ] && . {{.BashrcFile}}\n' >> /etc/bash.bashrc; } 2>/dev/null || true
           user: "0"
           description: Source {{.BashrcFile}} from interactive bash shells (best effort; never fails the start)
+        # jiracli on PATH even where the image layer is not applied: a link to
+        # the mounted binary. Best effort, never fails the start.
+        - command:
+            - sh
+            - -c
+            - >-
+              { [ -e /usr/bin/jiracli ] || ln -sf '{{.BinPath}}' /usr/bin/jiracli; } 2>/dev/null || true
+          user: "0"
+          description: Link /usr/bin/jiracli to {{.BinPath}} if the image layer did not install it (best effort)
 {{- if .Skill}}
 
   - type: com.docker.sandbox/agent-skill@1
