@@ -272,4 +272,21 @@ environment's sandbox does not exist (yet): nothing to remove.
 
 - `jiracli sbx kit`: Go tests with a fake sbx (editing `~/.sbxenv.yaml` keeps other entries and comments, the run is idempotent, `--print`, `--remove`, nothing is written when sbx rejects the environment or `--yes` is missing). The generated kit was loaded with the sandbox-kit-spec v3 reference library (`spec.ResolveArgs`, `ExpandCreateArgs`, `ValidateEffective`): args expand into the network policy and credential, a missing `host`, a bad host and `readOnly: "2"` are refused.
 
-**Not tested:** this version of the commands against a real `sbx`. For `sbx kit`, that includes whether sbx accepts the settings mount from `~/.sbxenv.yaml` (the docs restrict only `workspace` there) and whether it applies the kit's image layer (`/usr/bin/jiracli`, the bundled skill).
+**Test it against a real sbx:** `scripts/test-sbx-real.sh --base-url https://jira.company.internal [--agent <your agent>]`
+runs on your machine, because it needs local sandboxes (KVM, or Apple silicon). It
+runs `jiracli sbx kit` for real, against a temporary settings folder. It edits your
+`~/.sbxenv.yaml` and restores it on exit, also on failure or Ctrl+C. It starts two
+sandboxes, removes them again, and sends only read requests to Jira. It answers:
+
+| | Question | How |
+|---|---|---|
+| Q1 | Does sbx accept the settings mount from `~/.sbxenv.yaml`? | `sbx env plan` and `sbx env create`, then the binary at the mounted path, read-only |
+| Q2 | Is the kit's image layer applied? | `/usr/bin/jiracli`, `/usr/share/jira-cli/skills/jira`, and the skill in an agent skill folder (reported, not required) |
+| Q3 | Do the agent-context @1 and @2 declarations compose? | `sbx env create` succeeds, and the guidance is found in a file in the sandbox |
+| | Kit args, credential, read-only | `JIRA_*` variables, `jiracli doctor` (token injection and authentication), `issue create` refused with exit 9 |
+| | A project overriding an arg | A second sandbox lists the same kit source with `readOnly: "0"`: one kit, `JIRA_READ_ONLY=0`, a write `--dry-run` is allowed |
+
+Use `--agent` with the agent you work with: the `shell` agent reads neither skills nor
+agent guidance. The report ends up in `~/jcli-sbx-real-report.txt`.
+
+**Not tested:** this version of the commands against a real `sbx`; the script above is how to do it. For `sbx kit`, that includes whether sbx accepts the settings mount from `~/.sbxenv.yaml` (the docs restrict only `workspace` there) and whether it applies the kit's image layer (`/usr/bin/jiracli`, the bundled skill).
