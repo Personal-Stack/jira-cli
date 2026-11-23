@@ -69,7 +69,7 @@ Start with:
 		return nil
 	}
 
-	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd(), a.certsCmd(), a.setupSbxCmd(), a.upgradeCmd(), a.mcpCmd()} {
+	for _, c := range []*cobra.Command{a.configCmd(), a.authCmd(), a.specCmd(), a.commandsCmd(), a.capabilitiesCmd(), a.doctorCmd(), a.certsCmd(), a.setupSbxCmd(), a.sbxCmd(), a.upgradeCmd(), a.mcpCmd()} {
 		c.GroupID = "core"
 		root.AddCommand(c)
 	}
@@ -159,7 +159,7 @@ func isSetupCommand(args []string) bool {
 			words = append(words, a)
 		}
 	}
-	return len(words) > 0 && (words[0] == "setup-sbx" || len(words) > 1 && words[0] == "config" && words[1] == "setup")
+	return len(words) > 0 && (words[0] == "setup-sbx" || words[0] == "sbx" || len(words) > 1 && words[0] == "config" && words[1] == "setup")
 }
 
 // isCredentialCommand reports whether args manage credentials themselves

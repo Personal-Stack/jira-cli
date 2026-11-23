@@ -43,6 +43,13 @@ func isolateHome(t *testing.T) {
 // runSbx runs `jiracli setup-sbx` with stdin answers against fs.
 func runSbx(t *testing.T, fs *fakeSbx, stdin string, args ...string) (int, string, string) {
 	t.Helper()
+	self, _ := os.Executable()
+	return runJiraSbx(t, fs, stdin, append([]string{"setup-sbx", "--binary-file", self}, args...)...)
+}
+
+// runJiraSbx runs jiracli with args against fs.
+func runJiraSbx(t *testing.T, fs *fakeSbx, stdin string, full ...string) (int, string, string) {
+	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("uses this linux test binary as the sandbox binary")
 	}
@@ -63,6 +70,9 @@ func runSbx(t *testing.T, fs *fakeSbx, stdin string, args ...string) (int, strin
 	sbxRun = func(_ context.Context, dir string, attach bool, a ...string) ([]byte, error) {
 		cmd := strings.Join(a, " ")
 		fs.calls = append(fs.calls, sbxCall{dir, attach, cmd})
+		if strings.HasPrefix(cmd, "env plan ") { // a path: sbx skips ~/.sbxenv.yaml
+			cmd = "env plan"
+		}
 		switch cmd {
 		case "secret ls":
 			return []byte(fs.secrets), nil
@@ -81,12 +91,10 @@ func runSbx(t *testing.T, fs *fakeSbx, stdin string, args ...string) (int, strin
 		}
 		return nil, nil
 	}
-	self, _ := os.Executable()
 	var out, errb bytes.Buffer
 	app := NewApp("v9.9.9", generated.Profiles, generated.DefaultProfile)
 	app.In, app.Out, app.Err = strings.NewReader(stdin), &out, &errb
 	app.IsTerminal = func() bool { return false }
-	full := append([]string{"setup-sbx", "--binary-file", self}, args...)
 	code := app.Execute(context.Background(), full)
 	t.Cleanup(func() {
 		if t.Failed() {

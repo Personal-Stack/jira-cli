@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Docker Sandboxes: `jiracli sbx kit`
+- **New command `jiracli sbx kit`**: jira-cli in every sbx sandbox of this machine, without a per-project `sbxenv.yaml`. It generates one kit in `~/.config/jira-cli-sbx/kit` and lists it in `~/.sbxenv.yaml`, which sbx merges under every environment. It also adds the read-only settings mount and the credential binding. Nothing else in the file changes, and the previous version is kept as `.bak`.
+- **Generic kit, values as kit args**: `host`, `port`, `secret` and `readOnly` are create-time kit args, so a project can override one (e.g. `readOnly: "0"`) by listing the same kit source with other args.
+- Checks before writing, as `setup-sbx` does them: sbx, the binary, reachability, `sbx env plan` on the merged file, the sbx secret. `--print` only prints the entries, `--remove` takes them out, and `--yes` is needed without a terminal.
+- `setup-sbx` refuses while `~/.sbxenv.yaml` lists the global kit, because sbx refuses two kits providing `jira-cli`.
+
 ## v0.5.0 (2026-11-11)
 
 A local MCP server, so AI agents can use every jira-cli command, read-only by default; and a choice of where `setup-sbx` installs the skill.

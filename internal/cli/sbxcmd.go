@@ -147,6 +147,13 @@ func (s *sbxSetup) run(ctx context.Context) error {
 		return err
 	}
 	s.ui.title("jiracli setup-sbx", "Docker Sandbox for jira-cli")
+	if home, err := os.UserHomeDir(); err == nil {
+		if src := sbx.UserEnvKit(home); src != "" {
+			return s.fail(clierr.LayerConfig, "global_kit_present",
+				fmt.Errorf("~/%s already lists jira-cli's kit (%s), and sbx refuses a second one in a project", sbx.UserEnvName, src),
+				"every sandbox has jira-cli already: start one with 'sbx env run' (or 'sbx run'); 'jiracli sbx kit --remove' takes the kit out of ~/"+sbx.UserEnvName)
+		}
+	}
 	if !s.guided { // flags are complete: validate them before any work
 		s.applyDefaults()
 		if _, err := sbx.NewPlan(*o); err != nil {
