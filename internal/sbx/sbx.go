@@ -243,19 +243,25 @@ type Note struct {
 // WriteSettings creates config.yaml and bashrc when missing; existing files
 // are the user's and are never overwritten.
 func (p *Plan) WriteSettings() ([]Note, error) {
-	if err := os.MkdirAll(p.Settings, 0o755); err != nil {
+	return writeSettings(p.Settings, p.ConfigFile, p.BashrcFile, p)
+}
+
+// writeSettings creates configFile and bashrcFile in settings from data
+// (Secret, BaseURL, CredRef, ReadOnly) when they are missing.
+func writeSettings(settings, configFile, bashrcFile string, data any) ([]Note, error) {
+	if err := os.MkdirAll(settings, 0o755); err != nil {
 		return nil, err
 	}
 	var notes []Note
 	for _, f := range []struct {
 		path string
 		tmpl *template.Template
-	}{{p.ConfigFile, configTmpl}, {p.BashrcFile, bashrcTmpl}} {
+	}{{configFile, configTmpl}, {bashrcFile, bashrcTmpl}} {
 		if _, err := os.Stat(f.path); err == nil {
 			notes = append(notes, Note{Text: "kept " + f.path})
 			continue
 		}
-		s, err := render(f.tmpl, p)
+		s, err := render(f.tmpl, data)
 		if err != nil {
 			return nil, err
 		}
@@ -264,8 +270,8 @@ func (p *Plan) WriteSettings() ([]Note, error) {
 		}
 		notes = append(notes, Note{Text: "created " + f.path})
 	}
-	if b, _ := os.ReadFile(p.ConfigFile); bytes.Contains(b, []byte("/etc/jira-cli/")) {
-		notes = append(notes, Note{Warn: true, Text: p.ConfigFile + " refers to /etc/jira-cli/, which does not exist in the sandbox"})
+	if b, _ := os.ReadFile(configFile); bytes.Contains(b, []byte("/etc/jira-cli/")) {
+		notes = append(notes, Note{Warn: true, Text: configFile + " refers to /etc/jira-cli/, which does not exist in the sandbox"})
 	}
 	return notes, nil
 }
@@ -333,15 +339,20 @@ func (p *Plan) skillFiles(skill fs.FS) (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	md := string(files["SKILL.md"])
+	files["SKILL.md"] = insertAfterTitle(files["SKILL.md"], section)
+	return files, nil
+}
+
+// insertAfterTitle inserts section after the markdown's first "# " title.
+func insertAfterTitle(b []byte, section string) []byte {
+	md := string(b)
 	if i := strings.Index(md, "\n# "); i >= 0 {
 		end := i + 1 + strings.Index(md[i+1:], "\n") + 1 // after the title line
 		md = md[:end] + "\n" + section + md[end:]
 	} else {
 		md += "\n" + section
 	}
-	files["SKILL.md"] = []byte(md)
-	return files, nil
+	return []byte(md)
 }
 
 // sameTree reports whether dir holds exactly files.

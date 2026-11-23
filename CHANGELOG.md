@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.6.0 (2026-11-23)
+
+jira-cli in every Docker Sandbox on your machine with one command, `jiracli sbx kit`, without a `sbxenv.yaml` per project.
+
+### Docker Sandboxes: `jiracli sbx kit`
+- **New command `jiracli sbx kit`**: jira-cli in every sbx sandbox of this machine, without a per-project `sbxenv.yaml`. It generates one kit in `~/.config/jira-cli-sbx/kit` and lists it in `~/.sbxenv.yaml`, which sbx merges under every environment. It also adds the read-only settings mount and the credential binding. Nothing else in the file changes, and the previous version is kept as `.bak`.
+- **Generic kit, values as kit args**: `host`, `port`, `secret` and `readOnly` are create-time kit args, so a project can override one (e.g. `readOnly: "0"`) by listing the same kit source with other args.
+- Checks before writing, as `setup-sbx` does them: sbx, the binary, reachability, `sbx env plan` on the merged file, the sbx secret. `--print` only prints the entries, `--remove` takes them out, and `--yes` is needed without a terminal.
+- `setup-sbx` refuses while `~/.sbxenv.yaml` lists the global kit, because sbx refuses two kits providing `jira-cli`.
+
+### Upgrading
+`jiracli upgrade` (Docker wrapper: run the installer again with `--docker`, then run `jiracli sbx kit` with a native `jiracli`: it needs sbx and your home folder). Existing `setup-sbx` projects keep working as they are. To switch a machine to the global kit, run `jiracli sbx kit`. Then, in each project set up with `setup-sbx`, remove the `sbxenv.yaml` (or its `./tmp/.sbx/jira-cli` kit entry) and recreate the sandbox (`sbx env rm; sbx env run`), because sbx refuses two jira-cli kits in one environment.
+
 ## v0.5.0 (2026-11-11)
 
 A local MCP server, so AI agents can use every jira-cli command, read-only by default; and a choice of where `setup-sbx` installs the skill.
