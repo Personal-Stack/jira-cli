@@ -1,10 +1,29 @@
 # Changelog
 
-## v0.6.1 (2026-11-23)
+## v0.7.0 (2026-11-24)
 
-Fixes for `jiracli sbx kit` found in first use: the kit did not work with agents whose kits use the v2 format, settings in `~/.sbxenv.yml` were silently ignored, and `jiracli` was not always on PATH in the sandbox.
+`jiracli sbx setup`, a wizard that inspects your sbx setup and inits, updates, verifies or migrates it; and fixes for `jiracli sbx kit` found in first use: agents with v2 kits, `~/.sbxenv.yml`, `jiracli` on PATH.
 
-### Docker Sandboxes
+### Docker Sandboxes: the `jiracli sbx setup` wizard
+- **Inspects first:**
+  - sbx and its secrets;
+  - `~/.sbxenv.yaml` and the project's `sbxenv.yaml`: the agent, every kit and its format (v1/v2 or v3), the jira-cli kit and its args, the settings mount, bindings;
+  - a stray `~/.sbxenv.yml`;
+  - the kit folder (format, jiracli version, binary) and `config.yaml`.
+
+  It then lists the problems it found, each with a fix.
+- **Offers what fits:**
+  - `init`: for every sandbox (`~/.sbxenv.yaml`), or for one project (its `sbxenv.yaml`, created if missing, your entries kept);
+  - `update`: refresh the kit and keep its settings;
+  - `verify`: static checks, `sbx env plan`, and the `JIRA_*` variables, binary, PATH and `jiracli doctor` in a running sandbox;
+  - `migrate`: move a `setup-sbx` project to the shared kit;
+  - `remove`;
+  - `status` (`-o json`).
+- **Every change is shown as a diff** first. A dry run, chosen in the wizard or with `--dry-run`, lets sbx check the result and writes nothing.
+- The kit format follows the agent's kits, and a project target is checked the way sbx merges it (`~/.sbxenv.yaml` beneath the project file).
+- Without a terminal: `--action status|init|update|verify|migrate|remove`.
+
+### Docker Sandboxes: `jiracli sbx kit` fixes
 - **Agents with v2 kits** (e.g. a company agent kit in `spec.yaml` format): sbx does not combine v3 kits with v1/v2 kits, and the kit was v3 only. `jiracli sbx kit` now writes the kit in the v2 format when sbx refuses the v3 one (checked with `sbx env plan`), or as chosen with `--kit-schema 2|3`. Same args, credential, network rule, variables and agent instructions; the v2 kit has no image layer (the startup link puts `jiracli` on PATH).
 - **Warning for `~/.sbxenv.yml`**: sbx reads only `~/.sbxenv.yaml`, so settings in a `.yml` file were never applied, and `jiracli sbx kit` wrote to a different file than the one you were looking at. `jiracli sbx kit` and `setup-sbx` now say so when a `~/.sbxenv.yml` exists.
 - **`jiracli` on PATH in every sandbox**: a startup hook links `/usr/bin/jiracli` to the mounted binary when the kit's image layer did not install it.
@@ -12,7 +31,7 @@ Fixes for `jiracli sbx kit` found in first use: the kit did not work with agents
 - `scripts/test-sbx-real.sh` tells the image layer apart from the startup link.
 
 ### Upgrading
-`jiracli upgrade`, then run `jiracli sbx kit` again: it rewrites the kit with the PATH link. Recreate your sandboxes (`sbx env rm`, `sbx env run`). If you have a `~/.sbxenv.yml`, move its settings into `~/.sbxenv.yaml` and remove it.
+`jiracli upgrade`, then `jiracli sbx setup`. It shows what is set up and offers `update`, which rewrites the kit with the PATH link and in your agent's format. For a project set up with `setup-sbx`, it offers `migrate`. If you have a `~/.sbxenv.yml`, move its settings into `~/.sbxenv.yaml` and remove it. Recreate your sandboxes afterwards (`sbx env rm`, `sbx env run`).
 
 ## v0.6.0 (2026-11-23)
 
