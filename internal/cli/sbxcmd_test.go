@@ -28,6 +28,10 @@ type fakeSbx struct {
 	reject    string // env plan fails with this output
 	baseKit   string // an agent kit from ~/.sbxenv.yaml: env plan requires it as the agent
 	unreach   string // host the Jira reachability probe cannot reach
+	rejectV3  bool   // env plan refuses a v3 jira-cli kit (an agent with v2 kits)
+	terminal  bool   // stdin/stdout are a terminal (the wizard asks)
+	sandbox   string // probe output of a running sandbox ('env exec'); "" for none
+	doctorErr bool   // 'jiracli doctor' fails in the sandbox
 	calls     []sbxCall
 	planDirs  []string
 	setSecret bool
@@ -73,6 +77,18 @@ func runJiraSbx(t *testing.T, fs *fakeSbx, stdin string, full ...string) (int, s
 		if strings.HasPrefix(cmd, "env plan ") { // a path: sbx skips ~/.sbxenv.yaml
 			cmd = "env plan"
 		}
+		if strings.HasPrefix(cmd, "env exec ") {
+			switch {
+			case fs.sandbox == "":
+				return []byte("error: no sandbox for this environment\n"), errors.New("exit status 1")
+			case strings.HasSuffix(cmd, " doctor"):
+				if fs.doctorErr {
+					return []byte(`{"error": {"message": "check auth failed: 401"}}`), errors.New("exit status 7")
+				}
+				return []byte("ok\n"), nil
+			}
+			return []byte(fs.sandbox), nil
+		}
 		switch cmd {
 		case "secret ls":
 			return []byte(fs.secrets), nil
@@ -80,6 +96,9 @@ func runJiraSbx(t *testing.T, fs *fakeSbx, stdin string, full ...string) (int, s
 			fs.planDirs = append(fs.planDirs, dir)
 			if fs.reject != "" {
 				return []byte(fs.reject), errors.New("exit status 1")
+			}
+			if _, err := os.Stat(filepath.Join(dir, "kit", "jira-cli.yaml")); fs.rejectV3 && err == nil {
+				return []byte("error: kit jira-cli (v3) cannot be composed with v2 kits\n"), errors.New("exit status 1")
 			}
 			env, _ := os.ReadFile(filepath.Join(dir, "sbxenv.yaml"))
 			if a := agentOf(string(env)); fs.baseKit != "" && a != fs.baseKit {
@@ -94,7 +113,7 @@ func runJiraSbx(t *testing.T, fs *fakeSbx, stdin string, full ...string) (int, s
 	var out, errb bytes.Buffer
 	app := NewApp("v9.9.9", generated.Profiles, generated.DefaultProfile)
 	app.In, app.Out, app.Err = strings.NewReader(stdin), &out, &errb
-	app.IsTerminal = func() bool { return false }
+	app.IsTerminal = func() bool { return fs.terminal }
 	code := app.Execute(context.Background(), full)
 	t.Cleanup(func() {
 		if t.Failed() {

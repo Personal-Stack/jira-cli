@@ -115,6 +115,7 @@ type sbxSetup struct {
 	guided bool
 
 	haveSbx       bool            // sbx usable here (not in the wrapper's container)
+	binaryDryRun  bool            // get the binary in a dry run too (sbx kit checks its kit with sbx)
 	secrets       map[string]bool // existing sbx secrets
 	bin, binSrc   string          // the linux jiracli binary for the kit
 	tmp           string
@@ -148,6 +149,9 @@ func (s *sbxSetup) run(ctx context.Context) error {
 	}
 	s.ui.title("jiracli setup-sbx", "Docker Sandbox for jira-cli")
 	if home, err := os.UserHomeDir(); err == nil {
+		if stray := sbx.StrayUserEnv(home); stray != "" {
+			s.ui.warn(sbx.StrayUserEnvNote(stray))
+		}
 		if src := sbx.UserEnvKit(home); src != "" {
 			return s.fail(clierr.LayerConfig, "global_kit_present",
 				fmt.Errorf("~/%s already lists jira-cli's kit (%s), and sbx refuses a second one in a project", sbx.UserEnvName, src),
@@ -170,7 +174,9 @@ func (s *sbxSetup) run(ctx context.Context) error {
 		return err
 	}
 	if s.guided {
-		if err := s.ask(ctx); err != nil {
+		if err := s.ask(ctx); errors.Is(err, errUseWizard) {
+			return s.toWizard(ctx)
+		} else if err != nil {
 			return err
 		}
 	} else if !s.f.skipChecks {
@@ -232,7 +238,7 @@ func (s *sbxSetup) checks(ctx context.Context) error {
 		s.haveSbx = true
 		s.ui.ok("sbx is installed; secrets: " + orNone(sortedKeys(s.secrets)))
 	}
-	if s.a.dryRun {
+	if s.a.dryRun && !s.binaryDryRun {
 		return nil
 	}
 	var err error
@@ -346,7 +352,16 @@ func (s *sbxSetup) ask(ctx context.Context) error {
 		ui.warn("this project has an sbxenv.yaml that jira-cli did not generate")
 		q.yesno(&o.Force, "Replace it")
 		if q.err == nil && !o.Force {
-			return clierr.New(clierr.LayerSafety, "confirmation_declined", "aborted; nothing was written")
+			// Not replacing it need not end here: the shared kit goes into
+			// the file next to its own entries.
+			merge := true
+			q.yesno(&merge, "Add jira-cli to it instead, keeping your entries (the shared kit, as 'jiracli sbx setup' does)")
+			if q.err == nil && merge {
+				return errUseWizard
+			}
+			if q.err == nil {
+				return clierr.New(clierr.LayerSafety, "confirmation_declined", "aborted; nothing was written")
+			}
 		}
 	}
 	if q.err != nil {
@@ -460,16 +475,43 @@ func (s *sbxSetup) plan(ctx context.Context, plan *sbx.Plan, sub string) ([]byte
 }
 
 // ensureSecret makes sure the PAT is an sbx secret; sbx prompts for it, so
-// it never passes through jira-cli.
+// it never passes through jira-cli. In a terminal it asks first: whether to
+// replace a stored token (default no) and whether to store a missing one
+// now (default yes). Either "no" goes on: the files do not need the token,
+// and the next steps say how to store it.
 func (s *sbxSetup) ensureSecret(ctx context.Context, secret string) error {
-	if s.secrets[secret] {
-		return nil
+	exists := s.secrets[secret]
+	if !s.a.IsTerminal() {
+		if exists {
+			return nil
+		}
+		if !s.guided {
+			return s.fail(clierr.LayerCredentials, "sbx_secret_missing", fmt.Errorf("the sbx secret %s does not exist", secret),
+				"run 'sbx secret set "+secret+"' in a terminal (it prompts for the PAT), then run this again")
+		}
+	} else {
+		s.ui.section("Jira personal access token")
+		set := !exists
+		q := s.a.form(ctx, s.ui)
+		if exists {
+			s.ui.ok(fmt.Sprintf("sbx secret %q is stored", secret))
+			q.yesno(&set, "Replace the stored token")
+		} else {
+			s.ui.warn(fmt.Sprintf("sbx secret %q does not exist", secret))
+			q.yesno(&set, "Store the token now (sbx prompts for it; it stays on this machine)")
+		}
+		if q.err != nil {
+			return q.err
+		}
+		if !set {
+			if exists {
+				s.ui.note("Keeping the stored token.")
+			} else {
+				s.ui.warn("No token stored: sandboxes get no Jira access until you run 'sbx secret set " + secret + "'. Going on.")
+			}
+			return nil
+		}
 	}
-	if !s.guided && !s.a.IsTerminal() {
-		return s.fail(clierr.LayerCredentials, "sbx_secret_missing", fmt.Errorf("the sbx secret %s does not exist", secret),
-			"run 'sbx secret set "+secret+"' in a terminal (it prompts for the PAT), then run this again")
-	}
-	s.ui.section("Jira personal access token")
 	s.ui.note(fmt.Sprintf("Storing it as sbx secret %q: sbx prompts for it, and it stays on this machine.", secret))
 	if _, err := sbxRun(ctx, "", true, "secret", "set", secret); err != nil {
 		return s.fail(clierr.LayerCredentials, "sbx_secret_failed", fmt.Errorf("sbx secret set %s failed: %v", secret, err), "")
@@ -636,3 +678,20 @@ func sortedKeys(m map[string]bool) []string {
 }
 
 func orNone(v []string) string { return or(strings.Join(v, ", "), "none yet") }
+
+// errUseWizard: the project keeps its own sbxenv.yaml, and the person chose
+// to add the shared kit to it (jiracli sbx setup, init, project target).
+var errUseWizard = errors.New("use the wizard")
+
+func (s *sbxSetup) toWizard(ctx context.Context) error {
+	o := s.o()
+	f := &sbxSetupFlags{action: actInit, target: "project", project: o.Project}
+	f.kit.o = sbx.KitOptions{Settings: o.Settings, BaseURL: o.BaseURL, Secret: o.Secret}
+	f.kit.allowWrites, f.kit.noSkill = s.f.allowWrites, s.f.noSkill
+	f.kit.binaryFile, f.kit.sourceDir, f.kit.skipChecks = s.f.binaryFile, s.f.sourceDir, s.f.skipChecks
+	if s.set("agent") {
+		f.kit.agent = o.Agent
+	}
+	w := &sbxWizard{a: s.a, f: f, set: func(string) bool { return false }, ui: s.ui}
+	return w.run(ctx)
+}

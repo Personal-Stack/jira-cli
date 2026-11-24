@@ -216,7 +216,8 @@ func TestWriteGlobalKitAndUserEnvKit(t *testing.T) {
 	kit, _ := os.ReadFile(filepath.Join(k.KitDir, "jira-cli.yaml"))
 	for _, want := range []string{globalKitMarker, `version: "1.2.3"`, "- ${{ kit.args.host }}:${{ kit.args.port }}",
 		"service: ${{ kit.args.secret }}", `domain: "${{ kit.args.host }}"`, "env: JIRA_READ_ONLY", "env: JIRA_CONFIG",
-		`default: "` + k.ConfigFile + `"`, "agent-skill@1", "path: " + globalSkillPath, k.BinPath()} {
+		`default: "` + k.ConfigFile + `"`, "agent-skill@1", "path: " + globalSkillPath, k.BinPath(),
+		"[ -e /usr/bin/jiracli ] || ln -sf '" + k.BinPath() + "' /usr/bin/jiracli"} {
 		if !strings.Contains(string(kit), want) {
 			t.Errorf("kit lacks %q", want)
 		}
@@ -301,5 +302,108 @@ func TestValidationEnv(t *testing.T) {
 	b, _ = k.ValidationEnv([]byte("schemaVersion: \"1\"\nagent: opencode\n"), "/tmp/scratch/kit", "shell")
 	if !strings.Contains(string(b), "agent: opencode") || strings.Contains(string(b), "shell") {
 		t.Fatalf("%s", b)
+	}
+}
+
+func TestStrayUserEnv(t *testing.T) {
+	home := t.TempDir()
+	if StrayUserEnv(home) != "" {
+		t.Fatal("no .sbxenv.yml: nothing to report")
+	}
+	p := filepath.Join(home, ".sbxenv.yml")
+	if err := os.WriteFile(p, []byte("agent: opencode\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if StrayUserEnv(home) != p || !strings.Contains(StrayUserEnvNote(p), "sbx reads only ~/.sbxenv.yaml") {
+		t.Fatalf("%q", StrayUserEnv(home))
+	}
+}
+
+func TestWriteGlobalKitV2(t *testing.T) {
+	k := kitPlan(t, true)
+	k.Schema = 2
+	bin := filepath.Join(t.TempDir(), "jiracli")
+	if err := os.WriteFile(bin, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skill := fstest.MapFS{"SKILL.md": {Data: []byte("# Jira\n")}}
+	if err := k.WriteKit(k.KitDir, bin, "v1.2.3", skill); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(k.KitDir, "spec.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := string(b)
+	for _, want := range []string{globalKitMarker, `schemaVersion: "2"`, "kind: mixin", "name: jira-cli",
+		`- "${{ kit.args.host }}:${{ kit.args.port }}"`, `service: "${{ kit.args.secret }}"`, `domain: "${{ kit.args.host }}"`,
+		`JIRA_READ_ONLY: "${{ kit.args.readOnly }}"`, `JIRA_CONFIG: "${{ kit.args.config }}"`, "proxyManaged: true",
+		"ln -sf '" + k.BinPath() + "' /usr/bin/jiracli", k.SkillPath() + "/SKILL.md"} {
+		if !strings.Contains(spec, want) {
+			t.Errorf("spec.yaml lacks %q", want)
+		}
+	}
+	var d struct {
+		SchemaVersion string                    `yaml:"schemaVersion"`
+		Args          map[string]map[string]any `yaml:"args"`
+	}
+	if err := yaml.Unmarshal(b, &d); err != nil || d.SchemaVersion != "2" || len(d.Args) != 5 {
+		t.Fatalf("spec.yaml: %v %+v", err, d)
+	}
+	for _, f := range []string{"jira-cli.yaml", "jira-cli.dockerfile"} {
+		if _, err := os.Stat(filepath.Join(k.KitDir, f)); err == nil {
+			t.Errorf("%s in a v2 kit", f)
+		}
+	}
+	if !IsGlobalKit(k.KitDir) {
+		t.Fatal("IsGlobalKit: v2 kit not recognized")
+	}
+	k.Schema = 7
+	if _, err := NewKitPlan(k.KitOptions); err == nil {
+		t.Fatal("schema 7 accepted")
+	}
+}
+
+func TestKitSchema(t *testing.T) {
+	d := t.TempDir()
+	if s, _, _, _ := KitSchema(d); s != 0 {
+		t.Fatalf("empty folder: %d", s)
+	}
+	if err := os.WriteFile(filepath.Join(d, "spec.yaml"), []byte("schemaVersion: \"2\"\nname: x\nversion: \"1.0\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s, n, v, j := KitSchema(d); s != 2 || n != "x" || v != "1.0" || j {
+		t.Fatalf("v2: %d %q %q %v", s, n, v, j)
+	}
+	d3 := t.TempDir()
+	if err := os.WriteFile(filepath.Join(d3, "tool.yaml"), []byte("# syntax=docker/sandbox-kit:3\nschemaVersion: \"3\"\nversion: \"2.1.0\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s, n, v, _ := KitSchema(d3); s != 3 || n != "tool" || v != "2.1.0" {
+		t.Fatalf("v3: %d %q %q", s, n, v)
+	}
+}
+
+func TestAbsolutizeAndSwap(t *testing.T) {
+	in := "schemaVersion: \"1\"\nworkspace: .\nkits:\n  - ./kits/a\n  - source: ../b\n    args: {x: \"1\"}\n  - docker.io/sbx/claude:1\nadditionalWorkspaces:\n  - path: ./shared\nmounts:\n  /home/agent/h: ./h\n"
+	b, err := Absolutize([]byte(in), "/p/proj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"workspace: /p/proj", "- /p/proj/kits/a", "source: /p/b", "- docker.io/sbx/claude:1", "path: /p/proj/shared", "/home/agent/h: /p/proj/h"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("lacks %q:\n%s", want, b)
+		}
+	}
+	k := kitPlan(t, true)
+	bin := filepath.Join(t.TempDir(), "jiracli")
+	_ = os.WriteFile(bin, []byte("x"), 0o755)
+	if err := k.WriteKit(k.KitDir, bin, "v1.0.0", fstest.MapFS{"SKILL.md": {Data: []byte("# J\n")}}); err != nil {
+		t.Fatal(err)
+	}
+	env, _ := k.UserEnvContent([]byte("schemaVersion: \"1\"\nkits: [other/kit]\n"), k.KitDir)
+	sw, err := SwapKitSource(env, k.Home, "/scratch/kit")
+	if err != nil || !strings.Contains(string(sw), "source: /scratch/kit") || strings.Contains(string(sw), k.KitDir) || !strings.Contains(string(sw), `host: "jira.example.com"`) {
+		t.Fatalf("%v\n%s", err, sw)
 	}
 }

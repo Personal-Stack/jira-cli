@@ -137,3 +137,55 @@ func TestSbxKitStoresMissingSecret(t *testing.T) {
 		t.Fatalf("exit %d, set %v", code, fs.setSecret)
 	}
 }
+
+func TestSbxKitWarnsAboutSbxenvYml(t *testing.T) {
+	isolateHome(t)
+	home := os.Getenv("HOME")
+	if err := os.WriteFile(filepath.Join(home, ".sbxenv.yml"), []byte("agent: opencode\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fs := &fakeSbx{secrets: "jira  apiKey\n"}
+	code, out, errOut := runKit(t, fs, "--base-url", "jira.example.com", "--yes")
+	if code != 0 || !strings.Contains(errOut, ".sbxenv.yml exists, but sbx reads only ~/.sbxenv.yaml") || !strings.Contains(out, "sbx reads only") {
+		t.Fatalf("exit %d\n%s\n%s", code, errOut, out)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".sbxenv.yaml")); err != nil {
+		t.Fatal("~/.sbxenv.yaml not written")
+	}
+	// setup-sbx warns too.
+	_, _, errOut = runSbx(t, &fakeSbx{secrets: "jira  apiKey\n"}, "", "--project", t.TempDir(), "--base-url", "jira.example.com")
+	if !strings.Contains(errOut, ".sbxenv.yml exists") {
+		t.Fatalf("setup-sbx:\n%s", errOut)
+	}
+}
+
+func TestSbxKitFallsBackToV2(t *testing.T) {
+	isolateHome(t)
+	fs := &fakeSbx{secrets: "jira  apiKey\n", rejectV3: true}
+	code, out, errOut := runKit(t, fs, "--base-url", "jira.example.com", "--yes")
+	if code != 0 || !strings.Contains(errOut, "accepts the v2 one") {
+		t.Fatalf("exit %d\n%s", code, errOut)
+	}
+	var res map[string]any
+	_ = json.Unmarshal([]byte(out), &res)
+	kit := filepath.Join(os.Getenv("HOME"), ".config", "jira-cli-sbx", "kit")
+	if res["kit_schema"] != float64(2) {
+		t.Fatalf("%v", res)
+	}
+	if _, err := os.Stat(filepath.Join(kit, "spec.yaml")); err != nil {
+		t.Fatal("no spec.yaml")
+	}
+	if _, err := os.Stat(filepath.Join(kit, "jira-cli.yaml")); err == nil {
+		t.Fatal("the v3 descriptor is left next to spec.yaml")
+	}
+
+	// --kit-schema 3: no fallback, nothing written.
+	isolateHome(t)
+	code, _, errOut = runKit(t, &fakeSbx{secrets: "jira  apiKey\n", rejectV3: true}, "--base-url", "jira.example.com", "--yes", "--kit-schema", "3")
+	if code == 0 || !strings.Contains(errOut, "cannot be composed with v2 kits") {
+		t.Fatalf("exit %d\n%s", code, errOut)
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".sbxenv.yaml")); err == nil {
+		t.Fatal("~/.sbxenv.yaml written")
+	}
+}
