@@ -207,9 +207,14 @@ func (k *sbxKit) run(ctx context.Context) error {
 		}
 	}
 	editEnv := !k.f.print && !bytes.Equal(existing, updated)
+	declined := false
 	if editEnv {
-		if err := k.confirm(ctx, "Update "+plan.EnvFile+" (the previous version is kept as "+filepath.Base(plan.EnvFile)+".bak)"); err != nil {
+		ok, err := k.confirm(ctx, "Update "+plan.EnvFile+" (the previous version is kept as "+filepath.Base(plan.EnvFile)+".bak)")
+		if err != nil {
 			return err
+		}
+		if !ok { // the kit is still written; the entries are printed instead
+			editEnv, declined, k.f.print = false, true, true
 		}
 	}
 
@@ -224,6 +229,8 @@ func (k *sbxKit) run(ctx context.Context) error {
 	}
 	notes = append(notes, more...)
 	switch {
+	case declined:
+		notes = append(notes, sbx.Note{Warn: true, Text: plan.EnvFile + " kept as it is (you said no): add the entries below yourself, or run this again"})
 	case k.f.print:
 		notes = append(notes, sbx.Note{Text: plan.EnvFile + " not changed (--print)"})
 	case editEnv:
@@ -279,30 +286,25 @@ func (k *sbxKit) summary(p *sbx.KitPlan) {
 	ui.kv("token", fmt.Sprintf("sbx secret %q", p.Secret))
 }
 
-// confirm asks before ~/.sbxenv.yaml changes; --yes answers it, and without
-// a terminal --yes is required.
-func (k *sbxKit) confirm(ctx context.Context, question string) error {
+// confirm asks before an environment file changes. It returns false, and
+// no error, when the person says no: that skips this change only. --yes
+// answers yes; without a terminal --yes is required.
+func (k *sbxKit) confirm(ctx context.Context, question string) (bool, error) {
 	if k.a.yes {
-		return nil
+		return true, nil
 	}
 	if !k.a.IsTerminal() {
-		return clierr.New(clierr.LayerSafety, "confirmation_required", "this changes ~/.sbxenv.yaml: pass --yes, or --print to only print the entries")
+		return false, clierr.New(clierr.LayerSafety, "confirmation_required", "this changes an sbx environment file: pass --yes, or --print to only print the entries")
 	}
 	ok := true
 	q := k.a.form(ctx, k.ui)
 	q.yesno(&ok, question)
 	if q.err != nil {
-		return q.err
+		return false, q.err
 	}
-	if !ok {
-		return clierr.New(clierr.LayerSafety, "confirmation_declined", "aborted; nothing was written")
-	}
-	return nil
+	return ok, nil
 }
 
-// validate lets sbx check the resulting environment in a scratch folder:
-// the user's file with the kit, as a project file (passing its path makes
-// sbx skip the real ~/.sbxenv.yaml), with a workspace and, if needed, an agent.
 func (k *sbxKit) validate(ctx context.Context, plan *sbx.KitPlan, existing []byte) error {
 	k.ui.section("Checking with sbx")
 	if err := os.MkdirAll(plan.Settings, 0o755); err != nil { // the environment mounts it
@@ -414,8 +416,16 @@ func (k *sbxKit) removeKit(ctx context.Context, plan *sbx.KitPlan, existing []by
 		}
 		return output.Write(k.a.Out, map[string]any{"dry_run": true, "env_file": plan.EnvFile, "sbxenv_yaml": string(out)}, format)
 	}
-	if err := k.confirm(ctx, "Remove the jira-cli kit and its mount from "+plan.EnvFile); err != nil {
+	ok, err := k.confirm(ctx, "Remove the jira-cli kit and its mount from "+plan.EnvFile)
+	if err != nil {
 		return err
+	}
+	if !ok {
+		k.ui.ok(plan.EnvFile + " kept as it is; nothing removed")
+		if k.quietJSON() {
+			return nil
+		}
+		return output.Write(k.a.Out, map[string]any{"env_file": plan.EnvFile, "removed": false, "declined": true}, format)
 	}
 	if err := writeWithBackup(plan.EnvFile, existing, out); err != nil {
 		return err

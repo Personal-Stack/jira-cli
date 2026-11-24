@@ -397,13 +397,26 @@ func (w *sbxWizard) targetFile(target string) string {
 }
 
 // legacyFirst migrates the project away from setup-sbx's kit when it has
-// one: sbx refuses it next to the shared kit.
-func (w *sbxWizard) legacyFirst(ctx context.Context) error {
+// one: sbx refuses it next to the shared kit. Saying no only stops a
+// project target (sbx would refuse that file); for ~/.sbxenv.yaml the setup
+// goes on, and this project stays broken until it is migrated.
+func (w *sbxWizard) legacyFirst(ctx context.Context, target string) error {
 	if w.in.Proj.LegacyKit() == nil {
 		return nil
 	}
-	w.ui.warn(w.in.Proj.Path + " lists setup-sbx's own jira-cli kit; sbx refuses it next to the shared kit, so it is removed first")
-	return w.migrateFile(ctx)
+	w.ui.warn(w.in.Proj.Path + " lists setup-sbx's own jira-cli kit; sbx refuses it next to the shared kit, so it should be removed first")
+	migrated, err := w.migrateFile(ctx)
+	switch {
+	case err != nil || migrated:
+		return err
+	case target == "project" || w.f.target == "project":
+		return clierr.New(clierr.LayerSafety, "migration_declined",
+			w.in.Proj.Path+" keeps setup-sbx's kit, and sbx would refuse the shared kit next to it there; nothing was written to it").
+			WithHint("migrate it ('jiracli sbx setup --action migrate'), or set up ~/" + sbx.UserEnvName + " instead (--target user)")
+	default:
+		w.ui.warn("kept setup-sbx's kit in " + w.in.Proj.Path + ": the shared kit works in other projects; migrate this one later ('jiracli sbx setup --action migrate')")
+		return nil
+	}
 }
 
 func (w *sbxWizard) initKit(ctx context.Context) error {
@@ -471,7 +484,7 @@ func (w *sbxWizard) initKit(ctx context.Context) error {
 	}
 	w.applyMode()
 	if !w.a.dryRun {
-		if err := w.legacyFirst(ctx); err != nil {
+		if err := w.legacyFirst(ctx, target); err != nil {
 			return err
 		}
 	}
@@ -526,7 +539,11 @@ func (w *sbxWizard) update(ctx context.Context) error {
 	}
 	w.applyMode()
 	if !w.a.dryRun {
-		if err := w.legacyFirst(ctx); err != nil {
+		target := "user"
+		if slices.Contains(targets, in.Proj.Path) {
+			target = "project"
+		}
+		if err := w.legacyFirst(ctx, target); err != nil {
 			return err
 		}
 	}
@@ -580,7 +597,10 @@ func (w *sbxWizard) remove(ctx context.Context) error {
 	for _, file := range targets {
 		kf := w.f.kit
 		kf.remove, kf.envFile = true, file
-		kf.o.BaseURL = "https://" + or(w.jiraKit().Args["host"], "jira.invalid") // only for the plan's validation
+		// The plan needs a valid host and secret; remove uses neither.
+		k := w.jiraKit()
+		kf.o.BaseURL = "https://" + or(k.Args["host"], "jira.invalid")
+		kf.o.Secret = w.kitSecret(k)
 		if err := w.kitRun(ctx, kf); err != nil {
 			return err
 		}
@@ -594,8 +614,13 @@ func (w *sbxWizard) migrate(ctx context.Context) error {
 		return nil
 	}
 	w.applyMode()
-	if err := w.migrateFile(ctx); err != nil || w.a.dryRun {
+	migrated, err := w.migrateFile(ctx)
+	if err != nil || w.a.dryRun {
 		return err
+	}
+	if !migrated {
+		w.ui.ok(w.in.Proj.Path + " kept as it is")
+		return nil
 	}
 	if len(w.in.JiraTargets()) > 0 {
 		w.ui.ok("the shared kit is already listed; recreate the sandbox: sbx env rm; sbx env run")
@@ -616,37 +641,40 @@ func (w *sbxWizard) migrate(ctx context.Context) error {
 }
 
 // migrateFile removes setup-sbx's kit (and the JIRA_* variables it set) from
-// the project file.
-func (w *sbxWizard) migrateFile(ctx context.Context) error {
+// the project file; migrated is false when there was nothing to remove, in
+// a dry run, or when the person said no.
+func (w *sbxWizard) migrateFile(ctx context.Context) (migrated bool, err error) {
 	path := w.in.Proj.Path
 	old, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return false, err
 	}
 	out, removed, err := sbx.MigrateLegacy(old, w.project)
 	if err != nil {
-		return clierr.Wrap(clierr.LayerConfig, "invalid_sbxenv", err.Error(), nil)
+		return false, clierr.Wrap(clierr.LayerConfig, "invalid_sbxenv", err.Error(), nil)
 	}
 	if !removed {
-		return nil
+		return false, nil
 	}
 	k := &sbxKit{a: w.a, ui: w.ui, f: &sbxKitFlags{embedded: true}, set: w.set}
 	k.showDiff(path, old, out)
 	if w.a.dryRun {
 		w.ui.note("Dry run: nothing was written.")
-		return nil
+		return false, nil
 	}
-	if err := k.confirm(ctx, "Update "+path+" (the previous version is kept as sbxenv.yaml.bak)"); err != nil {
-		return err
+	ok, err := k.confirm(ctx, "Update "+path+" (the previous version is kept as sbxenv.yaml.bak)")
+	if err != nil || !ok {
+		return false, err
 	}
 	if err := writeWithBackup(path, old, out); err != nil {
-		return err
+		return false, err
 	}
 	w.ui.ok("removed setup-sbx's kit from " + path)
 	if lk := w.in.Proj.LegacyKit(); lk != nil && lk.Dir != "" {
 		w.ui.note(lk.Dir + " is no longer used; delete it when you like")
 	}
-	return nil
+	w.in = sbx.Inspect(w.home, w.project, w.settings, w.a.Version)
+	return true, nil
 }
 
 // verifyCheck is one line of verify's result.

@@ -222,8 +222,9 @@ func TestSbxSetupWizardInit(t *testing.T) {
 	project := t.TempDir()
 	fs := &fakeSbx{secrets: "jira  apiKey\n", terminal: true}
 	// Action: init (default when nothing is set up); where: user; URL; read-only:
-	// yes; secret: keep; format: keep (v3, the agent's); apply; confirm the file.
-	stdin := answers("", "1", "jira.example.com", "", "", "", "", "y")
+	// yes; secret: keep; format: keep (v3, the agent's); apply; keep the stored
+	// token; confirm the file.
+	stdin := answers("", "1", "jira.example.com", "", "", "", "", "", "y")
 	code, _, errOut := runSetup(t, fs, stdin, "--project", project)
 	if code != 0 {
 		t.Fatalf("exit %d\n%s", code, errOut)
@@ -258,11 +259,136 @@ func TestSbxSetupWizardKeepsAgentFormat(t *testing.T) {
 	home := os.Getenv("HOME")
 	v2Agent(t, home)
 	fs := &fakeSbx{secrets: "jira  apiKey\n", terminal: true}
-	code, _, errOut := runSetup(t, fs, answers("", "1", "jira.example.com", "", "", "", "", "y"), "--project", t.TempDir())
+	code, _, errOut := runSetup(t, fs, answers("", "1", "jira.example.com", "", "", "", "", "", "y"), "--project", t.TempDir())
 	if code != 0 {
 		t.Fatalf("exit %d\n%s", code, errOut)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".config", "jira-cli-sbx", "kit", "spec.yaml")); err != nil {
 		t.Fatalf("not a v2 kit:\n%s", errOut)
+	}
+}
+
+// Saying no to one step skips that step, not the whole run.
+
+func TestSbxKitNoToOptionalSteps(t *testing.T) {
+	isolateHome(t)
+	home := os.Getenv("HOME")
+	orig := "schemaVersion: \"1\"\nagent: opencode\n"
+	writeFile(t, filepath.Join(home, ".sbxenv.yaml"), orig)
+	// The token is stored: keep it (Enter); do not update ~/.sbxenv.yaml.
+	fs := &fakeSbx{secrets: "jira  apiKey\n", terminal: true}
+	self, _ := os.Executable()
+	code, _, errOut := runJiraSbx(t, fs, answers("", "n"), "sbx", "kit", "--binary-file", self, "--base-url", "jira.example.com")
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, errOut)
+	}
+	if fs.setSecret {
+		t.Error("the stored token was replaced")
+	}
+	if readFile(t, filepath.Join(home, ".sbxenv.yaml")) != orig {
+		t.Error("~/.sbxenv.yaml changed after no")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "jira-cli-sbx", "kit", "jira-cli.yaml")); err != nil {
+		t.Error("the kit was not written")
+	}
+	if !strings.Contains(errOut, "kept as it is (you said no)") || !strings.Contains(errOut, "Add to") {
+		t.Errorf("no note or entries to add:\n%s", errOut)
+	}
+
+	// Replace the token: yes; update the file: yes.
+	fs = &fakeSbx{secrets: "jira  apiKey\n", terminal: true}
+	if code, _, errOut = runJiraSbx(t, fs, answers("y", "y"), "sbx", "kit", "--binary-file", self, "--base-url", "jira.example.com"); code != 0 || !fs.setSecret {
+		t.Fatalf("exit %d, set %v\n%s", code, fs.setSecret, errOut)
+	}
+
+	// No token stored, and not now: the setup still completes.
+	isolateHome(t)
+	fs = &fakeSbx{secrets: "other  apiKey\n", terminal: true}
+	code, _, errOut = runJiraSbx(t, fs, answers("n", "y"), "sbx", "kit", "--binary-file", self, "--base-url", "jira.example.com")
+	if code != 0 || fs.setSecret || !strings.Contains(errOut, "No token stored") || !strings.Contains(errOut, "sbx secret set jira") {
+		t.Fatalf("exit %d, set %v\n%s", code, fs.setSecret, errOut)
+	}
+	if !strings.Contains(readFile(t, filepath.Join(os.Getenv("HOME"), ".sbxenv.yaml")), "jira-cli-sbx/kit") {
+		t.Fatal("~/.sbxenv.yaml not written")
+	}
+}
+
+func TestSbxSetupRemoveNoToOneFile(t *testing.T) {
+	isolateHome(t)
+	home := os.Getenv("HOME")
+	writeFile(t, filepath.Join(home, ".sbxenv.yaml"), "schemaVersion: \"1\"\nagent: opencode\n")
+	project := t.TempDir()
+	fs := &fakeSbx{secrets: "jira  apiKey\n"}
+	for _, target := range []string{"user", "project"} {
+		if code, _, errOut := runSetup(t, fs, "", "--action", "init", "--target", target, "--project", project, "--base-url", "jira.example.com", "--yes"); code != 0 {
+			t.Fatalf("init %s: %s", target, errOut)
+		}
+	}
+	// ~/.sbxenv.yaml: no; the project file: yes.
+	fs.terminal = true
+	code, _, errOut := runSetup(t, fs, answers("n", "y"), "--action", "remove", "--project", project)
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, errOut)
+	}
+	if !strings.Contains(readFile(t, filepath.Join(home, ".sbxenv.yaml")), "jira-cli-sbx/kit") {
+		t.Error("removed from ~/.sbxenv.yaml after no")
+	}
+	if strings.Contains(readFile(t, filepath.Join(project, "sbxenv.yaml")), "jira-cli-sbx/kit") {
+		t.Error("not removed from the project file after yes")
+	}
+}
+
+func TestSbxSetupNoToMigration(t *testing.T) {
+	isolateHome(t)
+	project := t.TempDir()
+	fs := &fakeSbx{secrets: "jira  apiKey\n"}
+	if code, _, errOut := runSbx(t, fs, "", "--project", project, "--base-url", "jira.example.com"); code != 0 {
+		t.Fatalf("setup-sbx: %s", errOut)
+	}
+	legacy := readFile(t, filepath.Join(project, "sbxenv.yaml"))
+	fs.terminal = true
+	// For every sandbox: no to the migration goes on (keep the token, update the file).
+	code, _, errOut := runSetup(t, fs, answers("n", "", "y"), "--action", "init", "--target", "user", "--project", project, "--base-url", "jira.example.com")
+	if code != 0 || !strings.Contains(errOut, "kept setup-sbx's kit") {
+		t.Fatalf("exit %d\n%s", code, errOut)
+	}
+	if readFile(t, filepath.Join(project, "sbxenv.yaml")) != legacy {
+		t.Error("the project file changed after no")
+	}
+	if !strings.Contains(readFile(t, filepath.Join(os.Getenv("HOME"), ".sbxenv.yaml")), "jira-cli-sbx/kit") {
+		t.Error("~/.sbxenv.yaml not set up")
+	}
+	// For this project: no to the migration stops (sbx would refuse the file).
+	code, _, errOut = runSetup(t, fs, answers("n"), "--action", "init", "--target", "project", "--project", project, "--base-url", "jira.example.com")
+	if code == 0 || !strings.Contains(errOut, "keeps setup-sbx's kit, and sbx would refuse") {
+		t.Fatalf("exit %d\n%s", code, errOut)
+	}
+	if readFile(t, filepath.Join(project, "sbxenv.yaml")) != legacy {
+		t.Error("the project file changed")
+	}
+}
+
+func TestSetupSbxNoToReplaceOffersMerge(t *testing.T) {
+	isolateHome(t)
+	project := t.TempDir()
+	own := "schemaVersion: \"1\"\nagent: opencode\nworkspace: .\nenv:\n  MINE: \"1\"\n"
+	writeFile(t, filepath.Join(project, "sbxenv.yaml"), own)
+	fs := &fakeSbx{secrets: "jira  apiKey\n", terminal: true}
+	// setup-sbx: project; replace it: no; add jira-cli to it: yes. Then the
+	// wizard (target project): where, URL, read-only, secret, format, apply:
+	// Enter; keep the token; update the file: yes.
+	code, _, errOut := runSbx(t, fs, answers(project, "n", "y", "", "", "", "", "", "", "", "y"), "-i", "--base-url", "jira.example.com")
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, errOut)
+	}
+	env := readFile(t, filepath.Join(project, "sbxenv.yaml"))
+	if !strings.Contains(env, `MINE: "1"`) || !strings.Contains(env, "jira-cli-sbx/kit") {
+		t.Fatalf("project file:\n%s", env)
+	}
+	// No to both: nothing is written.
+	writeFile(t, filepath.Join(project, "sbxenv.yaml"), own)
+	code, _, _ = runSbx(t, fs, answers(project, "n", "n"), "-i", "--base-url", "jira.example.com")
+	if code == 0 || readFile(t, filepath.Join(project, "sbxenv.yaml")) != own {
+		t.Fatalf("exit %d", code)
 	}
 }

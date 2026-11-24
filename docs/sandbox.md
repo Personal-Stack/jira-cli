@@ -167,7 +167,20 @@ secret, a kit older than this jiracli.
 | `status` | Only the inspection (`-o json` for scripts). |
 
 Every change is shown as a diff before it is written, and the previous file is
-kept as `.bak`. Choose **dry run**, or pass `--dry-run`, to see the diff and
+kept as `.bak`.
+
+**Saying no skips that step, not the whole run.**
+
+| Question | "No" means |
+|---|---|
+| Replace the stored token? (asked when the secret exists) | The token is kept, and the setup goes on. |
+| Store the token now? (asked when it is missing) | The files are still written; until you run `sbx secret set`, sandboxes have no Jira access. |
+| Update the environment file? | The kit and settings are still written; the file is kept, and the entries to add are printed. |
+| Remove the kit from this file? (two files) | That file is kept; the next file is still asked. |
+| Migrate the project from `setup-sbx`'s kit first? | For every sandbox: the setup goes on, and this one project stays to migrate. For this project: it stops, because sbx would refuse both kits in that file. |
+| `setup-sbx`: replace your own `sbxenv.yaml`? | It offers to add jira-cli to the file instead, keeping your entries (the wizard's `init` for this project). |
+
+Only the final "Proceed" of `setup-sbx`, and Ctrl+C, end the run. Choose **dry run**, or pass `--dry-run`, to see the diff and
 let sbx check the result without writing anything.
 
 Without a terminal, pass the action:

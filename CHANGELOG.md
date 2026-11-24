@@ -22,6 +22,8 @@
 - **Every change is shown as a diff** first. A dry run, chosen in the wizard or with `--dry-run`, lets sbx check the result and writes nothing.
 - The kit format follows the agent's kits, and a project target is checked the way sbx merges it (`~/.sbxenv.yaml` beneath the project file).
 - Without a terminal: `--action status|init|update|verify|migrate|remove`.
+- **Saying no skips only that step**, without cancelling the whole run. Two examples: keep the stored token and go on, or keep the environment file and still get the kit (with the entries printed). `setup-sbx` no longer stops when you won't let it replace your own `sbxenv.yaml`: it offers to add jira-cli to that file instead.
+- Fixed: `remove` in the wizard failed validation (it did not pass the kit's secret).
 
 ### Docker Sandboxes: `jiracli sbx kit` fixes
 - **Agents with v2 kits** (e.g. a company agent kit in `spec.yaml` format): sbx does not combine v3 kits with v1/v2 kits, and the kit was v3 only. `jiracli sbx kit` now writes the kit in the v2 format when sbx refuses the v3 one (checked with `sbx env plan`), or as chosen with `--kit-schema 2|3`. Same args, credential, network rule, variables and agent instructions; the v2 kit has no image layer (the startup link puts `jiracli` on PATH).
