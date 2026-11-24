@@ -115,6 +115,7 @@ type sbxSetup struct {
 	guided bool
 
 	haveSbx       bool            // sbx usable here (not in the wrapper's container)
+	binaryDryRun  bool            // get the binary in a dry run too (sbx kit checks its kit with sbx)
 	secrets       map[string]bool // existing sbx secrets
 	bin, binSrc   string          // the linux jiracli binary for the kit
 	tmp           string
@@ -235,7 +236,7 @@ func (s *sbxSetup) checks(ctx context.Context) error {
 		s.haveSbx = true
 		s.ui.ok("sbx is installed; secrets: " + orNone(sortedKeys(s.secrets)))
 	}
-	if s.a.dryRun {
+	if s.a.dryRun && !s.binaryDryRun {
 		return nil
 	}
 	var err error

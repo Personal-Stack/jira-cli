@@ -118,6 +118,49 @@ func (f *form) yesno(dst *bool, q string) {
 	}
 }
 
+// choice is one option of form.choose.
+type choice struct {
+	key, label string
+}
+
+// choose asks for one of options, by number or key; Enter keeps *dst.
+func (f *form) choose(dst *string, q string, options []choice) {
+	if f.err != nil {
+		return
+	}
+	def := ""
+	for n, o := range options {
+		mark := "  "
+		if o.key == *dst {
+			mark, def = f.ui.cyan("›")+" ", fmt.Sprint(n+1)
+		}
+		f.ui.println(fmt.Sprintf("  %s%s %s", mark, f.ui.bold(fmt.Sprintf("%d)", n+1)), o.label))
+	}
+	for f.err == nil {
+		v, err := f.p.ask(q, def)
+		if f.err = err; err != nil {
+			return
+		}
+		if v == def && def != "" {
+			return // Enter: the current choice
+		}
+		// Positions first: a key may itself be a number ("2", "3").
+		for n, o := range options {
+			if v == fmt.Sprint(n+1) {
+				*dst = o.key
+				return
+			}
+		}
+		for _, o := range options {
+			if v == o.key {
+				*dst = o.key
+				return
+			}
+		}
+		f.ui.warn(fmt.Sprintf("answer 1-%d", len(options)))
+	}
+}
+
 func optional(check func(string) error) func(string) error {
 	return func(v string) error {
 		if v == "" {

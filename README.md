@@ -118,7 +118,7 @@ docker run --rm \
 | Getting started (install, certificate from the browser, token, usage) | [docs/getting-started.md](docs/getting-started.md) |
 | Installation | [docs/installation.md](docs/installation.md) |
 | Docker wrapper (no Go/binary on the machine) | [docs/docker.md](docs/docker.md) |
-| Agents in Docker Sandboxes (sbx), token kept on the host: `jiracli setup-sbx` (one project) or `jiracli sbx kit` (every sandbox, via `~/.sbxenv.yaml`) | [docs/sandbox.md](docs/sandbox.md) |
+| Agents in Docker Sandboxes (sbx), token kept on the host: `jiracli sbx setup` (wizard: inspect, init, update, verify), or `jiracli sbx kit` / `jiracli setup-sbx` | [docs/sandbox.md](docs/sandbox.md) |
 | Local MCP server for AI agents (stdio, read-only by default): `jiracli mcp` | [docs/mcp.md](docs/mcp.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
 | OpenAPI generation, overlays, spec updates | [docs/openapi-generation.md](docs/openapi-generation.md) |

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -27,7 +28,7 @@ in every sandbox of this machine through ~/.sbxenv.yaml; 'jiracli setup-sbx'
 sets up one project with its own sbxenv.yaml. See docs/sandbox.md.`,
 		Args: cobra.NoArgs,
 	}
-	c.AddCommand(a.sbxKitCmd())
+	c.AddCommand(a.sbxKitCmd(), a.sbxSetupCmd())
 	return c
 }
 
@@ -39,6 +40,11 @@ type sbxKitFlags struct {
 	print, remove         bool
 	agent                 string
 	kitSchema             int
+
+	// Set by 'jiracli sbx setup' (no flags of their own).
+	envFile  string // target environment file; "" for ~/.sbxenv.yaml
+	seed     []byte // the start of a new target file (a project's)
+	embedded bool   // part of the wizard: no title of its own
 }
 
 func (a *App) sbxKitCmd() *cobra.Command {
@@ -137,10 +143,10 @@ func (k *sbxKit) run(ctx context.Context) error {
 	o.Home, o.Settings = home, absPath(o.Settings)
 	o.BaseURL = sbx.NormalizeBaseURL(o.BaseURL)
 	o.ReadOnly, o.Skill = !k.f.allowWrites, !k.f.noSkill
-	if d := sbx.LoadDefaults(o.Settings, o.Settings); !k.set("secret") && d.Secret != "" {
+	if d := sbx.LoadDefaults(o.Settings, o.Settings); !k.f.embedded && !k.set("secret") && d.Secret != "" {
 		o.Secret = d.Secret // the secret setup-sbx stored the PAT in
 	}
-	o.Schema = k.f.kitSchema
+	o.Schema, o.EnvFile = k.f.kitSchema, k.f.envFile
 	plan, err := sbx.NewKitPlan(*o)
 	if err != nil {
 		return k.fail(clierr.LayerUsage, "invalid_setup", err, "")
@@ -149,12 +155,14 @@ func (k *sbxKit) run(ctx context.Context) error {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	k.ui.title("jiracli sbx kit", "jira-cli in every sbx sandbox")
+	if !k.f.embedded {
+		k.ui.title("jiracli sbx kit", "jira-cli in every sbx sandbox")
+	}
 	if k.f.remove {
 		return k.removeKit(ctx, plan, existing, format)
 	}
 
-	k.s = &sbxSetup{a: k.a, f: &sbxFlags{binaryFile: k.f.binaryFile, sourceDir: k.f.sourceDir, skipChecks: k.f.skipChecks}, ui: k.ui}
+	k.s = &sbxSetup{a: k.a, f: &sbxFlags{binaryFile: k.f.binaryFile, sourceDir: k.f.sourceDir, skipChecks: k.f.skipChecks}, ui: k.ui, binaryDryRun: true}
 	defer func() {
 		if k.s.tmp != "" {
 			os.RemoveAll(k.s.tmp)
@@ -168,19 +176,32 @@ func (k *sbxKit) run(ctx context.Context) error {
 			return k.fail(clierr.LayerTCP, "jira_unreachable", err, "")
 		}
 	}
-	updated, err := plan.UserEnvContent(existing, plan.KitDir)
+	base := existing
+	if len(bytes.TrimSpace(base)) == 0 && k.f.seed != nil {
+		base = k.f.seed // a new project file
+	}
+	updated, err := plan.UserEnvContent(base, plan.KitDir)
 	if err != nil {
 		return k.fail(clierr.LayerConfig, "invalid_sbxenv", err, "fix "+plan.EnvFile+" (it must be a YAML mapping), or use --print")
 	}
 	k.summary(plan)
-	if k.a.dryRun {
-		return output.Write(k.a.Out, map[string]any{"dry_run": true, "kit_dir": plan.KitDir, "env_file": plan.EnvFile,
-			"jira_host": plan.Host, "secret": plan.Secret, "read_only": plan.ReadOnly, "sbxenv_yaml": string(updated)}, format)
+	if k.a.dryRun || (!k.f.print && !bytes.Equal(existing, updated)) {
+		k.showDiff(plan.EnvFile, existing, updated)
 	}
 	if k.s.haveSbx {
-		if err := k.validate(ctx, plan, existing); err != nil {
+		if err := k.validate(ctx, plan, base); err != nil {
 			return err
 		}
+	}
+	if k.a.dryRun {
+		k.ui.note("Dry run: nothing was written.")
+		if k.quietJSON() {
+			return nil
+		}
+		return output.Write(k.a.Out, map[string]any{"dry_run": true, "kit_dir": plan.KitDir, "env_file": plan.EnvFile,
+			"jira_host": plan.Host, "secret": plan.Secret, "read_only": plan.ReadOnly, "kit_schema": plan.Schema, "sbxenv_yaml": string(updated)}, format)
+	}
+	if k.s.haveSbx {
 		if err := k.s.ensureSecret(ctx, plan.Secret); err != nil {
 			return err
 		}
@@ -254,7 +275,7 @@ func (k *sbxKit) summary(p *sbx.KitPlan) {
 	ui.kv("env file", p.EnvFile+map[bool]string{true: " (not changed: --print)"}[k.f.print])
 	ui.kv("read-only", map[bool]string{true: "yes", false: "no"}[p.ReadOnly])
 	ui.kv("skill", map[bool]string{true: "bundled (jira)", false: "not bundled"}[p.Skill])
-	ui.kv("format", map[bool]string{true: fmt.Sprintf("v%d (--kit-schema)", p.Schema), false: "v3, or v2 if sbx refuses v3"}[k.f.kitSchema != 0])
+	ui.kv("format", map[bool]string{true: fmt.Sprintf("v%d", p.Schema), false: "v3, or v2 if sbx refuses v3"}[k.f.kitSchema != 0])
 	ui.kv("token", fmt.Sprintf("sbx secret %q", p.Secret))
 }
 
@@ -333,6 +354,9 @@ func (k *sbxKit) planWith(ctx context.Context, plan *sbx.KitPlan, existing []byt
 	if err := plan.WriteKit(kitDir, k.s.bin, k.a.Version, k.skill()); err != nil {
 		return nil, err
 	}
+	if !plan.UserTarget() {
+		return k.planProject(ctx, plan, existing, kitDir, dir)
+	}
 	env, err := plan.ValidationEnv(existing, kitDir, agent)
 	if err != nil {
 		return nil, err
@@ -341,6 +365,36 @@ func (k *sbxKit) planWith(ctx context.Context, plan *sbx.KitPlan, existing []byt
 		return nil, err
 	}
 	return sbxRun(ctx, dir, false, "env", "plan", dir)
+}
+
+// planProject checks a project target as sbx will merge it: copies of the
+// user's ~/.sbxenv.yaml and of the project file, both referring to the
+// scratch kit, passed to 'sbx env plan' in merge order (passing paths makes
+// sbx skip the real ~/.sbxenv.yaml).
+func (k *sbxKit) planProject(ctx context.Context, plan *sbx.KitPlan, existing []byte, kitDir, dir string) ([]byte, error) {
+	proj, err := plan.UserEnvContent(existing, kitDir)
+	if err == nil {
+		proj, err = sbx.Absolutize(proj, plan.EnvDir)
+	}
+	if err != nil {
+		return nil, err
+	}
+	paths := []string{}
+	if user, err := os.ReadFile(filepath.Join(plan.Home, sbx.UserEnvName)); err == nil {
+		if user, err = sbx.SwapKitSource(user, plan.Home, kitDir); err != nil {
+			return nil, err
+		}
+		up := filepath.Join(dir, "user.sbxenv.yaml")
+		if err := os.WriteFile(up, user, 0o644); err != nil {
+			return nil, err
+		}
+		paths = append(paths, up)
+	}
+	pp := filepath.Join(dir, "sbxenv.yaml")
+	if err := os.WriteFile(pp, proj, 0o644); err != nil {
+		return nil, err
+	}
+	return sbxRun(ctx, dir, false, append([]string{"env", "plan"}, append(paths, pp)...)...)
 }
 
 func (k *sbxKit) removeKit(ctx context.Context, plan *sbx.KitPlan, existing []byte, format output.Format) error {
@@ -352,7 +406,12 @@ func (k *sbxKit) removeKit(ctx context.Context, plan *sbx.KitPlan, existing []by
 		k.ui.ok(plan.EnvFile + " does not list the kit; nothing to do")
 		return output.Write(k.a.Out, map[string]any{"env_file": plan.EnvFile, "removed": false}, format)
 	}
+	k.showDiff(plan.EnvFile, existing, out)
 	if k.a.dryRun {
+		k.ui.note("Dry run: nothing was written.")
+		if k.quietJSON() {
+			return nil
+		}
 		return output.Write(k.a.Out, map[string]any{"dry_run": true, "env_file": plan.EnvFile, "sbxenv_yaml": string(out)}, format)
 	}
 	if err := k.confirm(ctx, "Remove the jira-cli kit and its mount from "+plan.EnvFile); err != nil {
@@ -423,4 +482,29 @@ func (k *sbxKit) finish(p *sbx.KitPlan, notes []sbx.Note, env []byte, format out
 		res["sbxenv_entries"] = string(snippet)
 	}
 	return output.Write(k.a.Out, res, format)
+}
+
+// showDiff prints the change to an environment file, as a line diff.
+func (k *sbxKit) showDiff(path string, old, updated []byte) {
+	k.ui.section("Changes to " + path)
+	if bytes.Equal(old, updated) {
+		k.ui.note("none")
+		return
+	}
+	for _, l := range lineDiff(string(old), string(updated), 2) {
+		switch {
+		case strings.HasPrefix(l, "+"):
+			k.ui.println("  " + k.ui.green(l))
+		case strings.HasPrefix(l, "-"):
+			k.ui.println("  " + k.ui.paint("31", l))
+		default:
+			k.ui.println("  " + k.ui.dim(l))
+		}
+	}
+}
+
+// quietJSON reports whether the result is for a person only: the wizard in
+// a terminal, without -o.
+func (k *sbxKit) quietJSON() bool {
+	return k.f.embedded && k.a.IsTerminal() && !k.set("output")
 }

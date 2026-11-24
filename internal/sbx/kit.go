@@ -51,6 +51,10 @@ type KitOptions struct {
 	Skill    bool   // bundle the jira skill
 	Home     string // folder of the user's .sbxenv.yaml
 
+	// EnvFile is the environment file the kit is listed in: empty for
+	// ~/.sbxenv.yaml (every sandbox), or a project's sbxenv.yaml.
+	EnvFile string
+
 	// Schema is the kit format: 3 (default) or 2. sbx composes a v3 kit only
 	// with v3 kits (the built-in agents) and a v2 kit only with v1/v2 kits
 	// (e.g. a company agent kit in spec.yaml format).
@@ -65,8 +69,12 @@ type KitPlan struct {
 	CredRef string // credential_ref in config.yaml
 	CredEnv string // JIRA_CREDENTIAL_<REF>, the sentinel the sandbox sees
 
-	KitDir, ConfigFile, BashrcFile, EnvFile string
+	KitDir, ConfigFile, BashrcFile string
+	EnvDir                         string // EnvFile's folder: relative paths in it resolve from here
 }
+
+// UserTarget reports whether the plan edits ~/.sbxenv.yaml.
+func (k *KitPlan) UserTarget() bool { return k.EnvFile == filepath.Join(k.Home, UserEnvName) }
 
 // NewKitPlan validates o; paths must be absolute.
 func NewKitPlan(o KitOptions) (*KitPlan, error) {
@@ -106,7 +114,17 @@ func NewKitPlan(o KitOptions) (*KitPlan, error) {
 	k.KitDir = filepath.Join(k.Settings, KitDirName)
 	k.ConfigFile = filepath.Join(k.Settings, "config.yaml")
 	k.BashrcFile = filepath.Join(k.Settings, "bashrc")
-	k.EnvFile = filepath.Join(k.Home, UserEnvName)
+	if k.EnvFile == "" {
+		k.EnvFile = filepath.Join(k.Home, UserEnvName)
+	}
+	k.EnvFile = filepath.Clean(k.EnvFile)
+	if !filepath.IsAbs(k.EnvFile) {
+		return nil, fmt.Errorf("environment file %q is not absolute", k.EnvFile)
+	}
+	k.EnvDir = filepath.Dir(k.EnvFile)
+	if !k.UserTarget() && strings.HasPrefix(k.Settings+"/", k.EnvDir+"/") {
+		return nil, fmt.Errorf("the settings folder %s is inside the project %s: it would be mounted twice", k.Settings, k.EnvDir)
+	}
 	return k, nil
 }
 
@@ -328,7 +346,7 @@ func (k *KitPlan) UserEnvContent(existing []byte, kitDir string) ([]byte, error)
 	var keep []*yaml.Node
 	for _, e := range kits.Content {
 		src := kitSource(e)
-		ours := src != "" && (resolveFrom(k.Home, src) == kitDir || resolveFrom(k.Home, src) == k.KitDir || IsGlobalKit(resolveFrom(k.Home, src)))
+		ours := src != "" && (resolveFrom(k.EnvDir, src) == kitDir || resolveFrom(k.EnvDir, src) == k.KitDir || IsGlobalKit(resolveFrom(k.EnvDir, src)))
 		switch {
 		case ours && !replaced:
 			if e.HeadComment != "" {
@@ -356,7 +374,7 @@ func (k *KitPlan) UserEnvContent(existing []byte, kitDir string) ([]byte, error)
 	mount.HeadComment = "jira-cli: the kit's binary, config.yaml and bashrc (read-only, same path)"
 	replaced = false
 	for i, e := range ws.Content {
-		if p := mapGet(e, "path"); p != nil && resolveFrom(k.Home, p.Value) == k.Settings {
+		if p := mapGet(e, "path"); p != nil && resolveFrom(k.EnvDir, p.Value) == k.Settings {
 			if e.HeadComment != "" {
 				mount.HeadComment = e.HeadComment
 			}
@@ -400,7 +418,7 @@ func (k *KitPlan) RemoveFromUserEnv(existing []byte) (out []byte, removed bool, 
 		var keep []*yaml.Node
 		for _, e := range kits.Content {
 			src := kitSource(e)
-			if src != "" && (resolveFrom(k.Home, src) == k.KitDir || IsGlobalKit(resolveFrom(k.Home, src))) {
+			if src != "" && (resolveFrom(k.EnvDir, src) == k.KitDir || IsGlobalKit(resolveFrom(k.EnvDir, src))) {
 				removed = true
 				continue
 			}
@@ -414,7 +432,7 @@ func (k *KitPlan) RemoveFromUserEnv(existing []byte) (out []byte, removed bool, 
 	if ws := mapGet(root, "additionalWorkspaces"); ws != nil && ws.Kind == yaml.SequenceNode {
 		var keep []*yaml.Node
 		for _, e := range ws.Content {
-			if p := mapGet(e, "path"); p != nil && resolveFrom(k.Home, p.Value) == k.Settings {
+			if p := mapGet(e, "path"); p != nil && resolveFrom(k.EnvDir, p.Value) == k.Settings {
 				removed = true
 				continue
 			}
@@ -553,4 +571,141 @@ func mapEnsure(m *yaml.Node, key string, kind yaml.Kind) *yaml.Node {
 	v := &yaml.Node{Kind: kind}
 	mapSet(m, key, v)
 	return v
+}
+
+// SwapKitSource returns env (an environment file in envDir) with the
+// source of its jira-cli kit entry, if any, replaced by source; the args
+// are kept. A scratch copy checked with sbx refers to a scratch kit.
+func SwapKitSource(env []byte, envDir, source string) ([]byte, error) {
+	root, doc, err := parseUserEnv(env)
+	if err != nil {
+		return nil, err
+	}
+	if kits := mapGet(root, "kits"); kits != nil && kits.Kind == yaml.SequenceNode {
+		for i, e := range kits.Content {
+			if src := kitSource(e); src != "" && IsGlobalKit(resolveFrom(envDir, src)) {
+				if e.Kind == yaml.MappingNode {
+					mapSet(e, "source", plain(source))
+				} else {
+					kits.Content[i] = plain(source)
+				}
+			}
+		}
+	}
+	return encode(doc)
+}
+
+// Absolutize returns env (an environment file in dir) with its relative
+// local paths made absolute, so a copy elsewhere refers to the same
+// folders: workspace, kits sources, additionalWorkspaces and mounts.
+func Absolutize(env []byte, dir string) ([]byte, error) {
+	root, doc, err := parseUserEnv(env)
+	if err != nil {
+		return nil, err
+	}
+	abs := func(n *yaml.Node) {
+		if n != nil && n.Kind == yaml.ScalarNode {
+			if r := resolveFrom(dir, n.Value); filepath.IsAbs(r) && r != n.Value {
+				n.Value = r
+			}
+		}
+	}
+	if w := mapGet(root, "workspace"); w != nil {
+		if w.Kind == yaml.MappingNode {
+			abs(mapGet(w, "path"))
+		} else {
+			abs(w)
+		}
+	}
+	if kits := mapGet(root, "kits"); kits != nil {
+		for _, e := range kits.Content {
+			if e.Kind == yaml.MappingNode {
+				abs(mapGet(e, "source"))
+			} else {
+				abs(e)
+			}
+		}
+	}
+	if ws := mapGet(root, "additionalWorkspaces"); ws != nil {
+		for _, e := range ws.Content {
+			abs(mapGet(e, "path"))
+		}
+	}
+	if m := mapGet(root, "mounts"); m != nil && m.Kind == yaml.MappingNode {
+		for i := 1; i < len(m.Content); i += 2 {
+			abs(m.Content[i])
+		}
+	}
+	return encode(doc)
+}
+
+// NewProjectEnv is the start of a project's sbxenv.yaml when it has none:
+// the agent (when the user's file sets none) and the project as workspace.
+func NewProjectEnv(agent string) []byte {
+	s := "schemaVersion: \"1\"\n"
+	if agent != "" {
+		s += "agent: " + agent + "\n"
+	}
+	return []byte(s + "workspace: .\n")
+}
+
+// legacyEnvVars are the variables setup-sbx's project file sets; the shared
+// kit sets them through its args.
+var legacyEnvVars = []string{"JIRA_CONFIG", "JIRA_NO_KEYRING", "JIRA_READ_ONLY"}
+
+// MigrateLegacy returns a project's sbxenv.yaml (in dir) without setup-sbx's
+// own jira-cli kit and the JIRA_* variables it set, so the shared kit can be
+// used there. The generated header is replaced, so setup-sbx no longer
+// overwrites the file without asking. removed is false when there was no
+// such kit.
+func MigrateLegacy(env []byte, dir string) (out []byte, removed bool, err error) {
+	root, doc, err := parseUserEnv(env)
+	if err != nil {
+		return nil, false, err
+	}
+	if kits := mapGet(root, "kits"); kits != nil && kits.Kind == yaml.SequenceNode {
+		var keep []*yaml.Node
+		for _, e := range kits.Content {
+			if src := kitSource(e); src != "" {
+				if b, err := os.ReadFile(filepath.Join(resolveFrom(dir, src), "jira-cli.yaml")); err == nil && bytes.Contains(b, []byte(kitMarker)) {
+					removed = true
+					continue
+				}
+			}
+			keep = append(keep, e)
+		}
+		kits.Content = keep
+		if len(keep) == 0 {
+			mapDelete(root, "kits")
+		}
+	}
+	if !removed {
+		return env, false, nil
+	}
+	if ev := mapGet(root, "env"); ev != nil && ev.Kind == yaml.MappingNode {
+		for _, k := range legacyEnvVars {
+			mapDelete(ev, k)
+		}
+		if len(ev.Content) == 0 {
+			mapDelete(root, "env")
+		}
+	}
+	const note = "# Was generated by jiracli setup-sbx; moved to the shared jira-cli kit by jiracli sbx setup."
+	if out, err = encode(doc); err != nil {
+		return nil, false, err
+	}
+	// The first line no longer says "generated": setup-sbx then asks before
+	// replacing the file.
+	for _, m := range markers {
+		if bytes.HasPrefix(out, []byte(m)) {
+			_, rest, _ := bytes.Cut(out, []byte("\n"))
+			// setup-sbx's second line points at its kit's binary: gone too.
+			if bytes.HasPrefix(rest, []byte("# Start: sbx env run")) {
+				_, rest, _ = bytes.Cut(rest, []byte("\n"))
+			}
+			out = append([]byte(note+"\n"), rest...)
+			break
+		}
+	}
+	return out, true, nil
 }

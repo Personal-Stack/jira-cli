@@ -363,3 +363,47 @@ func TestWriteGlobalKitV2(t *testing.T) {
 		t.Fatal("schema 7 accepted")
 	}
 }
+
+func TestKitSchema(t *testing.T) {
+	d := t.TempDir()
+	if s, _, _, _ := KitSchema(d); s != 0 {
+		t.Fatalf("empty folder: %d", s)
+	}
+	if err := os.WriteFile(filepath.Join(d, "spec.yaml"), []byte("schemaVersion: \"2\"\nname: x\nversion: \"1.0\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s, n, v, j := KitSchema(d); s != 2 || n != "x" || v != "1.0" || j {
+		t.Fatalf("v2: %d %q %q %v", s, n, v, j)
+	}
+	d3 := t.TempDir()
+	if err := os.WriteFile(filepath.Join(d3, "tool.yaml"), []byte("# syntax=docker/sandbox-kit:3\nschemaVersion: \"3\"\nversion: \"2.1.0\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s, n, v, _ := KitSchema(d3); s != 3 || n != "tool" || v != "2.1.0" {
+		t.Fatalf("v3: %d %q %q", s, n, v)
+	}
+}
+
+func TestAbsolutizeAndSwap(t *testing.T) {
+	in := "schemaVersion: \"1\"\nworkspace: .\nkits:\n  - ./kits/a\n  - source: ../b\n    args: {x: \"1\"}\n  - docker.io/sbx/claude:1\nadditionalWorkspaces:\n  - path: ./shared\nmounts:\n  /home/agent/h: ./h\n"
+	b, err := Absolutize([]byte(in), "/p/proj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"workspace: /p/proj", "- /p/proj/kits/a", "source: /p/b", "- docker.io/sbx/claude:1", "path: /p/proj/shared", "/home/agent/h: /p/proj/h"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("lacks %q:\n%s", want, b)
+		}
+	}
+	k := kitPlan(t, true)
+	bin := filepath.Join(t.TempDir(), "jiracli")
+	_ = os.WriteFile(bin, []byte("x"), 0o755)
+	if err := k.WriteKit(k.KitDir, bin, "v1.0.0", fstest.MapFS{"SKILL.md": {Data: []byte("# J\n")}}); err != nil {
+		t.Fatal(err)
+	}
+	env, _ := k.UserEnvContent([]byte("schemaVersion: \"1\"\nkits: [other/kit]\n"), k.KitDir)
+	sw, err := SwapKitSource(env, k.Home, "/scratch/kit")
+	if err != nil || !strings.Contains(string(sw), "source: /scratch/kit") || strings.Contains(string(sw), k.KitDir) || !strings.Contains(string(sw), `host: "jira.example.com"`) {
+		t.Fatalf("%v\n%s", err, sw)
+	}
+}

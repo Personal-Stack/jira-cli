@@ -135,6 +135,60 @@ that architecture:
 
 `--binary-file FILE` uses a binary you provide.
 
+## The wizard: `jiracli sbx setup`
+
+```bash
+jiracli sbx setup
+```
+
+It first inspects what is set up, then offers what fits. It only reads, until
+you confirm a change:
+
+- **sbx**: installed; the sbx secrets (is the PAT stored?);
+- **`~/.sbxenv.yaml` and the project's `sbxenv.yaml`**: whether they exist,
+  the agent, every kit listed and its format (v1/v2 `spec.yaml` or v3), the
+  jira-cli kit and its args, the settings mount, the bindings; a
+  `~/.sbxenv.yml` (ignored by sbx);
+- **the kit folder**: format, the jiracli version it was made with, the binary;
+- **`config.yaml`**: base URL, read-only.
+
+It lists the problems it finds, each with a fix. Examples: a v3 kit next to a
+v2 agent kit (sbx does not mix them), `setup-sbx`'s project kit next to the
+shared one (sbx refuses two jira-cli kits), a missing mount, binding or
+secret, a kit older than this jiracli.
+
+| Action | What it does |
+|---|---|
+| `init` | Sets up the kit, for every sandbox (`~/.sbxenv.yaml`) or for this project only (the project's `sbxenv.yaml`, created if missing). Your other entries stay. The kit format follows the agent's kits (v2 or v3). |
+| `update` | Refreshes the kit to this jiracli and fixes the findings, keeping its host, secret and read-only setting. |
+| `verify` | Static checks, then `sbx env plan` for the project. In a running sandbox it also checks the `JIRA_*` variables, the credential sentinel, the binary, PATH and `jiracli doctor`. It never starts a sandbox. |
+| `migrate` | Takes `setup-sbx`'s kit (and its `JIRA_*` variables) out of the project's `sbxenv.yaml`, then offers `init`. |
+| `remove` | Takes the kit and its mount out of the environment files; the bindings stay. |
+| `status` | Only the inspection (`-o json` for scripts). |
+
+Every change is shown as a diff before it is written, and the previous file is
+kept as `.bak`. Choose **dry run**, or pass `--dry-run`, to see the diff and
+let sbx check the result without writing anything.
+
+Without a terminal, pass the action:
+
+```bash
+jiracli sbx setup --action status -o json
+```
+```bash
+jiracli sbx setup --action init --target project --base-url https://jira.company.internal --yes
+```
+```bash
+jiracli sbx setup --action verify
+```
+
+A **project target** puts the same three entries (kit, mount, binding) into the
+project's `sbxenv.yaml`. Before writing, sbx checks the merge the way it will
+run it: your `~/.sbxenv.yaml` beneath the project file.
+
+`jiracli sbx kit` and `jiracli setup-sbx` remain, for scripts and for existing
+setups; the wizard uses the same kit as `sbx kit`.
+
 ## Every sandbox: `jiracli sbx kit`
 
 `setup-sbx` writes one project's `sbxenv.yaml`, and refuses a project that
