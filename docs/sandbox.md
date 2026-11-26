@@ -216,7 +216,15 @@ sbx merges `~/.sbxenv.yaml` under every environment file: lists such as `kits`
 are concatenated, mappings such as `bindings` merge by key, and the project
 file wins on single values. So the command adds three entries to that file and
 leaves the rest of it, comments included, as it was (the previous version is
-kept as `~/.sbxenv.yaml.bak`):
+kept as `~/.sbxenv.yaml.bak`).
+
+sbx checks each file on its own, and refuses `additionalWorkspaces` in a file
+without `workspace:` ("additionalWorkspaces requires a 'workspace:' to be
+additional to"). So when the file has no workspace, the command adds
+`workspace: ${{ env.projectDir }}`, the folder you run `sbx env` from, which is
+the only workspace `~/.sbxenv.yaml` may set. A project file's own `workspace`
+still wins, and `--remove` takes the added line out again. A project file gets
+`workspace: .`.
 
 ```yaml
 kits:
@@ -263,10 +271,15 @@ in `--detach` or CI the token is withheld. The PAT itself is the sbx secret
 
 **Where things are.** The kit (`kit/`, with `bin/jiracli`, the skill and the
 kit files), `config.yaml` and `bashrc` live in `~/.config/jira-cli-sbx`
-(`--settings`), which is mounted read-only at the same path. The kit's image
-layer also installs `/usr/bin/jiracli` and the skill
-(`agent-skill@1`, optional), but earlier tests found that layer not applied,
-so the agent instructions name the mounted path.
+(`--settings`), which is mounted read-only at the same path. A startup hook
+links `/usr/bin/jiracli` to the mounted binary, and the agent instructions name
+the mounted skill.
+
+**No Docker needed.** The kit has no image layer by default: it is a
+declaration-only mixin. sbx builds a kit's Dockerfile with your Docker daemon,
+and without one it fails ("Cannot connect to the Docker daemon"). With
+`--image-layer`, the v3 kit gets a Dockerfile that puts `/usr/bin/jiracli` and
+the skill (`agent-skill@1`) into the image; use it only where Docker runs.
 
 **Starting a sandbox.** `~/.sbxenv.yaml` applies to the `sbx env` commands
 (`sbx env run`, `sbx env create`, ...); `sbx run <agent>` does not apply

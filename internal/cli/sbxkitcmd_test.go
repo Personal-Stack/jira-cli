@@ -36,7 +36,7 @@ func TestSbxKitWritesKitAndUserEnv(t *testing.T) {
 	if res["kit_dir"] != kitDir || res["env_file_changed"] != true || res["jira_host"] != "jira.example.com" || res["read_only"] != true {
 		t.Fatalf("%v", res)
 	}
-	for _, f := range []string{"kit/jira-cli.yaml", "kit/jira-cli.dockerfile", "kit/bin/jiracli", "kit/skill/jira/SKILL.md", "config.yaml", "bashrc"} {
+	for _, f := range []string{"kit/jira-cli.yaml", "kit/bin/jiracli", "kit/skill/jira/SKILL.md", "config.yaml", "bashrc"} {
 		if _, err := os.Stat(filepath.Join(settings, f)); err != nil {
 			t.Errorf("missing %s", f)
 		}

@@ -83,6 +83,7 @@ Without flags in a terminal it asks; otherwise give --action.`,
 	fl.StringVar(&f.kit.o.Secret, "secret", "", "sbx secret that holds the PAT (default: the kit's, else jira)")
 	fl.BoolVar(&f.kit.allowWrites, "allow-writes", false, "let the agent write to Jira (default: read-only, or the kit's setting on update)")
 	fl.BoolVar(&f.readOnly, "read-only", false, "update: make the kit read-only")
+	fl.BoolVar(&f.kit.o.ImageLayer, "image-layer", false, "v3 kit: add an image layer (/usr/bin/jiracli, the skill); sbx then builds it with Docker")
 	fl.IntVar(&f.kit.kitSchema, "kit-schema", 0, "kit format: 3 or 2 (default: the agent's, else 3 with v2 if sbx refuses it)")
 	fl.BoolVar(&f.kit.noSkill, "no-skill", false, "do not bundle the jira skill in the kit")
 	fl.StringVar(&f.kit.o.Settings, "settings", filepath.Join(cfgHome, "jira-cli-sbx"), "folder for the kit, config.yaml and bashrc (mounted read-only)")

@@ -73,9 +73,11 @@ capabilities:
           user: "0"
           description: Source {{.BashrcFile}} from interactive bash shells (best effort; never fails the start)
 
+  # agent-context@1 only: a kit with @2 resolves only when composed with its
+  # workload, and sbx refuses it in an environment file.
   - type: com.docker.sandbox/agent-context@1
     optional: true
-    config: &agent-context
+    config:
       content: |
         ## Jira (jira-cli)
 
@@ -97,10 +99,6 @@ capabilities:
         - Keep queries small: --max-results 50 or less; with --all add --max-pages 3.
         - The configuration is read-only at {{.Settings}}; changes are made by
           the user on the host.
-
-  - type: com.docker.sandbox/agent-context@2
-    optional: true
-    config: *agent-context
 `)
 
 var envTmpl = mustTemplate("env", GeneratedMarker+`; re-run it to regenerate.
@@ -202,7 +200,14 @@ licenses: [Apache-2.0]
 kind: mixin
 version: "{{.KitVersion}}"
 provides: ["jira-cli@{{.KitVersion}}"]
+{{- if .ImageLayer}}
+# Built by sbx with Docker: /usr/bin/jiracli and the skill in the image.
 dockerfile: jira-cli.dockerfile
+{{- else}}
+# No image layer (no recipe: a declaration-only mixin), so sbx needs no Docker
+# to build it: the binary and the skill come from the read-only mount, and a
+# startup hook links /usr/bin/jiracli to the binary.
+{{- end}}
 
 args:
   host:
@@ -214,9 +219,9 @@ args:
     pattern: '^[1-9][0-9]{0,4}$'
     description: Jira HTTPS port
   secret:
-    default: "jira"
-    pattern: '^[a-z0-9][a-z0-9-]*$'
-    description: sbx secret (credential service) holding the Jira personal access token
+    default: "{{.Secret}}"
+    enum: ["{{.Secret}}"]
+    description: sbx secret holding the Jira personal access token; fixed when the kit is generated (jiracli sbx kit --secret)
   readOnly:
     default: "1"
     enum: ["0", "1"]
@@ -245,7 +250,10 @@ capabilities:
   - type: com.docker.sandbox/credential@1
     description: Jira personal access token for jira-cli
     config:
-      service: ${{"{{"}} kit.args.secret {{"}}"}}
+      # A literal, not ${{"{{"}} kit.args.secret {{"}}"}}: the service is the
+      # credential's instance key, and an arg there makes sbx refuse the kit
+      # until it is composed with its workload. Re-run jiracli to change it.
+      service: {{.Secret}}
       phase: runtime
       apiKey:
         name: {{.CredEnv}}
@@ -276,7 +284,7 @@ capabilities:
               { [ -e /usr/bin/jiracli ] || ln -sf '{{.BinPath}}' /usr/bin/jiracli; } 2>/dev/null || true
           user: "0"
           description: Link /usr/bin/jiracli to {{.BinPath}} if the image layer did not install it (best effort)
-{{- if .Skill}}
+{{- if and .Skill .ImageLayer}}
 
   - type: com.docker.sandbox/agent-skill@1
     optional: true
@@ -285,9 +293,13 @@ capabilities:
       name: jira
 {{- end}}
 
+  # agent-context@1 only: a kit with @2 (alone, or next to @1) resolves only
+  # when composed with its workload, and sbx refuses it in an environment
+  # file ("competing agent-context versions ... pass the workload and the
+  # kit together").
   - type: com.docker.sandbox/agent-context@1
     optional: true
-    config: &agent-context
+    config:
       content: |
         ## Jira (jira-cli)
 
@@ -306,10 +318,6 @@ capabilities:
           must not add without the user's approval.
         - Keep queries small: --max-results 50 or less; with --all add --max-pages 3.
         - The configuration ({{code "$JIRA_CONFIG"}}) is read-only; the user changes it on the host.
-
-  - type: com.docker.sandbox/agent-context@2
-    optional: true
-    config: *agent-context
 `)
 
 // globalSkillSectionTmpl is the skill's "This sandbox" section in the
@@ -359,9 +367,9 @@ args:
     pattern: '^[1-9][0-9]{0,4}$'
     description: Jira HTTPS port
   secret:
-    default: "jira"
-    pattern: '^[a-z0-9][a-z0-9-]*$'
-    description: sbx secret (credential service) holding the Jira personal access token
+    default: "{{.Secret}}"
+    enum: ["{{.Secret}}"]
+    description: sbx secret holding the Jira personal access token; fixed when the kit is generated (jiracli sbx kit --secret)
   readOnly:
     default: "1"
     enum: ["0", "1"]
@@ -379,7 +387,7 @@ permissions:
 # The PAT stays on the host. {{.CredEnv}} holds a sentinel; the proxy sets
 # the real "Authorization: Bearer <PAT>" on requests to the host.
 credentials:
-  - service: "${{"{{"}} kit.args.secret {{"}}"}}"
+  - service: {{.Secret}}
     description: Jira personal access token for jira-cli
     apiKey:
       name: {{.CredEnv}}

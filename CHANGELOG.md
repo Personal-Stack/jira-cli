@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.7.1 (2026-11-26)
+
+Fixes for `jiracli sbx kit` and `jiracli sbx setup`, all found on a real sbx: `~/.sbxenv.yaml` was refused, the kit needed Docker to build, and sbx refused the kit's two agent-context versions.
+
+### Docker Sandboxes
+- **"additionalWorkspaces requires a 'workspace:'".** sbx checks each environment file on its own, and refuses the settings mount in a file without `workspace:`.
+  - The kit now adds `workspace: ${{ env.projectDir }}` to `~/.sbxenv.yaml` when it has none; a project file gets `workspace: .`. Your own workspace is never changed, and `--remove` takes the added line out again.
+  - The check with `sbx env plan` no longer replaces the file's workspace, which had hidden the problem.
+  - `jiracli sbx setup` reports a file in this state, and `update` fixes it.
+- **No Docker needed.** sbx builds a kit's Dockerfile with the Docker daemon, so the build failed ("Cannot connect to the Docker daemon").
+  - The v3 kit has no image layer now: it is a declaration-only mixin.
+  - The binary and the skill come from the read-only mount, and the startup hook links `/usr/bin/jiracli`.
+  - `--image-layer` keeps the Dockerfile where Docker runs.
+  - `jiracli sbx setup` reports a kit with an image layer, and `update` rewrites it.
+
+- **"declares capability groups, competing agent-context versions, or environment references … pass the workload and the kit together".** sbx refuses, in an environment file, a kit that resolves only when composed with its workload. Two things in our kit caused that: `agent-context@2` (alone or next to `@1`), and an arg as the credential's service (its instance key).
+  - Both kits (`sbx kit`'s and `setup-sbx`'s) now declare `agent-context@1` only.
+  - The service is written as a literal when the kit is generated (`--secret`); the `secret` arg stays, fixed to that value, so existing files still resolve.
+  - `jiracli sbx setup` reports an old kit, and `update` rewrites it.
+
+### Upgrading
+`jiracli upgrade`, then `jiracli sbx setup` and choose `update`: it adds the workspace and rewrites the kit without the image layer and with one agent-context. Then recreate the sandbox (`sbx env rm`, `sbx env run`).
+
 ## v0.7.0 (2026-11-24)
 
 `jiracli sbx setup`, a wizard that inspects your sbx setup and inits, updates, verifies or migrates it; and fixes for `jiracli sbx kit` found in first use: agents with v2 kits, `~/.sbxenv.yml`, `jiracli` on PATH.

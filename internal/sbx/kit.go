@@ -31,6 +31,13 @@ import (
 	"github.com/personal-stack/jira-cli/internal/credentials"
 )
 
+// userWorkspace is the workspace added to ~/.sbxenv.yaml when it sets
+// none: the folder 'sbx env' runs in (the docs' user-defaults example).
+const userWorkspace = "${{ env.projectDir }}"
+
+// workspaceNote marks a workspace jira-cli added (and removes with --remove).
+const workspaceNote = "# jira-cli: sbx accepts additionalWorkspaces only in a file that sets workspace"
+
 const (
 	// KitDirName is the global kit's folder in the settings folder.
 	KitDirName = "kit"
@@ -50,6 +57,11 @@ type KitOptions struct {
 	ReadOnly bool   // the readOnly kit arg (JIRA_READ_ONLY)
 	Skill    bool   // bundle the jira skill
 	Home     string // folder of the user's .sbxenv.yaml
+
+	// ImageLayer gives the v3 kit a Dockerfile (/usr/bin/jiracli and the
+	// skill in the image). sbx builds it with Docker, so it is off by
+	// default: the mount and a startup link provide the same.
+	ImageLayer bool
 
 	// EnvFile is the environment file the kit is listed in: empty for
 	// ~/.sbxenv.yaml (every sandbox), or a project's sbxenv.yaml.
@@ -196,11 +208,15 @@ func (k *KitPlan) WriteKit(dir, binary, version string, skill fs.FS) error {
 	if err != nil {
 		return err
 	}
-	df, err := render(globalDockerfileTmpl, data)
-	if err != nil {
-		return err
+	files := map[string]string{"jira-cli.yaml": kit}
+	if k.ImageLayer {
+		df, err := render(globalDockerfileTmpl, data)
+		if err != nil {
+			return err
+		}
+		files["jira-cli.dockerfile"] = df
 	}
-	return writeFiles(dir, map[string]string{"jira-cli.yaml": kit, "jira-cli.dockerfile": df})
+	return writeFiles(dir, files)
 }
 
 // skillFiles is the skill with the "This sandbox" section for the global kit.
@@ -366,6 +382,17 @@ func (k *KitPlan) UserEnvContent(existing []byte, kitDir string) ([]byte, error)
 		kits.Style = 0
 	}
 
+	// sbx checks each file on its own, and additionalWorkspaces is valid only
+	// in a file that also sets workspace: add one when the file has none.
+	if mapGet(root, "workspace") == nil {
+		v := "."
+		if k.UserTarget() {
+			v = userWorkspace // the only workspace ~/.sbxenv.yaml may set
+		}
+		mapSet(root, "workspace", plain(v))
+		root.Content[len(root.Content)-2].HeadComment = workspaceNote
+	}
+
 	// additionalWorkspaces: <settings>, read-only.
 	ws := mapEnsure(root, "additionalWorkspaces", yaml.SequenceNode)
 	mount := &yaml.Node{Kind: yaml.MappingNode}
@@ -443,6 +470,15 @@ func (k *KitPlan) RemoveFromUserEnv(existing []byte) (out []byte, removed bool, 
 			mapDelete(root, "additionalWorkspaces")
 		}
 	}
+	// The workspace jira-cli added only for the mount goes with it.
+	if mapGet(root, "additionalWorkspaces") == nil {
+		for i := 0; i+1 < len(root.Content); i += 2 {
+			if root.Content[i].Value == "workspace" && strings.Contains(root.Content[i].HeadComment, workspaceNote[2:]) {
+				mapDelete(root, "workspace")
+				break
+			}
+		}
+	}
 	out, err = encode(doc)
 	return out, removed, err
 }
@@ -462,8 +498,10 @@ func (k *KitPlan) ValidationEnv(existing []byte, kitDir, agent string) ([]byte, 
 	if a := mapGet(root, "agent"); a == nil || a.Value == "" {
 		mapSet(root, "agent", plain(agent))
 	}
-	mapDelete(root, "workspace")
-	mapSet(root, "workspace", plain("."))
+	// The file's own workspace is kept: sbx must check the file as it is.
+	if mapGet(root, "workspace") == nil {
+		mapSet(root, "workspace", plain("."))
+	}
 	return encode(doc)
 }
 

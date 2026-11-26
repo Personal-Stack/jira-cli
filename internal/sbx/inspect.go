@@ -53,6 +53,7 @@ type EnvInfo struct {
 	Error     string    `json:"error,omitempty"`
 	Generated bool      `json:"generated,omitempty"` // written by setup-sbx
 	Agent     string    `json:"agent,omitempty"`
+	Workspace string    `json:"workspace,omitempty"`
 	Kits      []KitInfo `json:"kits,omitempty"`
 	Mounts    []string  `json:"mounts,omitempty"` // additionalWorkspaces paths, resolved
 	// Bindings maps a credential service to its approved apiKey domains.
@@ -101,6 +102,12 @@ type Inspection struct {
 		Schema  int    `json:"schema,omitempty"`
 		Version string `json:"version,omitempty"`
 		Binary  bool   `json:"binary"`
+		// ImageLayer: the kit has a Dockerfile, which sbx builds with Docker.
+		ImageLayer bool `json:"image_layer,omitempty"`
+		// NeedsWorkload: the kit resolves only when composed with its
+		// workload (agent-context@2, or an arg in the credential's service),
+		// which sbx refuses in an environment file.
+		NeedsWorkload bool `json:"needs_workload,omitempty"`
 	} `json:"kit"`
 	Config struct {
 		Path     string `json:"path"`
@@ -196,6 +203,12 @@ func readEnv(path string) EnvInfo {
 	if a := mapGet(root, "agent"); a != nil {
 		e.Agent = a.Value
 	}
+	if w := mapGet(root, "workspace"); w != nil {
+		e.Workspace = w.Value
+		if p := mapGet(w, "path"); p != nil {
+			e.Workspace = p.Value
+		}
+	}
 	if kits := mapGet(root, "kits"); kits != nil && kits.Kind == yaml.SequenceNode {
 		for _, n := range kits.Content {
 			src := kitSource(n)
@@ -254,6 +267,11 @@ func Inspect(home, project, settings, version string) *Inspection {
 		in.Kit.Schema, _, in.Kit.Version, _ = KitSchema(in.Kit.Dir)
 		_, err := os.Stat(filepath.Join(in.Kit.Dir, "bin", "jiracli"))
 		in.Kit.Binary = err == nil
+		_, err = os.Stat(filepath.Join(in.Kit.Dir, "jira-cli.dockerfile"))
+		in.Kit.ImageLayer = err == nil
+		if b, err := os.ReadFile(filepath.Join(in.Kit.Dir, "jira-cli.yaml")); err == nil {
+			in.Kit.NeedsWorkload = bytes.Contains(b, []byte("agent-context@2")) || bytes.Contains(b, []byte("service: ${{"))
+		}
 	}
 	in.Config.Path = filepath.Join(settings, "config.yaml")
 	in.Config.BaseURL = readConfig(in.Config.Path).baseURL
@@ -306,6 +324,10 @@ func (in *Inspection) issues(version string) []Issue {
 	for _, e := range []*EnvInfo{&in.User, &in.Proj} {
 		if e.Error != "" {
 			add("error", e.Path+": "+e.Error, "fix the file")
+		}
+		if e.Exists && len(e.Mounts) > 0 && e.Workspace == "" {
+			add("error", e.Path+" has additionalWorkspaces but no workspace: sbx refuses it (\"additionalWorkspaces requires a 'workspace:'\")",
+				"run 'jiracli sbx setup' (update), which adds the workspace")
 		}
 	}
 	jiraEntries := map[string]*KitInfo{}
@@ -362,6 +384,10 @@ func (in *Inspection) issues(version string) []Issue {
 			add("error", "the kit folder "+in.Kit.Dir+" does not exist", "run 'jiracli sbx setup' (update)")
 		case !in.Kit.Binary:
 			add("error", "the kit has no binary ("+in.Kit.Dir+"/bin/jiracli)", "run 'jiracli sbx setup' (update)")
+		case in.Kit.NeedsWorkload:
+			add("error", "the kit resolves only with its workload (agent-context@2, or an arg as the credential service): sbx refuses it (\"... pass the workload and the kit together\")", "update it ('jiracli sbx setup', action update)")
+		case in.Kit.ImageLayer:
+			add("warn", "the kit has an image layer (jira-cli.dockerfile): sbx builds it with Docker, and fails when no Docker daemon runs", "update it ('jiracli sbx setup', action update): the kit then needs no Docker; --image-layer keeps the layer")
 		case in.Kit.Version != "" && KitVersion(version) != "0.0.0" && in.Kit.Version != KitVersion(version):
 			add("info", fmt.Sprintf("the kit is from jiracli %s; this is %s", in.Kit.Version, KitVersion(version)), "update it ('jiracli sbx setup', action update)")
 		}

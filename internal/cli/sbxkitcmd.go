@@ -100,6 +100,7 @@ kit entry, or that sbxenv.yaml, when you use this kit.`,
 	fl.StringVar(&f.binaryFile, "binary-file", "", "linux jiracli binary for the kit (default: this jiracli, a build from a clone, or the release)")
 	fl.StringVar(&f.sourceDir, "source-dir", "", "jira-cli clone to build the linux binary from (default: the clone containing the current directory)")
 	fl.StringVar(&f.agent, "agent", "shell", "agent for the 'sbx env plan' check when ~/.sbxenv.yaml sets none")
+	fl.BoolVar(&f.o.ImageLayer, "image-layer", false, "v3 kit: add an image layer (/usr/bin/jiracli, the skill); sbx then builds it with Docker")
 	fl.IntVar(&f.kitSchema, "kit-schema", 0, "kit format: 3 (built-in agents) or 2 (agent kits in the v1/v2 format; sbx does not mix them with v3); default: 3, or 2 if sbx refuses 3")
 	fl.BoolVar(&f.print, "print", false, "write the kit but not ~/.sbxenv.yaml: print the entries to add yourself")
 	fl.BoolVar(&f.remove, "remove", false, "remove the kit and its mount from ~/.sbxenv.yaml (bindings are kept)")

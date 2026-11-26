@@ -215,8 +215,8 @@ func TestWriteGlobalKitAndUserEnvKit(t *testing.T) {
 	}
 	kit, _ := os.ReadFile(filepath.Join(k.KitDir, "jira-cli.yaml"))
 	for _, want := range []string{globalKitMarker, `version: "1.2.3"`, "- ${{ kit.args.host }}:${{ kit.args.port }}",
-		"service: ${{ kit.args.secret }}", `domain: "${{ kit.args.host }}"`, "env: JIRA_READ_ONLY", "env: JIRA_CONFIG",
-		`default: "` + k.ConfigFile + `"`, "agent-skill@1", "path: " + globalSkillPath, k.BinPath(),
+		"service: jira", `domain: "${{ kit.args.host }}"`, "env: JIRA_READ_ONLY", "env: JIRA_CONFIG",
+		`default: "` + k.ConfigFile + `"`, k.BinPath(), k.SkillPath() + "/SKILL.md",
 		"[ -e /usr/bin/jiracli ] || ln -sf '" + k.BinPath() + "' /usr/bin/jiracli"} {
 		if !strings.Contains(string(kit), want) {
 			t.Errorf("kit lacks %q", want)
@@ -226,10 +226,29 @@ func TestWriteGlobalKitAndUserEnvKit(t *testing.T) {
 	if err := yaml.Unmarshal(kit, &d); err != nil {
 		t.Fatalf("kit is not YAML: %v", err)
 	}
+	// No image layer by default: sbx would need Docker to build it.
+	if _, ok := d["dockerfile"]; ok || strings.Contains(string(kit), "agent-skill@1") {
+		t.Errorf("image layer without --image-layer:\n%s", kit)
+	}
+	if _, err := os.Stat(filepath.Join(k.KitDir, "jira-cli.dockerfile")); err == nil {
+		t.Error("jira-cli.dockerfile written without --image-layer")
+	}
+	// With it: the Dockerfile and the skill from the image.
+	k.ImageLayer = true
+	if err := k.WriteKit(k.KitDir, bin, "v1.2.3", skill); err != nil {
+		t.Fatal(err)
+	}
+	kit, _ = os.ReadFile(filepath.Join(k.KitDir, "jira-cli.yaml"))
+	for _, want := range []string{"dockerfile: jira-cli.dockerfile", "agent-skill@1", "path: " + globalSkillPath} {
+		if !strings.Contains(string(kit), want) {
+			t.Errorf("--image-layer kit lacks %q", want)
+		}
+	}
 	df, _ := os.ReadFile(filepath.Join(k.KitDir, "jira-cli.dockerfile"))
 	if !strings.Contains(string(df), "COPY skill/jira/ "+globalSkillPath+"/") {
 		t.Errorf("dockerfile:\n%s", df)
 	}
+	k.ImageLayer = false
 	md, _ := os.ReadFile(filepath.Join(k.SkillDir(), "SKILL.md"))
 	if !strings.Contains(string(md), "# Jira\n\n## This sandbox\n") || !strings.Contains(string(md), k.BinPath()) {
 		t.Errorf("SKILL.md:\n%s", md)
@@ -291,17 +310,59 @@ func TestKitWriteSettings(t *testing.T) {
 
 func TestValidationEnv(t *testing.T) {
 	k := kitPlan(t, true)
-	b, err := k.ValidationEnv([]byte("schemaVersion: \"1\"\nworkspace: ${{ env.projectDir }}\n"), "/tmp/scratch/kit", "shell")
+	// The file's own workspace is kept: sbx checks the file as it is.
+	b, err := k.ValidationEnv([]byte("schemaVersion: \"1\"\nworkspace: ${{ env.projectDir }}/src\n"), "/tmp/scratch/kit", "shell")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(b)
-	if !strings.Contains(s, "agent: shell") || !strings.Contains(s, "workspace: .") || strings.Contains(s, "projectDir") || !strings.Contains(s, "source: /tmp/scratch/kit") {
+	if !strings.Contains(s, "agent: shell") || !strings.Contains(s, "workspace: ${{ env.projectDir }}/src") || !strings.Contains(s, "source: /tmp/scratch/kit") {
 		t.Fatalf("%s", s)
 	}
-	b, _ = k.ValidationEnv([]byte("schemaVersion: \"1\"\nagent: opencode\n"), "/tmp/scratch/kit", "shell")
-	if !strings.Contains(string(b), "agent: opencode") || strings.Contains(string(b), "shell") {
+	b, _ = k.ValidationEnv([]byte("schemaVersion: \"1\"\nagent: claude\n"), "/tmp/scratch/kit", "shell")
+	if !strings.Contains(string(b), "agent: claude") || strings.Contains(string(b), "shell") || !strings.Contains(string(b), "workspace: ${{ env.projectDir }}") {
 		t.Fatalf("%s", b)
+	}
+}
+
+// sbx accepts additionalWorkspaces only in a file that sets workspace.
+func TestUserEnvContentAddsWorkspace(t *testing.T) {
+	k := kitPlan(t, true)
+	b, err := k.UserEnvContent([]byte("schemaVersion: \"1\"\nagent: opencode\n"), k.KitDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), workspaceNote+"\nworkspace: ${{ env.projectDir }}\n") {
+		t.Fatalf("no workspace added:\n%s", b)
+	}
+	// Idempotent, and an existing workspace is never touched.
+	again, _ := k.UserEnvContent(b, k.KitDir)
+	if string(again) != string(b) {
+		t.Fatalf("second run changed it:\n%s\n---\n%s", b, again)
+	}
+	own, _ := k.UserEnvContent([]byte("schemaVersion: \"1\"\nworkspace: ${{ env.projectDir }}/src\n"), k.KitDir)
+	if strings.Count(string(own), "workspace:") != 1 || !strings.Contains(string(own), "workspace: ${{ env.projectDir }}/src") {
+		t.Fatalf("%s", own)
+	}
+	// --remove takes the added workspace away again, not the user's own.
+	out, _, _ := k.RemoveFromUserEnv(b)
+	if strings.Contains(string(out), "workspace") {
+		t.Fatalf("added workspace kept after remove:\n%s", out)
+	}
+	out, _, _ = k.RemoveFromUserEnv(own)
+	if !strings.Contains(string(out), "workspace: ${{ env.projectDir }}/src") {
+		t.Fatalf("own workspace removed:\n%s", out)
+	}
+	// A project file gets "." (its own folder).
+	p := k.KitOptions
+	p.EnvFile = filepath.Join(t.TempDir(), "sbxenv.yaml")
+	pk, err := NewKitPlan(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pb, _ := pk.UserEnvContent([]byte("schemaVersion: \"1\"\nagent: opencode\n"), pk.KitDir)
+	if !strings.Contains(string(pb), "workspace: .\n") {
+		t.Fatalf("%s", pb)
 	}
 }
 
@@ -336,7 +397,7 @@ func TestWriteGlobalKitV2(t *testing.T) {
 	}
 	spec := string(b)
 	for _, want := range []string{globalKitMarker, `schemaVersion: "2"`, "kind: mixin", "name: jira-cli",
-		`- "${{ kit.args.host }}:${{ kit.args.port }}"`, `service: "${{ kit.args.secret }}"`, `domain: "${{ kit.args.host }}"`,
+		`- "${{ kit.args.host }}:${{ kit.args.port }}"`, "service: jira", `domain: "${{ kit.args.host }}"`,
 		`JIRA_READ_ONLY: "${{ kit.args.readOnly }}"`, `JIRA_CONFIG: "${{ kit.args.config }}"`, "proxyManaged: true",
 		"ln -sf '" + k.BinPath() + "' /usr/bin/jiracli", k.SkillPath() + "/SKILL.md"} {
 		if !strings.Contains(spec, want) {
@@ -405,5 +466,36 @@ func TestAbsolutizeAndSwap(t *testing.T) {
 	sw, err := SwapKitSource(env, k.Home, "/scratch/kit")
 	if err != nil || !strings.Contains(string(sw), "source: /scratch/kit") || strings.Contains(string(sw), k.KitDir) || !strings.Contains(string(sw), `host: "jira.example.com"`) {
 		t.Fatalf("%v\n%s", err, sw)
+	}
+}
+
+// sbx refuses, in an environment file, a kit that resolves only with its
+// workload: one declaring agent-context@2, or an arg in an instance key
+// (the credential's service). Every kit declares agent-context@1 only, and
+// a literal service.
+func TestKitsDeclareOneAgentContext(t *testing.T) {
+	k := kitPlan(t, true)
+	bin := filepath.Join(t.TempDir(), "jiracli")
+	_ = os.WriteFile(bin, []byte("x"), 0o755)
+	skill := fstest.MapFS{"SKILL.md": {Data: []byte("# J\n")}}
+	for _, layer := range []bool{false, true} {
+		k.ImageLayer = layer
+		if err := k.WriteKit(k.KitDir, bin, "v1.0.0", skill); err != nil {
+			t.Fatal(err)
+		}
+		b, _ := os.ReadFile(filepath.Join(k.KitDir, "jira-cli.yaml"))
+		if n := strings.Count(string(b), "type: com.docker.sandbox/agent-context@"); n != 1 || !strings.Contains(string(b), "agent-context@1") {
+			t.Fatalf("image layer %v: %d agent-context declarations\n%s", layer, n, b)
+		}
+		if strings.Contains(string(b), "agent-context@2") || !strings.Contains(string(b), "service: jira\n") || strings.Contains(string(b), "service: ${{") {
+			t.Fatalf("image layer %v: the kit would need its workload to resolve\n%s", layer, b)
+		}
+	}
+	proj, _ := render(kitTmpl, struct {
+		*Plan
+		KitVersion string
+	}{&Plan{Options: Options{Secret: "jira", Skill: true, SkillsPath: ".opencode/skills", Settings: "/s"}, Host: "h", Port: 443, CredEnv: "X", KitDir: "/k", BashrcFile: "/s/bashrc"}, "1.0.0"})
+	if n := strings.Count(proj, "type: com.docker.sandbox/agent-context@"); n != 1 {
+		t.Fatalf("setup-sbx kit: %d agent-context declarations", n)
 	}
 }
