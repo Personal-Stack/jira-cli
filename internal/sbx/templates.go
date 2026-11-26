@@ -73,10 +73,9 @@ capabilities:
           user: "0"
           description: Source {{.BashrcFile}} from interactive bash shells (best effort; never fails the start)
 
-  # One agent-context version only: sbx refuses a kit offering @1 and @2
-  # unless it resolves them with the workload ("competing agent-context
-  # versions"). @2 is the current one (progressive delivery for a mixin).
-  - type: com.docker.sandbox/agent-context@2
+  # agent-context@1 only: a kit with @2 resolves only when composed with its
+  # workload, and sbx refuses it in an environment file.
+  - type: com.docker.sandbox/agent-context@1
     optional: true
     config:
       content: |
@@ -220,9 +219,9 @@ args:
     pattern: '^[1-9][0-9]{0,4}$'
     description: Jira HTTPS port
   secret:
-    default: "jira"
-    pattern: '^[a-z0-9][a-z0-9-]*$'
-    description: sbx secret (credential service) holding the Jira personal access token
+    default: "{{.Secret}}"
+    enum: ["{{.Secret}}"]
+    description: sbx secret holding the Jira personal access token; fixed when the kit is generated (jiracli sbx kit --secret)
   readOnly:
     default: "1"
     enum: ["0", "1"]
@@ -251,7 +250,10 @@ capabilities:
   - type: com.docker.sandbox/credential@1
     description: Jira personal access token for jira-cli
     config:
-      service: ${{"{{"}} kit.args.secret {{"}}"}}
+      # A literal, not ${{"{{"}} kit.args.secret {{"}}"}}: the service is the
+      # credential's instance key, and an arg there makes sbx refuse the kit
+      # until it is composed with its workload. Re-run jiracli to change it.
+      service: {{.Secret}}
       phase: runtime
       apiKey:
         name: {{.CredEnv}}
@@ -291,10 +293,11 @@ capabilities:
       name: jira
 {{- end}}
 
-  # One agent-context version only: sbx refuses a kit offering @1 and @2
-  # unless it resolves them with the workload ("competing agent-context
-  # versions"). @2 is the current one (progressive delivery for a mixin).
-  - type: com.docker.sandbox/agent-context@2
+  # agent-context@1 only: a kit with @2 (alone, or next to @1) resolves only
+  # when composed with its workload, and sbx refuses it in an environment
+  # file ("competing agent-context versions ... pass the workload and the
+  # kit together").
+  - type: com.docker.sandbox/agent-context@1
     optional: true
     config:
       content: |
@@ -364,9 +367,9 @@ args:
     pattern: '^[1-9][0-9]{0,4}$'
     description: Jira HTTPS port
   secret:
-    default: "jira"
-    pattern: '^[a-z0-9][a-z0-9-]*$'
-    description: sbx secret (credential service) holding the Jira personal access token
+    default: "{{.Secret}}"
+    enum: ["{{.Secret}}"]
+    description: sbx secret holding the Jira personal access token; fixed when the kit is generated (jiracli sbx kit --secret)
   readOnly:
     default: "1"
     enum: ["0", "1"]
@@ -384,7 +387,7 @@ permissions:
 # The PAT stays on the host. {{.CredEnv}} holds a sentinel; the proxy sets
 # the real "Authorization: Bearer <PAT>" on requests to the host.
 credentials:
-  - service: "${{"{{"}} kit.args.secret {{"}}"}}"
+  - service: {{.Secret}}
     description: Jira personal access token for jira-cli
     apiKey:
       name: {{.CredEnv}}

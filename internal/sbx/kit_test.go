@@ -215,7 +215,7 @@ func TestWriteGlobalKitAndUserEnvKit(t *testing.T) {
 	}
 	kit, _ := os.ReadFile(filepath.Join(k.KitDir, "jira-cli.yaml"))
 	for _, want := range []string{globalKitMarker, `version: "1.2.3"`, "- ${{ kit.args.host }}:${{ kit.args.port }}",
-		"service: ${{ kit.args.secret }}", `domain: "${{ kit.args.host }}"`, "env: JIRA_READ_ONLY", "env: JIRA_CONFIG",
+		"service: jira", `domain: "${{ kit.args.host }}"`, "env: JIRA_READ_ONLY", "env: JIRA_CONFIG",
 		`default: "` + k.ConfigFile + `"`, k.BinPath(), k.SkillPath() + "/SKILL.md",
 		"[ -e /usr/bin/jiracli ] || ln -sf '" + k.BinPath() + "' /usr/bin/jiracli"} {
 		if !strings.Contains(string(kit), want) {
@@ -397,7 +397,7 @@ func TestWriteGlobalKitV2(t *testing.T) {
 	}
 	spec := string(b)
 	for _, want := range []string{globalKitMarker, `schemaVersion: "2"`, "kind: mixin", "name: jira-cli",
-		`- "${{ kit.args.host }}:${{ kit.args.port }}"`, `service: "${{ kit.args.secret }}"`, `domain: "${{ kit.args.host }}"`,
+		`- "${{ kit.args.host }}:${{ kit.args.port }}"`, "service: jira", `domain: "${{ kit.args.host }}"`,
 		`JIRA_READ_ONLY: "${{ kit.args.readOnly }}"`, `JIRA_CONFIG: "${{ kit.args.config }}"`, "proxyManaged: true",
 		"ln -sf '" + k.BinPath() + "' /usr/bin/jiracli", k.SkillPath() + "/SKILL.md"} {
 		if !strings.Contains(spec, want) {
@@ -469,8 +469,10 @@ func TestAbsolutizeAndSwap(t *testing.T) {
 	}
 }
 
-// sbx refuses a kit declaring agent-context @1 and @2 ("competing
-// agent-context versions"): every kit declares exactly one, @2.
+// sbx refuses, in an environment file, a kit that resolves only with its
+// workload: one declaring agent-context@2, or an arg in an instance key
+// (the credential's service). Every kit declares agent-context@1 only, and
+// a literal service.
 func TestKitsDeclareOneAgentContext(t *testing.T) {
 	k := kitPlan(t, true)
 	bin := filepath.Join(t.TempDir(), "jiracli")
@@ -482,8 +484,11 @@ func TestKitsDeclareOneAgentContext(t *testing.T) {
 			t.Fatal(err)
 		}
 		b, _ := os.ReadFile(filepath.Join(k.KitDir, "jira-cli.yaml"))
-		if n := strings.Count(string(b), "type: com.docker.sandbox/agent-context@"); n != 1 || !strings.Contains(string(b), "agent-context@2") {
+		if n := strings.Count(string(b), "type: com.docker.sandbox/agent-context@"); n != 1 || !strings.Contains(string(b), "agent-context@1") {
 			t.Fatalf("image layer %v: %d agent-context declarations\n%s", layer, n, b)
+		}
+		if strings.Contains(string(b), "agent-context@2") || !strings.Contains(string(b), "service: jira\n") || strings.Contains(string(b), "service: ${{") {
+			t.Fatalf("image layer %v: the kit would need its workload to resolve\n%s", layer, b)
 		}
 	}
 	proj, _ := render(kitTmpl, struct {

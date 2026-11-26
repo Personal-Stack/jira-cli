@@ -15,7 +15,10 @@ Fixes for `jiracli sbx kit` and `jiracli sbx setup`, all found on a real sbx: `~
   - `--image-layer` keeps the Dockerfile where Docker runs.
   - `jiracli sbx setup` reports a kit with an image layer, and `update` rewrites it.
 
-- **"declares … competing agent-context versions … pass the workload and the kit together".** The kits offered their agent instructions as both `agent-context@1` and `@2`, which sbx refuses for a kit on its own. Both kits (`sbx kit`'s and `setup-sbx`'s) now declare `@2` only. `jiracli sbx setup` reports an old kit, and `update` rewrites it.
+- **"declares capability groups, competing agent-context versions, or environment references … pass the workload and the kit together".** sbx refuses, in an environment file, a kit that resolves only when composed with its workload. Two things in our kit caused that: `agent-context@2` (alone or next to `@1`), and an arg as the credential's service (its instance key).
+  - Both kits (`sbx kit`'s and `setup-sbx`'s) now declare `agent-context@1` only.
+  - The service is written as a literal when the kit is generated (`--secret`); the `secret` arg stays, fixed to that value, so existing files still resolve.
+  - `jiracli sbx setup` reports an old kit, and `update` rewrites it.
 
 ### Upgrading
 `jiracli upgrade`, then `jiracli sbx setup` and choose `update`: it adds the workspace and rewrites the kit without the image layer and with one agent-context. Then recreate the sandbox (`sbx env rm`, `sbx env run`).

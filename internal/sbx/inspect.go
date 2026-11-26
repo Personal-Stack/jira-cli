@@ -104,9 +104,10 @@ type Inspection struct {
 		Binary  bool   `json:"binary"`
 		// ImageLayer: the kit has a Dockerfile, which sbx builds with Docker.
 		ImageLayer bool `json:"image_layer,omitempty"`
-		// BothContexts: agent-context @1 and @2, which sbx refuses for a kit
-		// on its own ("competing agent-context versions").
-		BothContexts bool `json:"both_contexts,omitempty"`
+		// NeedsWorkload: the kit resolves only when composed with its
+		// workload (agent-context@2, or an arg in the credential's service),
+		// which sbx refuses in an environment file.
+		NeedsWorkload bool `json:"needs_workload,omitempty"`
 	} `json:"kit"`
 	Config struct {
 		Path     string `json:"path"`
@@ -269,7 +270,7 @@ func Inspect(home, project, settings, version string) *Inspection {
 		_, err = os.Stat(filepath.Join(in.Kit.Dir, "jira-cli.dockerfile"))
 		in.Kit.ImageLayer = err == nil
 		if b, err := os.ReadFile(filepath.Join(in.Kit.Dir, "jira-cli.yaml")); err == nil {
-			in.Kit.BothContexts = bytes.Contains(b, []byte("agent-context@1")) && bytes.Contains(b, []byte("agent-context@2"))
+			in.Kit.NeedsWorkload = bytes.Contains(b, []byte("agent-context@2")) || bytes.Contains(b, []byte("service: ${{"))
 		}
 	}
 	in.Config.Path = filepath.Join(settings, "config.yaml")
@@ -383,8 +384,8 @@ func (in *Inspection) issues(version string) []Issue {
 			add("error", "the kit folder "+in.Kit.Dir+" does not exist", "run 'jiracli sbx setup' (update)")
 		case !in.Kit.Binary:
 			add("error", "the kit has no binary ("+in.Kit.Dir+"/bin/jiracli)", "run 'jiracli sbx setup' (update)")
-		case in.Kit.BothContexts:
-			add("error", "the kit declares agent-context @1 and @2: sbx refuses it (\"competing agent-context versions\")", "update it ('jiracli sbx setup', action update)")
+		case in.Kit.NeedsWorkload:
+			add("error", "the kit resolves only with its workload (agent-context@2, or an arg as the credential service): sbx refuses it (\"... pass the workload and the kit together\")", "update it ('jiracli sbx setup', action update)")
 		case in.Kit.ImageLayer:
 			add("warn", "the kit has an image layer (jira-cli.dockerfile): sbx builds it with Docker, and fails when no Docker daemon runs", "update it ('jiracli sbx setup', action update): the kit then needs no Docker; --image-layer keeps the layer")
 		case in.Kit.Version != "" && KitVersion(version) != "0.0.0" && in.Kit.Version != KitVersion(version):
