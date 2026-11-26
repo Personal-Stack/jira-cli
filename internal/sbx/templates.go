@@ -73,9 +73,12 @@ capabilities:
           user: "0"
           description: Source {{.BashrcFile}} from interactive bash shells (best effort; never fails the start)
 
-  - type: com.docker.sandbox/agent-context@1
+  # One agent-context version only: sbx refuses a kit offering @1 and @2
+  # unless it resolves them with the workload ("competing agent-context
+  # versions"). @2 is the current one (progressive delivery for a mixin).
+  - type: com.docker.sandbox/agent-context@2
     optional: true
-    config: &agent-context
+    config:
       content: |
         ## Jira (jira-cli)
 
@@ -97,10 +100,6 @@ capabilities:
         - Keep queries small: --max-results 50 or less; with --all add --max-pages 3.
         - The configuration is read-only at {{.Settings}}; changes are made by
           the user on the host.
-
-  - type: com.docker.sandbox/agent-context@2
-    optional: true
-    config: *agent-context
 `)
 
 var envTmpl = mustTemplate("env", GeneratedMarker+`; re-run it to regenerate.
@@ -292,9 +291,12 @@ capabilities:
       name: jira
 {{- end}}
 
-  - type: com.docker.sandbox/agent-context@1
+  # One agent-context version only: sbx refuses a kit offering @1 and @2
+  # unless it resolves them with the workload ("competing agent-context
+  # versions"). @2 is the current one (progressive delivery for a mixin).
+  - type: com.docker.sandbox/agent-context@2
     optional: true
-    config: &agent-context
+    config:
       content: |
         ## Jira (jira-cli)
 
@@ -313,10 +315,6 @@ capabilities:
           must not add without the user's approval.
         - Keep queries small: --max-results 50 or less; with --all add --max-pages 3.
         - The configuration ({{code "$JIRA_CONFIG"}}) is read-only; the user changes it on the host.
-
-  - type: com.docker.sandbox/agent-context@2
-    optional: true
-    config: *agent-context
 `)
 
 // globalSkillSectionTmpl is the skill's "This sandbox" section in the

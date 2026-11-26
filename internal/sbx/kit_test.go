@@ -468,3 +468,29 @@ func TestAbsolutizeAndSwap(t *testing.T) {
 		t.Fatalf("%v\n%s", err, sw)
 	}
 }
+
+// sbx refuses a kit declaring agent-context @1 and @2 ("competing
+// agent-context versions"): every kit declares exactly one, @2.
+func TestKitsDeclareOneAgentContext(t *testing.T) {
+	k := kitPlan(t, true)
+	bin := filepath.Join(t.TempDir(), "jiracli")
+	_ = os.WriteFile(bin, []byte("x"), 0o755)
+	skill := fstest.MapFS{"SKILL.md": {Data: []byte("# J\n")}}
+	for _, layer := range []bool{false, true} {
+		k.ImageLayer = layer
+		if err := k.WriteKit(k.KitDir, bin, "v1.0.0", skill); err != nil {
+			t.Fatal(err)
+		}
+		b, _ := os.ReadFile(filepath.Join(k.KitDir, "jira-cli.yaml"))
+		if n := strings.Count(string(b), "type: com.docker.sandbox/agent-context@"); n != 1 || !strings.Contains(string(b), "agent-context@2") {
+			t.Fatalf("image layer %v: %d agent-context declarations\n%s", layer, n, b)
+		}
+	}
+	proj, _ := render(kitTmpl, struct {
+		*Plan
+		KitVersion string
+	}{&Plan{Options: Options{Secret: "jira", Skill: true, SkillsPath: ".opencode/skills", Settings: "/s"}, Host: "h", Port: 443, CredEnv: "X", KitDir: "/k", BashrcFile: "/s/bashrc"}, "1.0.0"})
+	if n := strings.Count(proj, "type: com.docker.sandbox/agent-context@"); n != 1 {
+		t.Fatalf("setup-sbx kit: %d agent-context declarations", n)
+	}
+}
