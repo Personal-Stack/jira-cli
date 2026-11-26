@@ -392,3 +392,35 @@ func TestSetupSbxNoToReplaceOffersMerge(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 }
+
+// A ~/.sbxenv.yaml written by v0.7.0: the mount without a workspace, which
+// sbx refuses. The wizard finds it, and update adds the workspace.
+func TestSbxSetupFixesMountWithoutWorkspace(t *testing.T) {
+	isolateHome(t)
+	home := os.Getenv("HOME")
+	writeFile(t, filepath.Join(home, ".sbxenv.yaml"), "schemaVersion: \"1\"\nagent: opencode\n")
+	fs := &fakeSbx{secrets: "jira  apiKey\n"}
+	if code, _, errOut := runKit(t, fs, "--base-url", "jira.example.com", "--yes"); code != 0 {
+		t.Fatalf("kit: %s", errOut)
+	}
+	env := filepath.Join(home, ".sbxenv.yaml")
+	broken := strings.Replace(readFile(t, env), "workspace: ${{ env.projectDir }}\n", "", 1)
+	writeFile(t, env, broken)
+	project := t.TempDir()
+	res := setupStatus(t, fs, project)
+	issues, _ := json.Marshal(res["inspection"].(map[string]any)["issues"])
+	if !strings.Contains(string(issues), "has additionalWorkspaces but no workspace") {
+		t.Fatalf("not found: %s", issues)
+	}
+	if code, _, errOut := runSetup(t, fs, "", "--action", "update", "--project", project, "--yes"); code != 0 {
+		t.Fatalf("update: %s", errOut)
+	}
+	if !strings.Contains(readFile(t, env), "workspace: ${{ env.projectDir }}") {
+		t.Fatalf("no workspace after update:\n%s", readFile(t, env))
+	}
+	res = setupStatus(t, fs, project)
+	issues, _ = json.Marshal(res["inspection"].(map[string]any)["issues"])
+	if strings.Contains(string(issues), `"error"`) {
+		t.Fatalf("errors left: %s", issues)
+	}
+}

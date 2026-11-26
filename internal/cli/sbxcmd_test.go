@@ -74,8 +74,24 @@ func runJiraSbx(t *testing.T, fs *fakeSbx, stdin string, full ...string) (int, s
 	sbxRun = func(_ context.Context, dir string, attach bool, a ...string) ([]byte, error) {
 		cmd := strings.Join(a, " ")
 		fs.calls = append(fs.calls, sbxCall{dir, attach, cmd})
-		if strings.HasPrefix(cmd, "env plan ") { // a path: sbx skips ~/.sbxenv.yaml
-			cmd = "env plan"
+		if cmd == "env plan" || strings.HasPrefix(cmd, "env plan ") {
+			// As sbx: each file is checked on its own, and additionalWorkspaces
+			// needs a workspace in the same file.
+			files := a[2:]
+			if len(files) == 0 {
+				files = []string{filepath.Join(dir, "sbxenv.yaml")}
+			}
+			for _, f := range files {
+				if st, err := os.Stat(f); err == nil && st.IsDir() {
+					f = filepath.Join(f, "sbxenv.yaml")
+				}
+				b, _ := os.ReadFile(f)
+				lines := "\n" + string(b)
+				if strings.Contains(lines, "\nadditionalWorkspaces:") && !strings.Contains(lines, "\nworkspace:") {
+					return []byte(filepath.Base(f) + ": additionalWorkspaces requires a 'workspace:' to be additional to\n"), errors.New("exit status 1")
+				}
+			}
+			cmd = "env plan" // a path: sbx skips ~/.sbxenv.yaml
 		}
 		if strings.HasPrefix(cmd, "env exec ") {
 			switch {

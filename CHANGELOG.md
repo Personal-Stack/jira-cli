@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.7.1 (2026-11-26)
+
+Fixes for `jiracli sbx kit` and `jiracli sbx setup`, both found on a real sbx: `~/.sbxenv.yaml` was refused, and the kit needed Docker to build.
+
+### Docker Sandboxes
+- **"additionalWorkspaces requires a 'workspace:'".** sbx checks each environment file on its own, and refuses the settings mount in a file without `workspace:`.
+  - The kit now adds `workspace: ${{ env.projectDir }}` to `~/.sbxenv.yaml` when it has none; a project file gets `workspace: .`. Your own workspace is never changed, and `--remove` takes the added line out again.
+  - The check with `sbx env plan` no longer replaces the file's workspace, which had hidden the problem.
+  - `jiracli sbx setup` reports a file in this state, and `update` fixes it.
+- **No Docker needed.** sbx builds a kit's Dockerfile with the Docker daemon, so the build failed ("Cannot connect to the Docker daemon").
+  - The v3 kit has no image layer now: it is a declaration-only mixin.
+  - The binary and the skill come from the read-only mount, and the startup hook links `/usr/bin/jiracli`.
+  - `--image-layer` keeps the Dockerfile where Docker runs.
+  - `jiracli sbx setup` reports a kit with an image layer, and `update` rewrites it.
+
+### Upgrading
+`jiracli upgrade`, then `jiracli sbx setup` and choose `update`: it adds the workspace and rewrites the kit without the image layer. Then recreate the sandbox (`sbx env rm`, `sbx env run`).
+
 ## v0.7.0 (2026-11-24)
 
 `jiracli sbx setup`, a wizard that inspects your sbx setup and inits, updates, verifies or migrates it; and fixes for `jiracli sbx kit` found in first use: agents with v2 kits, `~/.sbxenv.yml`, `jiracli` on PATH.

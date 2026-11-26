@@ -202,7 +202,14 @@ licenses: [Apache-2.0]
 kind: mixin
 version: "{{.KitVersion}}"
 provides: ["jira-cli@{{.KitVersion}}"]
+{{- if .ImageLayer}}
+# Built by sbx with Docker: /usr/bin/jiracli and the skill in the image.
 dockerfile: jira-cli.dockerfile
+{{- else}}
+# No image layer (no recipe: a declaration-only mixin), so sbx needs no Docker
+# to build it: the binary and the skill come from the read-only mount, and a
+# startup hook links /usr/bin/jiracli to the binary.
+{{- end}}
 
 args:
   host:
@@ -276,7 +283,7 @@ capabilities:
               { [ -e /usr/bin/jiracli ] || ln -sf '{{.BinPath}}' /usr/bin/jiracli; } 2>/dev/null || true
           user: "0"
           description: Link /usr/bin/jiracli to {{.BinPath}} if the image layer did not install it (best effort)
-{{- if .Skill}}
+{{- if and .Skill .ImageLayer}}
 
   - type: com.docker.sandbox/agent-skill@1
     optional: true
